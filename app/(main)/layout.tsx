@@ -32,7 +32,7 @@ export default async function MainLayout({
     <div className="min-h-screen">
       <Navbar profile={profile as Profile} />
       {/* Desktop: offset for sidebar. Mobile: offset for top/bottom bars */}
-      <main className="md:ml-64 min-h-screen pt-14 md:pt-0 pb-20 md:pb-0">
+      <main className="md:ml-64 print:ml-0 min-h-screen pt-14 md:pt-0 pb-20 md:pb-0 print:pt-0 print:pb-0">
         {children}
       </main>
     </div>

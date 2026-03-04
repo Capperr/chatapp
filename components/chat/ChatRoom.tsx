@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
-import { Avatar } from "@/components/ui/Avatar";
 import { formatDate } from "@/lib/utils";
 import { Users, Wifi, WifiOff } from "lucide-react";
 import type { MessageWithProfile, Profile } from "@/types";
@@ -35,85 +34,68 @@ export function ChatRoom({ initialMessages, currentProfile }: ChatRoomProps) {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const supabase = useMemo(() => createClient(), []);
 
+  const isAdmin = currentProfile.role === "admin";
+
   const scrollToBottom = useCallback((smooth = false) => {
-    bottomRef.current?.scrollIntoView({
-      behavior: smooth ? "smooth" : "instant",
-    });
+    bottomRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "instant" });
   }, []);
 
-  // Initial scroll
-  useEffect(() => {
-    scrollToBottom(false);
-  }, [scrollToBottom]);
+  useEffect(() => { scrollToBottom(false); }, [scrollToBottom]);
 
-  // Scroll to bottom on new messages if user is near bottom
   useEffect(() => {
-    if (isAtBottom) {
-      scrollToBottom(true);
-    }
+    if (isAtBottom) scrollToBottom(true);
   }, [messages, isAtBottom, scrollToBottom]);
 
-  // Track scroll position
   const handleScroll = () => {
     const el = containerRef.current;
     if (!el) return;
-    const threshold = 150;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-    setIsAtBottom(atBottom);
+    setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 150);
   };
 
-  // Supabase Realtime subscription
+  // Realtime subscription — INSERT, UPDATE (edits/soft-deletes)
   useEffect(() => {
     const channel = supabase
       .channel("global-chat-room", {
-        config: {
-          presence: { key: currentProfile.id },
-        },
+        config: { presence: { key: currentProfile.id } },
       })
-      // Listen for new messages via Postgres changes (WebSocket)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" },
         async (payload) => {
-          // Fetch full message with profile
           const { data } = await supabase
             .from("messages")
             .select("*, profiles(*)")
             .eq("id", payload.new.id)
             .single();
-
           if (data) {
             setMessages((prev) => {
-              // Deduplicate
               if (prev.some((m) => m.id === data.id)) return prev;
               return [...prev, data as MessageWithProfile];
             });
           }
         }
       )
-      // Track online presence
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" },
+        (payload) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === payload.new.id
+                ? { ...m, content: payload.new.content, edited_at: payload.new.edited_at, is_deleted: payload.new.is_deleted }
+                : m
+            )
+          );
+        }
+      )
       .on("presence", { event: "sync" }, () => {
-        const state = channel.presenceState();
-        setOnlineCount(Object.keys(state).length);
+        setOnlineCount(Object.keys(channel.presenceState()).length);
       })
-      .subscribe((status) => {
-        setConnected(status === "SUBSCRIBED");
-      });
+      .subscribe((status) => setConnected(status === "SUBSCRIBED"));
 
-    // Track own presence
     channel.track({
       user_id: currentProfile.id,
       username: currentProfile.username,
       online_at: new Date().toISOString(),
     });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [supabase, currentProfile.id, currentProfile.username]);
 
   const sendMessage = async (content: string) => {
@@ -121,29 +103,34 @@ export function ChatRoom({ initialMessages, currentProfile }: ChatRoomProps) {
       content,
       user_id: currentProfile.id,
     });
-
-    if (error) {
-      console.error("Failed to send message:", error);
-    }
+    if (error) console.error("Send failed:", error);
   };
 
-  // Group messages for avatar/header display
+  const handleDelete = async (id: string) => {
+    await supabase
+      .from("messages")
+      .update({ is_deleted: true })
+      .eq("id", id);
+  };
+
+  const handleEdit = async (id: string, content: string) => {
+    await supabase
+      .from("messages")
+      .update({ content, edited_at: new Date().toISOString() })
+      .eq("id", id);
+  };
+
   const renderMessages = () => {
     return messages.map((msg, index) => {
       const prev = messages[index - 1];
       const isOwn = msg.user_id === currentProfile.id;
-
       const isNewGroup =
         !prev ||
         prev.user_id !== msg.user_id ||
-        new Date(msg.created_at).getTime() -
-          new Date(prev.created_at).getTime() >
-          5 * 60 * 1000;
-
+        new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime() > 5 * 60 * 1000;
       const isNewDay =
         !prev ||
-        new Date(msg.created_at).toDateString() !==
-          new Date(prev.created_at).toDateString();
+        new Date(msg.created_at).toDateString() !== new Date(prev.created_at).toDateString();
 
       return (
         <div key={msg.id}>
@@ -154,6 +141,10 @@ export function ChatRoom({ initialMessages, currentProfile }: ChatRoomProps) {
               isOwn={isOwn}
               showAvatar={isNewGroup && !isOwn}
               showHeader={isNewGroup && !isOwn}
+              currentUsername={currentProfile.username}
+              isAdmin={isAdmin}
+              onDelete={handleDelete}
+              onEdit={handleEdit}
             />
           </div>
         </div>
@@ -162,21 +153,15 @@ export function ChatRoom({ initialMessages, currentProfile }: ChatRoomProps) {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] md:h-screen">
-      {/* Chat Header */}
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] md:h-screen relative">
+      {/* Header */}
       <div className="flex-shrink-0 px-6 py-4 glass-strong border-b border-black/[0.06] dark:border-white/[0.06]">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="font-bold text-lg text-slate-900 dark:text-slate-100">
-              Fælles Chat
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Alle kan se og deltage
-            </p>
+            <h1 className="font-bold text-lg text-slate-900 dark:text-slate-100">Fælles Chat</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Alle kan se og deltage</p>
           </div>
-
           <div className="flex items-center gap-3">
-            {/* Online count */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-soft" />
               <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
@@ -184,49 +169,30 @@ export function ChatRoom({ initialMessages, currentProfile }: ChatRoomProps) {
                 {onlineCount} online
               </span>
             </div>
-
-            {/* Connection status */}
-            <div
-              className={`p-1.5 rounded-full ${connected ? "text-emerald-500" : "text-rose-500"}`}
-              title={connected ? "Forbundet" : "Ikke forbundet"}
-            >
-              {connected ? (
-                <Wifi className="w-4 h-4" />
-              ) : (
-                <WifiOff className="w-4 h-4" />
-              )}
+            <div className={`p-1.5 rounded-full ${connected ? "text-emerald-500" : "text-rose-500"}`} title={connected ? "Forbundet" : "Ikke forbundet"}>
+              {connected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
             </div>
           </div>
         </div>
       </div>
 
       {/* Messages */}
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-0"
-      >
+      <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-6 py-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center space-y-3">
             <div className="w-16 h-16 rounded-2xl bg-primary-50 dark:bg-primary-500/10 flex items-center justify-center">
               <Users className="w-8 h-8 text-primary-500" />
             </div>
             <div>
-              <p className="font-semibold text-slate-700 dark:text-slate-300">
-                Ingen beskeder endnu
-              </p>
-              <p className="text-sm text-slate-400 dark:text-slate-500">
-                Vær den første til at skrive!
-              </p>
+              <p className="font-semibold text-slate-700 dark:text-slate-300">Ingen beskeder endnu</p>
+              <p className="text-sm text-slate-400 dark:text-slate-500">Vær den første til at skrive!</p>
             </div>
           </div>
-        ) : (
-          renderMessages()
-        )}
+        ) : renderMessages()}
         <div ref={bottomRef} className="h-1" />
       </div>
 
-      {/* Scroll to bottom button */}
+      {/* Scroll to bottom */}
       {!isAtBottom && (
         <button
           onClick={() => scrollToBottom(true)}
@@ -238,7 +204,11 @@ export function ChatRoom({ initialMessages, currentProfile }: ChatRoomProps) {
 
       {/* Input */}
       <div className="flex-shrink-0">
-        <ChatInput onSend={sendMessage} disabled={!connected} />
+        <ChatInput
+          onSend={sendMessage}
+          currentProfile={currentProfile}
+          disabled={!connected}
+        />
       </div>
     </div>
   );

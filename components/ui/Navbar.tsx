@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { MessageCircle, User, LogOut, Zap } from "lucide-react";
+import { MessageCircle, User, LogOut, Zap, ShieldCheck, Calculator } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { Avatar } from "./Avatar";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ interface NavbarProps {
 
 const navItems = [
   { href: "/chat", icon: MessageCircle, label: "Chat" },
+  { href: "/accounting", icon: Calculator, label: "Afregning" },
   { href: "/profile", icon: User, label: "Profil" },
 ];
 
@@ -30,7 +31,7 @@ export function Navbar({ profile }: NavbarProps) {
   };
 
   return (
-    <>
+    <div className="print:hidden">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 glass-strong border-r border-black/[0.06] dark:border-white/[0.06] z-40">
         {/* Logo */}
@@ -58,6 +59,18 @@ export function Navbar({ profile }: NavbarProps) {
               )}
             </Link>
           ))}
+          {profile.role === "admin" && (
+            <Link
+              href="/admin"
+              className={cn("nav-link", pathname === "/admin" && "active")}
+            >
+              <ShieldCheck className="w-5 h-5" />
+              Admin Panel
+              {pathname === "/admin" && (
+                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-500" />
+              )}
+            </Link>
+          )}
         </nav>
 
         {/* Bottom section */}
@@ -115,6 +128,20 @@ export function Navbar({ profile }: NavbarProps) {
               <span className="text-xs font-medium">{label}</span>
             </Link>
           ))}
+          {profile.role === "admin" && (
+            <Link
+              href="/admin"
+              className={cn(
+                "flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all duration-200",
+                pathname === "/admin"
+                  ? "text-primary-600 dark:text-primary-400"
+                  : "text-slate-500 dark:text-slate-400"
+              )}
+            >
+              <ShieldCheck className={cn("w-6 h-6", pathname === "/admin" && "scale-110")} />
+              <span className="text-xs font-medium">Admin</span>
+            </Link>
+          )}
           <ThemeToggle compact />
         </div>
       </nav>
@@ -144,6 +171,6 @@ export function Navbar({ profile }: NavbarProps) {
           </div>
         </div>
       </header>
-    </>
+    </div>
   );
 }

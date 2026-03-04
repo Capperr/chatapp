@@ -37,7 +37,8 @@ export async function middleware(request: NextRequest) {
   }
 
   // Redirect unauthenticated users to login
-  if (!user && (pathname === "/chat" || pathname === "/profile")) {
+  const protectedRoutes = ["/chat", "/profile", "/accounting", "/admin"];
+  if (!user && protectedRoutes.includes(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -45,5 +46,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/register", "/chat", "/profile"],
+  matcher: ["/", "/login", "/register", "/chat", "/profile", "/accounting", "/admin"],
 };
