@@ -19,7 +19,6 @@ export function RegisterForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -30,6 +29,7 @@ export function RegisterForm() {
     setLoading(true);
     setError(null);
 
+    const supabase = createClient();
     // Check username availability
     const { data: existing } = await supabase
       .from("profiles")

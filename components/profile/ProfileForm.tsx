@@ -35,7 +35,6 @@ export function ProfileForm({ profile }: ProfileFormProps) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -49,6 +48,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     setLoading(true);
     setError(null);
 
+    const supabase = createClient();
     const { error } = await supabase
       .from("profiles")
       .update({
@@ -111,7 +111,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
               )}
               style={{
                 backgroundColor: color,
-                ringColor: color,
+                outlineColor: formData.avatar_color === color ? color : "transparent",
               }}
               aria-label={`Vælg farve ${color}`}
             />
