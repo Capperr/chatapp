@@ -60,7 +60,7 @@ interface LogMessage {
   content: string;
   user_id: string;
   created_at: string;
-  profiles: { display_name: string; avatar_color: string | null } | null;
+  profiles: { display_name: string; avatar_color: string | null } | { display_name: string; avatar_color: string | null }[] | null;
 }
 
 interface VirtualRoomProps {
@@ -292,8 +292,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <p className="text-[11px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>
               )}
               {logMessages.map((msg) => {
-                const name = (msg.profiles as { display_name: string; avatar_color: string | null } | null)?.display_name ?? "?";
-                const color = (msg.profiles as { display_name: string; avatar_color: string | null } | null)?.avatar_color ?? "#8b5cf6";
+                const p = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
+                const name = p?.display_name ?? "?";
+                const color = p?.avatar_color ?? "#8b5cf6";
                 const isMe = msg.user_id === currentProfile.id;
                 return (
                   <div key={msg.id} className="text-[11px] leading-snug">
