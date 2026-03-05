@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, ShoppingBag } from "lucide-react";
+import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut } from "lucide-react";
 import type { Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -385,6 +385,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const xpRef = useRef(0);
+  const [wardrobeActiveSlot, setWardrobeActiveSlot] = useState<string | null>(null);
+  const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
 
   // Keep refs in sync
   useEffect(() => { botsRef.current = bots; }, [bots]);
@@ -410,6 +412,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     });
     return out;
   }, [myWardrobe, clothingCatalog]);
+
+  const previewOutfit = useMemo<Record<string, string>>(() => {
+    if (!wardrobePreviewId) return myOutfit;
+    const item = clothingCatalog.find(c => c.id === wardrobePreviewId);
+    if (!item) return myOutfit;
+    return { ...myOutfit, [item.slot]: wardrobePreviewId };
+  }, [myOutfit, wardrobePreviewId, clothingCatalog]);
 
   // Keep outfitRef in sync + re-broadcast when outfit changes
   useEffect(() => {
@@ -825,11 +834,21 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   };
 
   const reloadChat = useCallback(async () => {
-    const { data } = await supabase.from("messages").select("id, content, user_id, created_at, profiles(display_name, avatar_color)")
-      .eq("room_id", activeRoomId).eq("is_deleted", false).order("created_at", { ascending: false }).limit(50);
-    if (data) setLogMessages((data as LogMessage[]).reverse());
+    const [{ data: msgs }, { data: roomItems }, { data: roomBots }] = await Promise.all([
+      supabase.from("messages").select("id, content, user_id, created_at, profiles(display_name, avatar_color)").eq("room_id", activeRoomId).eq("is_deleted", false).order("created_at", { ascending: false }).limit(50),
+      supabase.from("virtual_room_items").select("*").eq("room_id", activeRoomId),
+      supabase.from("virtual_room_bots").select("*").eq("room_id", activeRoomId),
+    ]);
+    if (msgs) setLogMessages((msgs as LogMessage[]).reverse());
+    if (roomItems) setItems(roomItems as RoomItem[]);
+    if (roomBots) setBots(roomBots as RoomBot[]);
     broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
   }, [activeRoomId, broadcastMove]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleLogout = useCallback(async () => {
+    await supabase.auth.signOut();
+    onClose();
+  }, [onClose]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Derived data ──────────────────────────────────────────────────────────
   const usersByCell = useMemo(() => {
@@ -933,7 +952,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <button onClick={() => setFullscreen(f => !f)} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all">
               {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
-            <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all"><X className="w-4 h-4" /></button>
+            <button onClick={handleLogout} className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-4 h-4" /></button>
+            <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all" title="Luk"><X className="w-4 h-4" /></button>
           </div>
         </div>
 
@@ -1026,11 +1046,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         </g>
                         <text x={0} y={-AR_S * 2 - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">{isMe ? "Du" : user.display_name}</text>
                         <text x={0} y={-AR_S * 2 - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{isMe ? "Du" : user.display_name}</text>
-                        {isMe && draft && renderSvgBubble(0, -AR_S, draft + "…", "#475569", 0.85, userBubbles.length * 24, false)}
-                        {isTyping && renderTypingBubble(0, -AR_S, userBubbles.length * 24)}
-                        {userBubbles.map((bub, i) => (
-                          <g key={bub.id}>{renderSvgBubble(0, -AR_S, bub.text, user.color, 0.95, (userBubbles.length - 1 - i) * 24, i === userBubbles.length - 1)}</g>
-                        ))}
+                        {isMe && draft && renderSvgBubble(0, -AR_S, draft + "…", "#475569", 0.85, 0, false)}
+                        {isTyping && renderTypingBubble(0, -AR_S, 0)}
+                        {userBubbles.length > 0 && (
+                          <g>{renderSvgBubble(0, -AR_S, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
+                        )}
                       </g>
                     </g>
                   );
@@ -1062,7 +1082,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <Package className="w-[18px] h-[18px]" />
                 {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
               </button>
-              <button onClick={() => setRightPanel(p => p === "shop" ? "chatlog" : "shop")} className={`p-2 rounded-xl transition-all ${rightPanel === "shop" ? "text-amber-400 bg-amber-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : activeRoomType === "shop" ? "text-amber-400/60 hover:text-amber-400 hover:bg-white/[0.08]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Butik"><ShoppingBag className="w-[18px] h-[18px]" /></button>
               <button onClick={() => setRightPanel(p => p === "rooms" ? "chatlog" : "rooms")} className={`p-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rum"><Hash className="w-[18px] h-[18px]" /></button>
               {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "chatlog" : "admin")} className={`p-2 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Admin"><Wrench className="w-[18px] h-[18px]" /></button>}
               <div className="w-px h-5 bg-white/[0.08] mx-1" />
@@ -1105,45 +1124,100 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             )}
 
             {/* Wardrobe */}
-            {rightPanel === "wardrobe" && (
-              <>
-                <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Garderobe</span>
-                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  {CLOTHING_SLOTS.map(slot => {
-                    const slotItems = myWardrobe
-                      .map(w => ({ w, item: clothingCatalog.find(c => c.id === w.clothing_id) }))
-                      .filter(({ item }) => item?.slot === slot.id);
-                    const equipped = slotItems.find(({ w }) => w.equipped);
-                    return (
-                      <div key={slot.id} className="border-b border-white/[0.04]">
-                        <div className="px-3 py-1.5 flex items-center gap-1.5">
-                          <span className="text-sm">{slot.emoji}</span>
-                          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{slot.label}</span>
-                          {equipped && (
-                            <span className="ml-auto text-[9px] text-violet-400 truncate max-w-[80px]">{equipped.item?.name}</span>
-                          )}
+            {rightPanel === "wardrobe" && (() => {
+              const activeSlotItems = wardrobeActiveSlot
+                ? myWardrobe
+                    .map(w => ({ w, item: clothingCatalog.find(c => c.id === w.clothing_id) }))
+                    .filter(({ item }) => item?.slot === wardrobeActiveSlot)
+                : [];
+              const previewItem = wardrobePreviewId ? clothingCatalog.find(c => c.id === wardrobePreviewId) : null;
+              return (
+                <>
+                  {/* Header */}
+                  <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0 bg-[#030912]/60">
+                    <span className="text-[11px] font-bold text-slate-300 tracking-wide">Garderobe</span>
+                    <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+
+                  {/* Avatar preview */}
+                  <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-2 border-b border-white/[0.06] bg-gradient-to-b from-violet-500/[0.04] to-transparent">
+                    <svg width="110" height="115" viewBox="-28 -60 56 100">
+                      <ellipse cx="0" cy="38" rx="13" ry="3.5" fill="rgba(0,0,0,0.4)" />
+                      <g transform="scale(1.8)">
+                        <PersonAvatar color={myColor} glow={false} mood="happy" />
+                        {Object.keys(previewOutfit).length > 0 && (
+                          <ClothingOverlay outfit={previewOutfit} catalog={clothingCatalog} />
+                        )}
+                      </g>
+                    </svg>
+                    <span className="text-[10px] h-4 text-violet-400 font-medium mt-1">
+                      {previewItem ? previewItem.name : "\u00a0"}
+                    </span>
+                  </div>
+
+                  {/* Slot grid */}
+                  <div className="flex-shrink-0 p-2 grid grid-cols-4 gap-1 border-b border-white/[0.06]">
+                    {CLOTHING_SLOTS.map(slot => {
+                      const isEquipped = slot.id in myOutfit;
+                      const isActive = wardrobeActiveSlot === slot.id;
+                      return (
+                        <button
+                          key={slot.id}
+                          onClick={() => { setWardrobeActiveSlot(s => s === slot.id ? null : slot.id); setWardrobePreviewId(null); }}
+                          className={`flex flex-col items-center gap-0.5 p-1.5 rounded-xl transition-all relative ${
+                            isActive
+                              ? "bg-violet-500/20 border border-violet-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)]"
+                              : "hover:bg-white/[0.05] border border-transparent"
+                          }`}
+                        >
+                          <span className="text-base leading-none">{slot.emoji}</span>
+                          <span className={`text-[8px] font-medium leading-none ${isActive ? "text-violet-300" : "text-slate-500"}`}>{slot.label}</span>
+                          {isEquipped && <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-violet-500" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Items for selected slot */}
+                  <div className="flex-1 overflow-y-auto py-1">
+                    {!wardrobeActiveSlot && (
+                      <p className="text-[11px] text-slate-600 text-center mt-8 px-3">
+                        {myWardrobe.length === 0 ? "Ingen tøj endnu. Find en bot med 🎁." : "Klik på en slot for at se dit tøj"}
+                      </p>
+                    )}
+                    {wardrobeActiveSlot && activeSlotItems.length === 0 && (
+                      <p className="text-[11px] text-slate-600 text-center mt-8 px-3">Intet tøj i denne slot endnu.</p>
+                    )}
+                    {wardrobeActiveSlot && activeSlotItems.map(({ w, item }) => item && (
+                      <div
+                        key={w.id}
+                        className={`mx-2 my-1 p-2.5 rounded-xl border transition-all ${
+                          wardrobePreviewId === item.id
+                            ? "border-violet-500/40 bg-violet-500/10"
+                            : w.equipped
+                            ? "border-violet-500/25 bg-violet-500/[0.06]"
+                            : "border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]"
+                        }`}
+                        onMouseEnter={() => setWardrobePreviewId(item.id)}
+                        onMouseLeave={() => setWardrobePreviewId(null)}
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-4 h-4 rounded-full flex-shrink-0 ring-1 ring-white/10" style={{ backgroundColor: item.color }} />
+                          <span className={`text-[12px] font-medium flex-1 truncate ${w.equipped ? "text-violet-300" : "text-slate-300"}`}>{item.name}</span>
+                          {w.equipped && <span className="text-[9px] text-violet-400 bg-violet-500/15 px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0">På</span>}
                         </div>
-                        {slotItems.length === 0 && <p className="px-3 pb-2 text-[10px] text-slate-700">Ingen</p>}
-                        {slotItems.map(({ w, item }) => item && (
-                          <div key={w.id} className="px-3 py-1 flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
-                            <span className={`text-[11px] flex-1 truncate ${w.equipped ? "text-violet-300" : "text-slate-400"}`}>{item.name}</span>
-                            {w.equipped
-                              ? <button onClick={() => unequip(w.clothing_id)} className="text-[9px] text-slate-500 hover:text-rose-400 flex-shrink-0">Af</button>
-                              : <button onClick={() => equip(w.clothing_id)} className="text-[9px] text-slate-500 hover:text-violet-400 flex-shrink-0">På</button>
-                            }
-                          </div>
-                        ))}
+                        <div className="flex gap-1.5">
+                          {w.equipped
+                            ? <button onClick={() => unequip(w.clothing_id)} className="flex-1 text-[10px] py-1 rounded-lg bg-slate-700/50 text-slate-400 hover:bg-rose-500/15 hover:text-rose-400 font-medium transition-colors">Tag af</button>
+                            : <button onClick={() => equip(w.clothing_id)} className="flex-1 text-[10px] py-1 rounded-lg bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 font-medium transition-colors">Tag på</button>
+                          }
+                        </div>
                       </div>
-                    );
-                  })}
-                  {myWardrobe.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-6 px-3">Ingen tøj endnu. Find en bot med 🎁 for at hente noget.</p>}
-                </div>
-              </>
-            )}
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Shop */}
             {rightPanel === "shop" && (

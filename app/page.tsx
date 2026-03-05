@@ -150,6 +150,20 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ── Subtle animated background when chat popup is open ── */}
+      {chatOpen && (
+        <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden">
+          <style>{`
+            @keyframes orb1{0%,100%{transform:translate(0,0)}40%{transform:translate(50px,-70px)}80%{transform:translate(-30px,40px)}}
+            @keyframes orb2{0%,100%{transform:translate(0,0)}35%{transform:translate(-60px,40px)}70%{transform:translate(40px,-50px)}}
+            @keyframes orb3{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,55px)}}
+          `}</style>
+          <div style={{animation:"orb1 14s ease-in-out infinite"}} className="absolute top-[-8%] left-[-4%] w-[480px] h-[480px] rounded-full bg-violet-600/12 blur-[90px]" />
+          <div style={{animation:"orb2 18s ease-in-out infinite"}} className="absolute bottom-[-8%] right-[-4%] w-[420px] h-[420px] rounded-full bg-indigo-500/10 blur-[80px]" />
+          <div style={{animation:"orb3 11s ease-in-out infinite"}} className="absolute top-[35%] right-[20%] w-[260px] h-[260px] rounded-full bg-cyan-500/6 blur-[60px]" />
+        </div>
+      )}
+
       {/* ── Auth popup (not logged in) ── */}
       {chatOpen && !profile && (
         <ChatGateway
