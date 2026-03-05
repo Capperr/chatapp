@@ -73,6 +73,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const myShape = getShape(currentProfile.id);
   const myColor = currentProfile.avatar_color ?? "#8b5cf6";
 
+  // `users` holds OTHER users' positions (from broadcast + presence)
   const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
   const [bubbles, setBubbles] = useState<Map<string, SpeechBubble>>(new Map());
   const [myPos, setMyPos] = useState({ gx: Math.floor(COLS / 2), gy: Math.floor(ROWS / 2) });
@@ -81,15 +82,20 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [profileView, setProfileView] = useState<Profile | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
 
-  const trackPresence = useCallback((gx: number, gy: number) => {
-    channelRef.current?.track({
-      user_id: currentProfile.id,
-      display_name: currentProfile.display_name,
-      color: myColor,
-      shape: myShape,
-      gx,
-      gy,
-    } satisfies PresenceUser);
+  // Broadcast own position (fast, ~50ms latency)
+  const broadcastMove = useCallback((gx: number, gy: number) => {
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "move",
+      payload: {
+        user_id: currentProfile.id,
+        display_name: currentProfile.display_name,
+        color: myColor,
+        shape: myShape,
+        gx,
+        gy,
+      } satisfies PresenceUser,
+    });
   }, [currentProfile.id, currentProfile.display_name, myColor, myShape]);
 
   useEffect(() => {
@@ -98,15 +104,47 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     });
     channelRef.current = ch;
 
+    const myData: PresenceUser = {
+      user_id: currentProfile.id,
+      display_name: currentProfile.display_name,
+      color: myColor,
+      shape: myShape,
+      gx: myPos.gx,
+      gy: myPos.gy,
+    };
+
     ch
+      // Presence: detect who is online (join/leave), seed initial positions
       .on("presence", { event: "sync" }, () => {
         const state = ch.presenceState<PresenceUser>();
-        const next = new Map<string, PresenceUser>();
-        for (const [, arr] of Object.entries(state)) {
-          const p = arr[0] as PresenceUser;
-          if (p?.user_id) next.set(p.user_id, p);
-        }
-        setUsers(next);
+        setUsers((prev) => {
+          const next = new Map(prev);
+          // Add/update users found in presence (they might not have broadcast yet)
+          for (const [, arr] of Object.entries(state)) {
+            const p = arr[0] as PresenceUser;
+            if (p?.user_id && p.user_id !== currentProfile.id) {
+              if (!next.has(p.user_id)) next.set(p.user_id, p);
+            }
+          }
+          // Remove users no longer in presence
+          const activeIds = new Set(
+            Object.values(state).map((arr) => (arr[0] as PresenceUser)?.user_id).filter(Boolean)
+          );
+          for (const uid of Array.from(next.keys())) {
+            if (!activeIds.has(uid)) next.delete(uid);
+          }
+          return next;
+        });
+      })
+      // Broadcast: instant position updates
+      .on("broadcast", { event: "move" }, ({ payload }) => {
+        const p = payload as PresenceUser;
+        if (!p?.user_id || p.user_id === currentProfile.id) return;
+        setUsers((prev) => {
+          const next = new Map(prev);
+          next.set(p.user_id, p);
+          return next;
+        });
       })
       .on(
         "postgres_changes",
@@ -129,9 +167,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           }, 5000);
         }
       )
-      .subscribe();
-
-    trackPresence(myPos.gx, myPos.gy);
+      .subscribe(() => {
+        // Once subscribed, track presence (so others know we joined) and broadcast initial pos
+        ch.track(myData);
+        broadcastMove(myData.gx, myData.gy);
+      });
 
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -151,7 +191,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     );
     if (blocked) return;
     setMyPos({ gx, gy });
-    trackPresence(gx, gy);
+    broadcastMove(gx, gy);
   };
 
   const handleRightClick = (e: React.MouseEvent, user: PresenceUser | null) => {
