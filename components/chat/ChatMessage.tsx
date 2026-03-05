@@ -71,7 +71,7 @@ export function ChatMessage({
   const [editContent, setEditContent] = useState(message.content);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
-  const canEdit = isOwn && !message.is_deleted;
+  const canEdit = (isOwn || isAdmin) && !message.is_deleted;
   const canDelete = (isOwn || isAdmin) && !message.is_deleted;
   const mentionsMe =
     !isOwn &&
@@ -130,8 +130,8 @@ export function ChatMessage({
               {profile.display_name}
             </span>
             {profile.role === "admin" && (
-              <span className="text-[9px] font-bold uppercase tracking-wide text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-500/10 px-1.5 py-0.5 rounded-full">
-                Admin
+              <span className="text-[9px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-1.5 py-0.5 rounded-full border border-violet-200 dark:border-violet-500/20">
+                🛡 MOD
               </span>
             )}
             <span className="text-[10px] text-slate-400">@{profile.username}</span>

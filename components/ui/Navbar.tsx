@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { MessageCircle, User, LogOut, Zap, ShieldCheck, Calculator } from "lucide-react";
+import { MessageCircle, User, LogOut, Zap, ShieldCheck, Calculator, LayoutDashboard } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { Avatar } from "./Avatar";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ interface NavbarProps {
 }
 
 const navItems = [
+  { href: "/dashboard", icon: LayoutDashboard, label: "Overblik" },
   { href: "/chat", icon: MessageCircle, label: "Chat" },
   { href: "/accounting", icon: Calculator, label: "Afregning" },
   { href: "/profile", icon: User, label: "Profil" },
@@ -50,11 +51,11 @@ export function Navbar({ profile }: NavbarProps) {
             <Link
               key={href}
               href={href}
-              className={cn("nav-link", pathname === href && "active")}
+              className={cn("nav-link", pathname.startsWith(href) && "active")}
             >
               <Icon className="w-5 h-5" />
               {label}
-              {pathname === href && (
+              {pathname.startsWith(href) && (
                 <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-500" />
               )}
             </Link>
@@ -113,8 +114,8 @@ export function Navbar({ profile }: NavbarProps) {
               key={href}
               href={href}
               className={cn(
-                "flex flex-col items-center gap-1 px-6 py-2 rounded-xl transition-all duration-200",
-                pathname === href
+                "flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all duration-200",
+                pathname.startsWith(href)
                   ? "text-primary-600 dark:text-primary-400"
                   : "text-slate-500 dark:text-slate-400"
               )}
@@ -122,7 +123,7 @@ export function Navbar({ profile }: NavbarProps) {
               <Icon
                 className={cn(
                   "w-6 h-6 transition-transform duration-200",
-                  pathname === href && "scale-110"
+                  pathname.startsWith(href) && "scale-110"
                 )}
               />
               <span className="text-xs font-medium">{label}</span>

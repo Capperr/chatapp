@@ -21,6 +21,8 @@ import {
   Trash2,
   Settings2,
   Calculator,
+  Share2,
+  CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +47,7 @@ export function AccountingClient({ userId, displayName }: AccountingClientProps)
   const [editingShift, setEditingShift] = useState<AccountingShift | null>(null);
   const [loading, setLoading] = useState(true);
   const [showTaxPanel, setShowTaxPanel] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
 
   const currentPeriod = getCurrentPeriod();
   const isAtCurrentPeriod =
@@ -105,6 +108,35 @@ export function AccountingClient({ userId, displayName }: AccountingClientProps)
 
   const handlePrint = () => window.print();
 
+  const handleShareToChat = async () => {
+    const supabase = createClient();
+    const { data: room } = await supabase
+      .from("chat_rooms")
+      .select("id")
+      .eq("is_default", true)
+      .single();
+    if (!room) return;
+
+    const provLine =
+      taxSettings.loenstype === "provisions"
+        ? `\nProvision (${taxSettings.provision_sats}%): ${formatKr(taxResult.bruttoIndkomst)}`
+        : "";
+
+    const msg =
+      `📊 Afregning — ${period.label}\n` +
+      `Total indkørt: ${formatKr(totals.total_indkoert)}${provLine}\n` +
+      `Est. nettoudbetaling: ${formatKr(taxResult.netUdbetaling)}\n` +
+      `(${shifts.length} vagter)`;
+
+    await supabase.from("messages").insert({
+      content: msg,
+      user_id: userId,
+      room_id: room.id,
+    });
+    setShareSuccess(true);
+    setTimeout(() => setShareSuccess(false), 3000);
+  };
+
   const totals = shifts.reduce(
     (acc, s) => ({
       konto: acc.konto + s.konto,
@@ -156,12 +188,32 @@ export function AccountingClient({ userId, displayName }: AccountingClientProps)
               <Settings2 className="w-4 h-4" />
               <span className="hidden sm:inline">Skatteindstillinger</span>
             </button>
+            {shifts.length > 0 && (
+              <button
+                onClick={handleShareToChat}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all",
+                  shareSuccess
+                    ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                    : "bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/[0.1]"
+                )}
+              >
+                {shareSuccess ? (
+                  <CheckCircle2 className="w-4 h-4" />
+                ) : (
+                  <Share2 className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">
+                  {shareSuccess ? "Delt!" : "Del med chat"}
+                </span>
+              </button>
+            )}
             <button
               onClick={handlePrint}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/[0.1] transition-all"
             >
               <Printer className="w-4 h-4" />
-              <span className="hidden sm:inline">Udskriv / PDF</span>
+              <span className="hidden sm:inline">PDF</span>
             </button>
           </div>
         </div>
@@ -239,7 +291,51 @@ export function AccountingClient({ userId, displayName }: AccountingClientProps)
                 <p className="text-sm mt-1">Klik på &quot;Tilføj vagt&quot; for at komme i gang</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              {/* Mobile card view */}
+              <div className="md:hidden divide-y divide-black/[0.04] dark:divide-white/[0.04]">
+                {shifts.map((shift) => (
+                  <div key={shift.id} className="p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                          {fmtDate(shift.shift_date)}
+                        </span>
+                        {shift.vagt_nummer && (
+                          <span className="ml-2 text-xs text-slate-400 font-mono">#{shift.vagt_nummer}</span>
+                        )}
+                      </div>
+                      <div className="flex gap-1">
+                        <button onClick={() => { setEditingShift(shift); setShowModal(true); }} className="p-1.5 rounded-lg text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleDelete(shift.id)} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                      {shift.konto > 0 && <span>Konto: {formatKr(shift.konto)}</span>}
+                      {shift.kreditkort > 0 && <span>Kredit: {formatKr(shift.kreditkort)}</span>}
+                      {shift.kontant > 0 && <span>Kontant: {formatKr(shift.kontant)}</span>}
+                      {shift.drikkepenge > 0 && <span>Drikkepenge: {formatKr(shift.drikkepenge)}</span>}
+                      {shift.diverse > 0 && <span>Diverse: {formatKr(shift.diverse)}</span>}
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-black/[0.04] dark:border-white/[0.04]">
+                      <span className="text-xs text-slate-400">Total indkørt</span>
+                      <span className="text-base font-bold text-primary-600 dark:text-primary-400">{formatKr(shift.total_indkoert)}</span>
+                    </div>
+                  </div>
+                ))}
+                {/* Mobile totals */}
+                <div className="p-4 bg-slate-50 dark:bg-white/[0.03] flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Total ({shifts.length} vagter)</span>
+                  <span className="text-lg font-bold text-primary-600 dark:text-primary-400">{formatKr(totals.total_indkoert)}</span>
+                </div>
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-white/[0.02] border-b border-black/[0.06] dark:border-white/[0.06]">
@@ -336,6 +432,7 @@ export function AccountingClient({ userId, displayName }: AccountingClientProps)
                   )}
                 </table>
               </div>
+              </>
             )}
           </div>
 

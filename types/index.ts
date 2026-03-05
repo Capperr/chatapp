@@ -15,6 +15,7 @@ export interface Message {
   id: string;
   user_id: string;
   content: string;
+  room_id: string | null;
   edited_at: string | null;
   is_deleted: boolean;
   created_at: string;
@@ -22,6 +23,46 @@ export interface Message {
 }
 
 export interface MessageWithProfile extends Message {
+  profiles: Profile;
+}
+
+export interface ChatRoom {
+  id: string;
+  name: string;
+  description: string | null;
+  created_by: string | null;
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  type: "dm" | "group";
+  name: string | null;
+  created_by: string | null;
+  created_at: string;
+  conversation_members?: ConversationMember[];
+}
+
+export interface ConversationMember {
+  conversation_id: string;
+  user_id: string;
+  joined_at: string;
+  profiles?: Profile;
+}
+
+export interface ConversationMessage {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  content: string;
+  is_deleted: boolean;
+  edited_at: string | null;
+  created_at: string;
+  profiles?: Profile;
+}
+
+export interface ConversationMessageWithProfile extends ConversationMessage {
   profiles: Profile;
 }
 

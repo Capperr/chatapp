@@ -33,11 +33,11 @@ export async function middleware(request: NextRequest) {
 
   // Redirect authenticated users away from auth pages
   if (user && (pathname === "/login" || pathname === "/register")) {
-    return NextResponse.redirect(new URL("/chat", request.url));
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   // Redirect unauthenticated users to login
-  const protectedRoutes = ["/chat", "/profile", "/accounting", "/admin"];
+  const protectedRoutes = ["/dashboard", "/chat", "/profile", "/accounting", "/admin"];
   if (!user && protectedRoutes.includes(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
@@ -46,5 +46,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/register", "/chat", "/profile", "/accounting", "/admin"],
+  matcher: ["/", "/login", "/register", "/dashboard", "/chat", "/profile", "/accounting", "/admin"],
 };
