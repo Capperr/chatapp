@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Send, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package } from "lucide-react";
+import { X, Send, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus } from "lucide-react";
 import type { Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -18,17 +18,84 @@ const OFFSET_Y = TH / 2 + 80;
 const SVG_W = (Math.max(COLS, ROWS) + 1) * TW;
 const SVG_H = (COLS + ROWS) * (TH / 2) + OFFSET_Y + TH * 2;
 
+// ─── Room themes ───────────────────────────────────────────────────────────────
+// Maps room name keywords → tile colors
+function getRoomTheme(roomName: string): { even: string; odd: string; highlight: string } {
+  const n = roomName.toLowerCase();
+  if (n.includes("køkken") || n.includes("kitchen"))
+    return { even: "#1a2010", odd: "#161d0e", highlight: "#2e3d10" };
+  if (n.includes("stue") || n.includes("living"))
+    return { even: "#12181f", odd: "#0f1419", highlight: "#1a2d3a" };
+  if (n.includes("soveværelse") || n.includes("bedroom") || n.includes("sove"))
+    return { even: "#1a1020", odd: "#15091a", highlight: "#2e1045" };
+  if (n.includes("bad") || n.includes("bathroom") || n.includes("toilet"))
+    return { even: "#0e1e22", odd: "#0b181c", highlight: "#0e2e38" };
+  if (n.includes("kontor") || n.includes("office"))
+    return { even: "#1a1510", odd: "#14100c", highlight: "#2e2010" };
+  // default dark blue
+  return { even: "#0f1a2e", odd: "#0c1525", highlight: "#231850" };
+}
+
 // ─── Person Avatar ─────────────────────────────────────────────────────────────
-function PersonAvatar({ color, glow }: { color: string; glow?: boolean }) {
+function PersonAvatar({ color, glow, mood = "happy" }: { color: string; glow?: boolean; mood?: string }) {
   const skin = "#f5c5a3";
+
+  const face = (() => {
+    switch (mood) {
+      case "sad":
+        return (
+          <g>
+            <circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" />
+            <circle cx="3" cy="-13" r="1.3" fill="#2d1b0e" />
+            {/* single teardrop */}
+            <ellipse cx="-2.5" cy="-10" rx="0.7" ry="1.1" fill="#93c5fd" opacity="0.85" />
+            {/* frown */}
+            <path d="M -2.5,-7.5 Q 0,-9.5 2.5,-7.5" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" />
+          </g>
+        );
+      case "angry":
+        return (
+          <g>
+            {/* V-shaped angry brows */}
+            <line x1="-5.5" y1="-17" x2="-1" y2="-14.5" stroke="#2d1b0e" strokeWidth="1.3" strokeLinecap="round" />
+            <line x1="5.5" y1="-17" x2="1" y2="-14.5" stroke="#2d1b0e" strokeWidth="1.3" strokeLinecap="round" />
+            <circle cx="-3" cy="-12.5" r="1.3" fill="#2d1b0e" />
+            <circle cx="3" cy="-12.5" r="1.3" fill="#2d1b0e" />
+            {/* grumpy mouth */}
+            <path d="M -2.5,-8 Q 0,-6.5 2.5,-8" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" />
+          </g>
+        );
+      case "tired":
+        return (
+          <g>
+            <circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" />
+            <circle cx="3" cy="-13" r="1.3" fill="#2d1b0e" />
+            {/* droopy eyelids */}
+            <path d="M -4.8,-13 Q -3,-15 -1.2,-13" fill={skin} stroke="none" />
+            <path d="M 1.2,-13 Q 3,-15 4.8,-13" fill={skin} stroke="none" />
+            {/* zzz */}
+            <text x="6" y="-16" fontSize="4.5" fill="#94a3b8" fontFamily="system-ui">zzz</text>
+            {/* flat mouth */}
+            <path d="M -2,-8.5 L 2,-8.5" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" />
+          </g>
+        );
+      default: // happy
+        return (
+          <g>
+            <circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" />
+            <circle cx="3" cy="-13" r="1.3" fill="#2d1b0e" />
+            <path d="M -2.5,-9.5 Q 0,-7.5 2.5,-9.5" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" />
+          </g>
+        );
+    }
+  })();
+
   return (
     <g>
       {glow && <circle cx="0" cy="0" r="22" fill="none" stroke={color} strokeWidth="1.5" opacity={0.3} strokeDasharray="5 3" />}
       <ellipse cx="0" cy="-19" rx="7.5" ry="5" fill={color} stroke="white" strokeWidth="0.8" />
       <circle cx="0" cy="-12" r="8" fill={skin} stroke="white" strokeWidth="0.9" />
-      <circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" />
-      <circle cx="3" cy="-13" r="1.3" fill="#2d1b0e" />
-      <path d="M -2.5,-9.5 Q 0,-7.5 2.5,-9.5" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" />
+      {face}
       <rect x="-8" y="-4" width="16" height="13" rx="3" fill={color} stroke="white" strokeWidth="0.8" />
       <rect x="-13" y="-4" width="5" height="10" rx="2.5" fill={color} stroke="white" strokeWidth="0.7" />
       <rect x="8" y="-4" width="5" height="10" rx="2.5" fill={color} stroke="white" strokeWidth="0.7" />
@@ -41,6 +108,14 @@ function PersonAvatar({ color, glow }: { color: string; glow?: boolean }) {
     </g>
   );
 }
+
+// ─── Mood config ───────────────────────────────────────────────────────────────
+const MOODS = [
+  { id: "happy",  label: "Glad",  emoji: "😊" },
+  { id: "sad",    label: "Trist", emoji: "😢" },
+  { id: "angry",  label: "Sur",   emoji: "😠" },
+  { id: "tired",  label: "Træt",  emoji: "😴" },
+] as const;
 
 // ─── Item SVGs ─────────────────────────────────────────────────────────────────
 function FlowerSVG() {
@@ -56,7 +131,6 @@ function FlowerSVG() {
     </g>
   );
 }
-
 function TVSVG() {
   return (
     <g>
@@ -68,7 +142,6 @@ function TVSVG() {
     </g>
   );
 }
-
 function DeskSVG() {
   return (
     <g>
@@ -79,7 +152,6 @@ function DeskSVG() {
     </g>
   );
 }
-
 function MailboxSVG() {
   return (
     <g>
@@ -92,7 +164,6 @@ function MailboxSVG() {
     </g>
   );
 }
-
 function CoffeeSVG() {
   return (
     <g>
@@ -105,7 +176,6 @@ function CoffeeSVG() {
     </g>
   );
 }
-
 function SofaSVG() {
   return (
     <g>
@@ -119,12 +189,12 @@ function SofaSVG() {
 }
 
 const ITEM_TYPES = [
-  { type: "flower",  label: "Blomst",      color: "#fb7185" },
-  { type: "tv",      label: "TV",          color: "#1d4ed8" },
-  { type: "desk",    label: "Skrivebord",  color: "#92400e" },
-  { type: "mailbox", label: "Postkasse",   color: "#dc2626" },
-  { type: "coffee",  label: "Kaffe",       color: "#f97316" },
-  { type: "sofa",    label: "Sofa",        color: "#4f46e5" },
+  { type: "flower",  label: "Blomst",     color: "#fb7185" },
+  { type: "tv",      label: "TV",         color: "#1d4ed8" },
+  { type: "desk",    label: "Skrivebord", color: "#92400e" },
+  { type: "mailbox", label: "Postkasse",  color: "#dc2626" },
+  { type: "coffee",  label: "Kaffe",      color: "#f97316" },
+  { type: "sofa",    label: "Sofa",       color: "#4f46e5" },
 ];
 
 function ItemSVG({ type }: { type: string }) {
@@ -146,7 +216,6 @@ function isoCenter(gx: number, gy: number) {
     y: (gx + gy) * (TH / 2) + OFFSET_Y,
   };
 }
-
 function tilePts(cx: number, cy: number): string {
   return `${cx},${cy - TH / 2} ${cx + TW / 2},${cy} ${cx},${cy + TH / 2} ${cx - TW / 2},${cy}`;
 }
@@ -158,10 +227,9 @@ interface PresenceUser {
   color: string;
   gx: number;
   gy: number;
+  mood?: string;
 }
-
 interface SpeechBubble { text: string; ts: number; }
-
 interface CtxMenu {
   clientX: number;
   clientY: number;
@@ -169,7 +237,6 @@ interface CtxMenu {
   user?: PresenceUser;
   item?: RoomItem;
 }
-
 interface LogMessage {
   id: string;
   content: string;
@@ -177,24 +244,22 @@ interface LogMessage {
   created_at: string;
   profiles: { display_name: string; avatar_color: string | null } | { display_name: string; avatar_color: string | null }[] | null;
 }
-
 interface RoomItem {
   id: string;
   room_id: string;
   name: string;
   item_type: string;
+  item_scale: number;
   gx: number | null;
   gy: number | null;
   owner_id: string | null;
 }
-
 interface VirtualRoomProps {
   roomId: string;
   roomName: string;
   currentProfile: Profile;
   onClose: () => void;
 }
-
 type RightPanel = "chatlog" | "rooms" | "admin" | "inventory";
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -202,12 +267,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const supabase = createClient();
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
-  // Random starting position to reduce spawn collisions
-  const myPosRef = useRef({
-    gx: Math.floor(Math.random() * COLS),
-    gy: Math.floor(Math.random() * ROWS),
-  });
+  const myPosRef = useRef({ gx: Math.floor(Math.random() * COLS), gy: Math.floor(Math.random() * ROWS) });
   const lastActivityRef = useRef(Date.now());
+  const myMoodRef = useRef("happy");
 
   const myColor = currentProfile.avatar_color ?? "#8b5cf6";
   const isAdmin = currentProfile.role === "admin";
@@ -217,6 +279,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
   const [bubbles, setBubbles] = useState<Map<string, SpeechBubble>>(new Map());
   const [myPos, setMyPos] = useState(myPosRef.current);
+  const [myMood, setMyMood] = useState("happy");
   const [input, setInput] = useState("");
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [profileView, setProfileView] = useState<Profile | null>(null);
@@ -236,9 +299,20 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     lastActivityRef.current = Date.now();
   }, []);
 
-  // Fetch rooms list
+  const changeMood = (mood: string) => {
+    myMoodRef.current = mood;
+    setMyMood(mood);
+    // Broadcast new mood immediately
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "move",
+      payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood } satisfies PresenceUser,
+    });
+  };
+
+  // Fetch rooms list (correct table name)
   useEffect(() => {
-    supabase.from("rooms").select("id, name").order("name").then(({ data }) => {
+    supabase.from("chat_rooms").select("id, name").order("name").then(({ data }) => {
       if (data) setRooms(data as { id: string; name: string }[]);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -249,20 +323,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("virtual_room_items").select("*").eq("room_id", activeRoomId).then(({ data }) => {
       if (data) setItems(data as RoomItem[]);
     });
-
     const itemCh = supabase
       .channel(`items-${activeRoomId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "virtual_room_items", filter: `room_id=eq.${activeRoomId}` }, (payload) => {
-        if (payload.eventType === "INSERT") {
-          setItems((prev) => [...prev, payload.new as RoomItem]);
-        } else if (payload.eventType === "UPDATE") {
-          setItems((prev) => prev.map((i) => i.id === payload.new.id ? payload.new as RoomItem : i));
-        } else if (payload.eventType === "DELETE") {
-          setItems((prev) => prev.filter((i) => i.id !== (payload.old as RoomItem).id));
-        }
+        if (payload.eventType === "INSERT") setItems((prev) => [...prev, payload.new as RoomItem]);
+        else if (payload.eventType === "UPDATE") setItems((prev) => prev.map((i) => i.id === payload.new.id ? payload.new as RoomItem : i));
+        else if (payload.eventType === "DELETE") setItems((prev) => prev.filter((i) => i.id !== (payload.old as RoomItem).id));
       })
       .subscribe();
-
     return () => { supabase.removeChannel(itemCh); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId]);
@@ -285,13 +353,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       .eq("is_deleted", false)
       .order("created_at", { ascending: false })
       .limit(50)
-      .then(({ data }) => {
-        if (data) setLogMessages((data as LogMessage[]).reverse());
-      });
+      .then(({ data }) => { if (data) setLogMessages((data as LogMessage[]).reverse()); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId]);
 
-  // Auto-scroll chat log
   useEffect(() => {
     if (chatLogRef.current) chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
   }, [logMessages]);
@@ -300,7 +365,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     channelRef.current?.send({
       type: "broadcast",
       event: "move",
-      payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy } satisfies PresenceUser,
+      payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current } satisfies PresenceUser,
     });
   }, [currentProfile.id, currentProfile.display_name, myColor]);
 
@@ -308,20 +373,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   useEffect(() => {
     setUsers(new Map());
     setBubbles(new Map());
-
-    const ch = supabase.channel(`virtual-${activeRoomId}`, {
-      config: { presence: { key: currentProfile.id } },
-    });
+    const ch = supabase.channel(`virtual-${activeRoomId}`, { config: { presence: { key: currentProfile.id } } });
     channelRef.current = ch;
-
     const startPos = myPosRef.current;
-    const myData: PresenceUser = {
-      user_id: currentProfile.id,
-      display_name: currentProfile.display_name,
-      color: myColor,
-      gx: startPos.gx,
-      gy: startPos.gy,
-    };
+    const myData: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: startPos.gx, gy: startPos.gy, mood: myMoodRef.current };
 
     ch
       .on("presence", { event: "sync" }, () => {
@@ -338,7 +393,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           for (const uid of Array.from(next.keys())) { if (!activeIds.has(uid)) next.delete(uid); }
           return next;
         });
-        // Anti-collision: move to nearest empty tile if occupied
+        // Anti-collision
         const occupied = new Set(others.map((p) => `${p.gx},${p.gy}`));
         const cur = myPosRef.current;
         if (occupied.has(`${cur.gx},${cur.gy}`)) {
@@ -348,11 +403,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 if (Math.abs(dgx) !== dist && Math.abs(dgy) !== dist) continue;
                 const ngx = Math.max(0, Math.min(COLS - 1, cur.gx + dgx));
                 const ngy = Math.max(0, Math.min(ROWS - 1, cur.gy + dgy));
-                if (!occupied.has(`${ngx},${ngy}`)) {
-                  moveMyPos(ngx, ngy);
-                  broadcastMove(ngx, ngy);
-                  break outer;
-                }
+                if (!occupied.has(`${ngx},${ngy}`)) { moveMyPos(ngx, ngy); broadcastMove(ngx, ngy); break outer; }
               }
             }
           }
@@ -366,24 +417,16 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       .on("broadcast", { event: "kick" }, ({ payload }) => {
         if ((payload as { user_id: string }).user_id === currentProfile.id) onClose();
       })
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${activeRoomId}` },
-        async (payload) => {
-          const sid: string = payload.new.user_id;
-          const txt: string = payload.new.content;
-          setBubbles((prev) => { const m = new Map(prev); m.set(sid, { text: txt, ts: Date.now() }); return m; });
-          setTimeout(() => {
-            setBubbles((prev) => { const m = new Map(prev); const b = m.get(sid); if (b && Date.now() - b.ts >= 4900) m.delete(sid); return m; });
-          }, 5000);
-          const { data } = await supabase
-            .from("messages")
-            .select("id, content, user_id, created_at, profiles(display_name, avatar_color)")
-            .eq("id", payload.new.id)
-            .single();
-          if (data) setLogMessages((prev) => [...prev.slice(-49), data as LogMessage]);
-        }
-      )
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${activeRoomId}` }, async (payload) => {
+        const sid: string = payload.new.user_id;
+        const txt: string = payload.new.content;
+        setBubbles((prev) => { const m = new Map(prev); m.set(sid, { text: txt, ts: Date.now() }); return m; });
+        setTimeout(() => {
+          setBubbles((prev) => { const m = new Map(prev); const b = m.get(sid); if (b && Date.now() - b.ts >= 4900) m.delete(sid); return m; });
+        }, 5000);
+        const { data } = await supabase.from("messages").select("id, content, user_id, created_at, profiles(display_name, avatar_color)").eq("id", payload.new.id).single();
+        if (data) setLogMessages((prev) => [...prev.slice(-49), data as LogMessage]);
+      })
       .subscribe(() => { ch.track(myData); broadcastMove(myData.gx, myData.gy); });
 
     return () => { supabase.removeChannel(ch); };
@@ -406,18 +449,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const handleRightClick = (e: React.MouseEvent, user: PresenceUser | null, item: RoomItem | null) => {
     e.preventDefault();
     e.stopPropagation();
-    if (user?.user_id === currentProfile.id) {
-      setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "self" });
-      return;
-    }
-    if (user) {
-      setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "user", user });
-      return;
-    }
-    if (item) {
-      setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "tile_item", item });
-      return;
-    }
+    if (user?.user_id === currentProfile.id) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "self" }); return; }
+    if (user) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "user", user }); return; }
+    if (item) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "tile_item", item }); return; }
   };
 
   const openProfile = async (userId: string) => {
@@ -432,47 +466,24 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   };
 
   const sendMessage = async () => {
-    const t = input.trim();
-    if (!t) return;
-    setInput("");
-    lastActivityRef.current = Date.now();
+    const t = input.trim(); if (!t) return;
+    setInput(""); lastActivityRef.current = Date.now();
     await supabase.from("messages").insert({ content: t, user_id: currentProfile.id, room_id: activeRoomId });
   };
 
   const switchRoom = (id: string, name: string) => {
-    setActiveRoomId(id);
-    setActiveRoomName(name);
-    setRightPanel("chatlog");
-    lastActivityRef.current = Date.now();
+    setActiveRoomId(id); setActiveRoomName(name); setRightPanel("chatlog"); lastActivityRef.current = Date.now();
   };
 
   // Item actions
-  const pickupItem = async (item: RoomItem) => {
-    setCtxMenu(null);
-    await supabase.from("virtual_room_items").update({ owner_id: currentProfile.id, gx: null, gy: null }).eq("id", item.id);
-  };
-
-  const dropItem = async (item: RoomItem) => {
-    setCtxMenu(null);
-    await supabase.from("virtual_room_items").update({ owner_id: null, gx: myPosRef.current.gx, gy: myPosRef.current.gy }).eq("id", item.id);
-  };
-
-  const giveItemToUser = async (item: RoomItem, targetUserId: string) => {
-    setCtxMenu(null);
-    await supabase.from("virtual_room_items").update({ owner_id: targetUserId, gx: null, gy: null }).eq("id", item.id);
-  };
+  const pickupItem = async (item: RoomItem) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: currentProfile.id, gx: null, gy: null }).eq("id", item.id); };
+  const dropItem   = async (item: RoomItem) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: null, gx: myPosRef.current.gx, gy: myPosRef.current.gy }).eq("id", item.id); };
+  const giveItem   = async (item: RoomItem, uid: string) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: uid, gx: null, gy: null }).eq("id", item.id); };
+  const deleteItem = async (id: string) => { setCtxMenu(null); await supabase.from("virtual_room_items").delete().eq("id", id); };
 
   const createItem = async () => {
     if (!createForm?.name.trim()) return;
-    await supabase.from("virtual_room_items").insert({
-      room_id: activeRoomId,
-      name: createForm.name.trim(),
-      item_type: createForm.item_type,
-      owner_id: currentProfile.id,
-      gx: null,
-      gy: null,
-      created_by: currentProfile.id,
-    });
+    await supabase.from("virtual_room_items").insert({ room_id: activeRoomId, name: createForm.name.trim(), item_type: createForm.item_type, item_scale: 1, owner_id: currentProfile.id, gx: null, gy: null, created_by: currentProfile.id });
     setCreateForm(null);
   };
 
@@ -481,23 +492,22 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     setEditItem(null);
   };
 
-  const deleteItem = async (itemId: string) => {
-    setCtxMenu(null);
-    await supabase.from("virtual_room_items").delete().eq("id", itemId);
+  const updateItemScale = async (item: RoomItem, delta: number) => {
+    const next = Math.round(Math.min(3, Math.max(0.3, (item.item_scale ?? 1) + delta)) * 10) / 10;
+    await supabase.from("virtual_room_items").update({ item_scale: next }).eq("id", item.id);
   };
 
   // Derived data
   const usersByCell = useMemo(() => {
     const m = new Map<string, PresenceUser>();
     Array.from(users.values()).forEach((u) => { if (u.user_id !== currentProfile.id) m.set(`${u.gx},${u.gy}`, u); });
-    m.set(`${myPos.gx},${myPos.gy}`, { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPos.gx, gy: myPos.gy });
+    m.set(`${myPos.gx},${myPos.gy}`, { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPos.gx, gy: myPos.gy, mood: myMood });
     return m;
-  }, [users, myPos, currentProfile.id, currentProfile.display_name, myColor]);
+  }, [users, myPos, myMood, currentProfile.id, currentProfile.display_name, myColor]);
 
   const itemsByCell = useMemo(() => {
     const m = new Map<string, RoomItem>();
-    items.filter((i) => i.gx !== null && i.gy !== null && i.owner_id === null)
-      .forEach((i) => m.set(`${i.gx},${i.gy}`, i));
+    items.filter((i) => i.gx !== null && i.gy !== null && i.owner_id === null).forEach((i) => m.set(`${i.gx},${i.gy}`, i));
     return m;
   }, [items]);
 
@@ -510,36 +520,27 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   }, []);
 
   const totalUsers = users.has(currentProfile.id) ? users.size : users.size + 1;
+  const theme = useMemo(() => getRoomTheme(activeRoomName), [activeRoomName]);
 
   const windowStyle = fullscreen
     ? { width: "100vw", height: "100vh", borderRadius: "0" }
     : { width: "min(96vw, 1040px)", height: "min(88vh, 660px)" };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm"
-      onClick={() => setCtxMenu(null)}
-    >
-      <div
-        className="flex flex-col rounded-2xl shadow-2xl border border-white/[0.08] overflow-hidden bg-[#0a1220]"
-        style={windowStyle}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm" onClick={() => setCtxMenu(null)}>
+      <div className="flex flex-col rounded-2xl shadow-2xl border border-white/[0.08] overflow-hidden bg-[#0a1220]" style={windowStyle} onClick={(e) => e.stopPropagation()}>
+
         {/* Header */}
         <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 bg-[#07101c] border-b border-white/[0.06]">
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-slate-100">#{activeRoomName}</span>
-            <span className="text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium">
-              {totalUsers} online
-            </span>
+            <span className="text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium">{totalUsers} online</span>
           </div>
           <div className="flex items-center gap-0.5">
-            <button onClick={() => setFullscreen((f) => !f)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title={fullscreen ? "Minimér" : "Fuld skærm"}>
+            <button onClick={() => setFullscreen((f) => !f)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors">
               {fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
             </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors">
-              <X className="w-3.5 h-3.5" />
-            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"><X className="w-3.5 h-3.5" /></button>
           </div>
         </div>
 
@@ -547,13 +548,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         <div className="flex-1 flex overflow-hidden">
 
           {/* Isometric room */}
-          <div className="flex-1 flex items-center justify-center overflow-hidden bg-[#080e1a]">
+          <div className="flex-1 flex items-center justify-center overflow-hidden" style={{ background: theme.even }}>
             <svg
               viewBox={`${SVG_W / 2 - SVG_W / (2 * zoom)} ${SVG_H / 2 - SVG_H / (2 * zoom)} ${SVG_W / zoom} ${SVG_H / zoom}`}
               preserveAspectRatio="xMidYMid meet"
               style={{ width: "100%", height: "100%" }}
             >
-              <rect width={SVG_W} height={SVG_H} fill="#080e1a" />
+              <rect width={SVG_W} height={SVG_H} fill={theme.even} />
 
               {sortedTiles.map(({ gx, gy }) => {
                 const { x, y } = isoCenter(gx, gy);
@@ -565,33 +566,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 const isHov = hovered === cellKey;
                 const isMyTile = myPos.gx === gx && myPos.gy === gy;
 
-                const tileFill =
-                  isMyTile ? "#231850" :
-                  isHov ? "#192e4a" :
-                  (gx + gy) % 2 === 0 ? "#0f1a2e" : "#0c1525";
-
+                const tileFill = isMyTile ? theme.highlight : isHov ? "#192e4a" : (gx + gy) % 2 === 0 ? theme.even : theme.odd;
                 const ax = x;
-                // Feet (at ay + AR_S) land at y (tile center) — fixes floating
-                const ay = y - AR_S;
+                const ay = y - AR_S; // feet at y (tile center) — no floating
 
                 return (
-                  <g
-                    key={cellKey}
-                    onClick={() => handleTileClick(gx, gy)}
-                    onContextMenu={(e) => handleRightClick(e, cellUser ?? null, cellItem ?? null)}
-                    onMouseEnter={() => setHovered(cellKey)}
-                    onMouseLeave={() => setHovered(null)}
-                    style={{ cursor: (cellUser && !isMe) ? "default" : "pointer" }}
-                  >
+                  <g key={cellKey} onClick={() => handleTileClick(gx, gy)} onContextMenu={(e) => handleRightClick(e, cellUser ?? null, cellItem ?? null)} onMouseEnter={() => setHovered(cellKey)} onMouseLeave={() => setHovered(null)} style={{ cursor: (cellUser && !isMe) ? "default" : "pointer" }}>
                     <polygon points={tilePts(x, y)} fill={tileFill} stroke={isMyTile ? myColor : "#16243a"} strokeWidth={isMyTile ? 1.5 : 0.7} />
-                    {isHov && !cellUser && (
-                      <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />
-                    )}
+                    {isHov && !cellUser && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
 
-                    {/* Item on tile (no user) */}
+                    {/* Item on tile */}
                     {cellItem && !cellUser && (
                       <g>
-                        <g transform={`translate(${x}, ${y - TH / 4}) scale(0.85)`}>
+                        <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (cellItem.item_scale ?? 1)})`}>
                           <ItemSVG type={cellItem.item_type} />
                         </g>
                         <text x={x} y={y + TH / 4 + 8} textAnchor="middle" fontSize={7} fontFamily="system-ui,sans-serif" fontWeight="600" stroke="rgba(0,0,0,0.9)" strokeWidth={2.5} fill="rgba(0,0,0,0.9)">{cellItem.name}</text>
@@ -604,15 +591,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       <g>
                         <ellipse cx={ax} cy={y} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
-                          <PersonAvatar color={cellUser.color} glow={isMe} />
+                          <PersonAvatar color={cellUser.color} glow={isMe} mood={cellUser.mood} />
                         </g>
-                        {/* Name label above the head */}
-                        <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">
-                          {isMe ? "Du" : cellUser.display_name}
-                        </text>
-                        <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">
-                          {isMe ? "Du" : cellUser.display_name}
-                        </text>
+                        {/* Name label above head */}
+                        <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">{isMe ? "Du" : cellUser.display_name}</text>
+                        <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{isMe ? "Du" : cellUser.display_name}</text>
+                        {/* Speech bubble */}
                         {bubble && (() => {
                           const chPerLine = 16;
                           const words = bubble.text.split(" ");
@@ -667,7 +651,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </>
             )}
 
-            {/* My inventory */}
+            {/* Inventory */}
             {rightPanel === "inventory" && (
               <>
                 <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
@@ -697,38 +681,21 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </>
             )}
 
-            {/* Admin item management */}
+            {/* Admin panel */}
             {rightPanel === "admin" && isAdmin && (
               <>
                 <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
                   <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Genstande ({items.length})</span>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => setCreateForm({ name: "", item_type: "flower" })} className="p-1 rounded text-slate-500 hover:text-emerald-400 transition-colors" title="Ny genstand">
-                      <Plus className="w-3 h-3" />
-                    </button>
-                    <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300 transition-colors">
-                      <X className="w-3 h-3" />
-                    </button>
+                    <button onClick={() => setCreateForm({ name: "", item_type: "flower" })} className="p-1 rounded text-slate-500 hover:text-emerald-400 transition-colors"><Plus className="w-3 h-3" /></button>
+                    <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-3 h-3" /></button>
                   </div>
                 </div>
-
-                {/* Create form */}
                 {createForm && (
                   <div className="px-3 py-2 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0">
                     <p className="text-[10px] font-semibold text-slate-500 mb-1.5">Ny genstand</p>
-                    <input
-                      autoFocus
-                      value={createForm.name}
-                      onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-                      onKeyDown={(e) => { if (e.key === "Enter") createItem(); if (e.key === "Escape") setCreateForm(null); }}
-                      placeholder="Navn..."
-                      className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50"
-                    />
-                    <select
-                      value={createForm.item_type}
-                      onChange={(e) => setCreateForm({ ...createForm, item_type: e.target.value })}
-                      className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none mb-1.5"
-                    >
+                    <input autoFocus value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") createItem(); if (e.key === "Escape") setCreateForm(null); }} placeholder="Navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50" />
+                    <select value={createForm.item_type} onChange={(e) => setCreateForm({ ...createForm, item_type: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none mb-1.5">
                       {ITEM_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
                     </select>
                     <div className="flex gap-1">
@@ -737,35 +704,36 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     </div>
                   </div>
                 )}
-
                 <div className="flex-1 overflow-y-auto py-1">
                   {items.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen genstande</p>}
                   {items.map((item) => {
                     const meta = ITEM_TYPES.find((t) => t.type === item.item_type);
                     const loc = item.owner_id ? "Inventar" : item.gx !== null ? `(${item.gx},${item.gy})` : "?";
+                    const scale = item.item_scale ?? 1;
                     return (
-                      <div key={item.id} className="px-2 py-1.5 flex items-center gap-1.5 hover:bg-white/[0.03] group">
-                        <div className="w-6 h-6 rounded bg-white/[0.05] flex items-center justify-center flex-shrink-0">
-                          <svg width="18" height="18" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
-                        </div>
-                        {editItem?.id === item.id ? (
-                          <input
-                            autoFocus
-                            value={editItem.name}
-                            onChange={(e) => setEditItem({ ...editItem, name: e.target.value })}
-                            onBlur={() => saveItemName(item, editItem.name)}
-                            onKeyDown={(e) => { if (e.key === "Enter") saveItemName(item, editItem.name); if (e.key === "Escape") setEditItem(null); }}
-                            className="flex-1 bg-white/[0.06] border border-violet-500/50 rounded px-1 py-0.5 text-[11px] text-slate-100 outline-none"
-                          />
-                        ) : (
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11px] text-slate-300 truncate">{item.name}</p>
-                            <p className="text-[9px] text-slate-600">{meta?.label} · {loc}</p>
+                      <div key={item.id} className="px-2 py-1.5 hover:bg-white/[0.03] group">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-6 h-6 rounded bg-white/[0.05] flex items-center justify-center flex-shrink-0">
+                            <svg width="18" height="18" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
                           </div>
-                        )}
-                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => setEditItem(item)} className="p-0.5 text-slate-500 hover:text-blue-400 transition-colors"><Pencil className="w-2.5 h-2.5" /></button>
-                          <button onClick={() => deleteItem(item.id)} className="p-0.5 text-slate-500 hover:text-rose-400 transition-colors"><Trash2 className="w-2.5 h-2.5" /></button>
+                          {editItem?.id === item.id ? (
+                            <input autoFocus value={editItem.name} onChange={(e) => setEditItem({ ...editItem, name: e.target.value })} onBlur={() => saveItemName(item, editItem.name)} onKeyDown={(e) => { if (e.key === "Enter") saveItemName(item, editItem.name); if (e.key === "Escape") setEditItem(null); }} className="flex-1 bg-white/[0.06] border border-violet-500/50 rounded px-1 py-0.5 text-[11px] text-slate-100 outline-none" />
+                          ) : (
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] text-slate-300 truncate">{item.name}</p>
+                              <p className="text-[9px] text-slate-600">{meta?.label} · {loc}</p>
+                            </div>
+                          )}
+                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => setEditItem(item)} className="p-0.5 text-slate-500 hover:text-blue-400 transition-colors"><Pencil className="w-2.5 h-2.5" /></button>
+                            <button onClick={() => deleteItem(item.id)} className="p-0.5 text-slate-500 hover:text-rose-400 transition-colors"><Trash2 className="w-2.5 h-2.5" /></button>
+                          </div>
+                        </div>
+                        {/* Scale controls */}
+                        <div className="flex items-center gap-1 mt-1 pl-7">
+                          <button onClick={() => updateItemScale(item, -0.2)} className="w-5 h-5 rounded bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-400 transition-colors"><Minus className="w-2.5 h-2.5" /></button>
+                          <span className="text-[9px] text-slate-500 w-8 text-center">{Math.round(scale * 100)}%</span>
+                          <button onClick={() => updateItemScale(item, 0.2)} className="w-5 h-5 rounded bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-400 transition-colors"><Plus className="w-2.5 h-2.5" /></button>
                         </div>
                       </div>
                     );
@@ -784,12 +752,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   {logMessages.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>}
                   {logMessages.map((msg) => {
                     const p = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
-                    const name = p?.display_name ?? "?";
-                    const color = p?.avatar_color ?? "#8b5cf6";
                     const isMe = msg.user_id === currentProfile.id;
                     return (
                       <div key={msg.id} className="text-[11px] leading-snug">
-                        <span className="font-semibold" style={{ color }}>{isMe ? "Du" : name}: </span>
+                        <span className="font-semibold" style={{ color: p?.avatar_color ?? "#8b5cf6" }}>{isMe ? "Du" : (p?.display_name ?? "?")}: </span>
                         <span className="text-slate-300 break-words">{msg.content}</span>
                       </div>
                     );
@@ -803,62 +769,22 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         {/* Bottom toolbar */}
         <div className="flex-shrink-0 border-t border-white/[0.06] bg-[#07101c]">
           <div className="flex items-center gap-2 px-3 pt-2 pb-1.5">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder="Skriv en besked til rummet..."
-              className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-all"
-            />
-            <button onClick={sendMessage} disabled={!input.trim()} className="p-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-white flex-shrink-0">
-              <Send className="w-4 h-4" />
-            </button>
+            <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Skriv en besked til rummet..." className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-all" />
+            <button onClick={sendMessage} disabled={!input.trim()} className="p-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-white flex-shrink-0"><Send className="w-4 h-4" /></button>
           </div>
           <div className="flex items-center gap-1 px-3 pb-1.5">
-            <button onClick={() => broadcastMove(myPos.gx, myPos.gy)} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Genopfrisk position">
-              <RefreshCw className="w-3 h-3" />
-            </button>
-            <button className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Brugere online">
-              <Users className="w-3 h-3" />
-            </button>
-            {/* Inventory button */}
-            <button
-              onClick={() => setRightPanel((p) => p === "inventory" ? "chatlog" : "inventory")}
-              className={`p-1.5 rounded-lg transition-colors relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`}
-              title="Min rygsæk"
-            >
+            <button onClick={() => broadcastMove(myPos.gx, myPos.gy)} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Genopfrisk"><RefreshCw className="w-3 h-3" /></button>
+            <button className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Brugere online"><Users className="w-3 h-3" /></button>
+            <button onClick={() => setRightPanel((p) => p === "inventory" ? "chatlog" : "inventory")} className={`p-1.5 rounded-lg transition-colors relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Min rygsæk">
               <Package className="w-3 h-3" />
-              {myInventory.length > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>
-              )}
+              {myInventory.length > 0 && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
             </button>
-            {/* Room switcher */}
-            <button
-              onClick={() => setRightPanel((p) => p === "rooms" ? "chatlog" : "rooms")}
-              className={`p-1.5 rounded-lg transition-colors ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`}
-              title="Skift rum"
-            >
-              <Hash className="w-3 h-3" />
-            </button>
-            {/* Admin panel (admin only) */}
-            {isAdmin && (
-              <button
-                onClick={() => setRightPanel((p) => p === "admin" ? "chatlog" : "admin")}
-                className={`p-1.5 rounded-lg transition-colors ${rightPanel === "admin" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`}
-                title="Admin: genstande"
-              >
-                <Wrench className="w-3 h-3" />
-              </button>
-            )}
+            <button onClick={() => setRightPanel((p) => p === "rooms" ? "chatlog" : "rooms")} className={`p-1.5 rounded-lg transition-colors ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Skift rum"><Hash className="w-3 h-3" /></button>
+            {isAdmin && <button onClick={() => setRightPanel((p) => p === "admin" ? "chatlog" : "admin")} className={`p-1.5 rounded-lg transition-colors ${rightPanel === "admin" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Admin: genstande"><Wrench className="w-3 h-3" /></button>}
             <div className="flex items-center gap-0.5 ml-1">
-              <button onClick={() => setZoom((z) => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Zoom ind">
-                <ZoomIn className="w-3 h-3" />
-              </button>
+              <button onClick={() => setZoom((z) => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Zoom ind"><ZoomIn className="w-3 h-3" /></button>
               <span className="text-[10px] text-slate-600 w-7 text-center">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom((z) => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Zoom ud">
-                <ZoomOut className="w-3 h-3" />
-              </button>
+              <button onClick={() => setZoom((z) => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Zoom ud"><ZoomOut className="w-3 h-3" /></button>
             </div>
             <span className="ml-1 text-[10px] text-slate-600 hidden sm:inline">Klik for at bevæge dig</span>
           </div>
@@ -867,24 +793,28 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
       {/* Context menu */}
       {ctxMenu && (
-        <div
-          className="fixed z-[60] bg-slate-800 border border-white/[0.1] rounded-xl shadow-2xl overflow-hidden min-w-[190px] max-w-[230px]"
-          style={{ left: ctxMenu.clientX, top: ctxMenu.clientY }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Self → inventory */}
+        <div className="fixed z-[60] bg-slate-800 border border-white/[0.1] rounded-xl shadow-2xl overflow-hidden min-w-[200px] max-w-[240px]" style={{ left: ctxMenu.clientX, top: ctxMenu.clientY }} onClick={(e) => e.stopPropagation()}>
+
+          {/* Self → mood picker + inventory */}
           {ctxMenu.kind === "self" && (
             <>
-              <div className="px-3 py-2.5 border-b border-white/[0.06]">
-                <span className="text-xs font-semibold text-slate-300">Din rygsæk ({myInventory.length})</span>
+              <div className="px-3 py-2 border-b border-white/[0.06]">
+                <p className="text-[10px] font-semibold text-slate-500 mb-2">Ansigtsudtryk</p>
+                <div className="flex gap-1">
+                  {MOODS.map((m) => (
+                    <button key={m.id} onClick={() => { changeMood(m.id); setCtxMenu(null); }}
+                      className={`flex-1 py-1.5 rounded text-base transition-all ${myMood === m.id ? "bg-violet-500/25 ring-1 ring-violet-500/50" : "bg-white/[0.04] hover:bg-white/[0.1]"}`}
+                      title={m.label}
+                    >{m.emoji}</button>
+                  ))}
+                </div>
               </div>
-              {myInventory.length === 0 && <p className="px-3 py-2.5 text-xs text-slate-500">Ingen genstande</p>}
+              <div className="px-3 py-2 border-b border-white/[0.06]">
+                <span className="text-xs font-semibold text-slate-300">Rygsæk ({myInventory.length})</span>
+              </div>
+              {myInventory.length === 0 && <p className="px-3 py-2 text-xs text-slate-500">Ingen genstande</p>}
               {myInventory.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => dropItem(item)}
-                  className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-white/[0.06] transition-colors flex items-center gap-2"
-                >
+                <button key={item.id} onClick={() => dropItem(item)} className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-white/[0.06] transition-colors flex items-center gap-2">
                   <svg width="16" height="16" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
                   <span className="flex-1 truncate">{item.name}</span>
                   <span className="text-[10px] text-slate-500 flex-shrink-0">Smid</span>
@@ -894,44 +824,48 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           )}
 
           {/* Other user */}
-          {ctxMenu.kind === "user" && ctxMenu.user && (
-            <>
-              <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full flex-shrink-0" style={{ backgroundColor: ctxMenu.user.color }} />
-                <span className="text-xs font-semibold text-slate-200 truncate">{ctxMenu.user.display_name}</span>
-              </div>
-              <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06] transition-colors" onClick={() => openProfile(ctxMenu.user!.user_id)}>
-                Se profil
-              </button>
-              {isAdmin && (
-                <>
-                  {myInventory.length > 0 && (
-                    <div className="border-t border-white/[0.06]">
-                      <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Giv genstand</p>
-                      {myInventory.map((item) => (
-                        <button
-                          key={item.id}
-                          onClick={() => giveItemToUser(item, ctxMenu.user!.user_id)}
-                          className="w-full text-left px-3 py-1.5 text-sm text-slate-300 hover:bg-white/[0.06] transition-colors flex items-center gap-2"
-                        >
-                          <svg width="14" height="14" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
-                          <span className="truncate">{item.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+          {ctxMenu.kind === "user" && ctxMenu.user && (() => {
+            const theirItems = items.filter((i) => i.owner_id === ctxMenu.user!.user_id);
+            return (
+              <>
+                <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full flex-shrink-0" style={{ backgroundColor: ctxMenu.user.color }} />
+                  <span className="text-xs font-semibold text-slate-200 truncate">{ctxMenu.user.display_name}</span>
+                </div>
+                <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06] transition-colors" onClick={() => openProfile(ctxMenu.user!.user_id)}>Se profil</button>
+                {/* Their inventory */}
+                {theirItems.length > 0 && (
                   <div className="border-t border-white/[0.06]">
-                    <button
-                      className="w-full text-left px-3 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
-                      onClick={() => kickUser(ctxMenu.user!)}
-                    >
-                      Kick bruger
-                    </button>
+                    <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Bærer ({theirItems.length})</p>
+                    {theirItems.map((item) => (
+                      <div key={item.id} className="px-3 py-1.5 flex items-center gap-2 text-sm text-slate-400">
+                        <svg width="14" height="14" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
+                        <span className="truncate">{item.name}</span>
+                      </div>
+                    ))}
                   </div>
-                </>
-              )}
-            </>
-          )}
+                )}
+                {isAdmin && (
+                  <>
+                    {myInventory.length > 0 && (
+                      <div className="border-t border-white/[0.06]">
+                        <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Giv genstand</p>
+                        {myInventory.map((item) => (
+                          <button key={item.id} onClick={() => giveItem(item, ctxMenu.user!.user_id)} className="w-full text-left px-3 py-1.5 text-sm text-slate-300 hover:bg-white/[0.06] transition-colors flex items-center gap-2">
+                            <svg width="14" height="14" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
+                            <span className="truncate">{item.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="border-t border-white/[0.06]">
+                      <button className="w-full text-left px-3 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors" onClick={() => kickUser(ctxMenu.user!)}>Kick bruger</button>
+                    </div>
+                  </>
+                )}
+              </>
+            );
+          })()}
 
           {/* Item on tile */}
           {ctxMenu.kind === "tile_item" && ctxMenu.item && (
@@ -940,22 +874,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <svg width="16" height="16" viewBox="-16 -16 32 32"><ItemSVG type={ctxMenu.item.item_type} /></svg>
                 <span className="text-xs font-semibold text-slate-200 truncate">{ctxMenu.item.name}</span>
               </div>
-              <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06] transition-colors" onClick={() => pickupItem(ctxMenu.item!)}>
-                Tag genstand
-              </button>
-              {isAdmin && (
-                <button className="w-full text-left px-3 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors" onClick={() => deleteItem(ctxMenu.item!.id)}>
-                  Slet genstand
-                </button>
-              )}
+              <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06] transition-colors" onClick={() => pickupItem(ctxMenu.item!)}>Tag genstand</button>
+              {isAdmin && <button className="w-full text-left px-3 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors" onClick={() => deleteItem(ctxMenu.item!.id)}>Slet genstand</button>}
             </>
           )}
         </div>
       )}
 
-      {profileView && (
-        <UserProfileModal profile={profileView} currentProfile={currentProfile} onClose={() => setProfileView(null)} />
-      )}
+      {profileView && <UserProfileModal profile={profileView} currentProfile={currentProfile} onClose={() => setProfileView(null)} />}
     </div>
   );
 }
