@@ -6,6 +6,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { formatDate, formatTime, cn } from "@/lib/utils";
 import { Menu, Pencil, Trash2, Check, X, Users, MessageCircle } from "lucide-react";
 import type { ConversationMessageWithProfile, Conversation, Profile } from "@/types";
+import { playMessageSound } from "@/lib/sounds";
 
 interface ConversationRoomProps {
   convId: string;
@@ -209,6 +210,7 @@ export function ConversationRoom({
               if (prev.some((m) => m.id === data.id)) return prev;
               return [...prev, data as ConversationMessageWithProfile];
             });
+            if (payload.new.user_id !== currentProfile.id) playMessageSound();
           }
         }
       )
