@@ -14,8 +14,9 @@ export default async function MainLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
+  // No user — pass through to the page (e.g. /chat shows its own ChatGateway)
   if (!user) {
-    redirect("/login");
+    return <>{children}</>;
   }
 
   const { data: profile } = await supabase

@@ -36,8 +36,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  // Redirect unauthenticated users to login
-  const protectedRoutes = ["/dashboard", "/chat", "/profile", "/accounting", "/admin", "/notifications"];
+  // Redirect unauthenticated users to login (chat handles its own auth via ChatGateway)
+  const protectedRoutes = ["/dashboard", "/profile", "/accounting", "/admin", "/notifications"];
   if (!user && protectedRoutes.includes(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
@@ -46,5 +46,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/register", "/dashboard", "/chat", "/profile", "/accounting", "/admin", "/notifications"],
+  matcher: ["/", "/login", "/register", "/dashboard", "/chat", "/profile", "/accounting", "/admin", "/notifications", "/chat/:path*"],
 };
