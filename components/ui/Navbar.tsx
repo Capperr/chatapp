@@ -17,7 +17,7 @@ interface NavbarProps {
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Overblik" },
   { href: "/chat", icon: MessageCircle, label: "Chat" },
-  { href: "/accounting", icon: Calculator, label: "Afregning" },
+  // { href: "/accounting", icon: Calculator, label: "Afregning" }, // hidden for now
   { href: "/profile", icon: User, label: "Profil" },
 ];
 

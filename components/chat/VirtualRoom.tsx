@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Send, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
+import { X, Send, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash } from "lucide-react";
 import type { Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -96,12 +96,16 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const supabase = createClient();
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
+  const myPosRef = useRef({ gx: Math.floor(COLS / 2), gy: Math.floor(ROWS / 2) });
+  const lastActivityRef = useRef(Date.now());
 
   const myColor = currentProfile.avatar_color ?? "#8b5cf6";
 
+  const [activeRoomId, setActiveRoomId] = useState(roomId);
+  const [activeRoomName, setActiveRoomName] = useState(roomName);
   const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
   const [bubbles, setBubbles] = useState<Map<string, SpeechBubble>>(new Map());
-  const [myPos, setMyPos] = useState({ gx: Math.floor(COLS / 2), gy: Math.floor(ROWS / 2) });
+  const [myPos, setMyPos] = useState(myPosRef.current);
   const [input, setInput] = useState("");
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [profileView, setProfileView] = useState<Profile | null>(null);
@@ -109,20 +113,47 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [logMessages, setLogMessages] = useState<LogMessage[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [showRoomPicker, setShowRoomPicker] = useState(false);
+  const [rooms, setRooms] = useState<{ id: string; name: string }[]>([]);
+
+  // Keep myPosRef in sync
+  const moveMyPos = useCallback((gx: number, gy: number) => {
+    myPosRef.current = { gx, gy };
+    setMyPos({ gx, gy });
+    lastActivityRef.current = Date.now();
+  }, []);
+
+  // Fetch rooms list for room picker
+  useEffect(() => {
+    supabase.from("rooms").select("id, name").order("name").then(({ data }) => {
+      if (data) setRooms(data as { id: string; name: string }[]);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-close after 30 min inactivity
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivityRef.current > 30 * 60 * 1000) onClose();
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [onClose]);
 
   // Fetch recent messages for chat log
   useEffect(() => {
+    setLogMessages([]);
     supabase
       .from("messages")
       .select("id, content, user_id, created_at, profiles(display_name, avatar_color)")
-      .eq("room_id", roomId)
+      .eq("room_id", activeRoomId)
       .eq("is_deleted", false)
       .order("created_at", { ascending: false })
       .limit(50)
       .then(({ data }) => {
         if (data) setLogMessages((data as LogMessage[]).reverse());
       });
-  }, [roomId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoomId]);
 
   // Auto-scroll chat log
   useEffect(() => {
@@ -146,37 +177,61 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   }, [currentProfile.id, currentProfile.display_name, myColor]);
 
   useEffect(() => {
-    const ch = supabase.channel(`virtual-${roomId}`, {
+    setUsers(new Map());
+    setBubbles(new Map());
+
+    const ch = supabase.channel(`virtual-${activeRoomId}`, {
       config: { presence: { key: currentProfile.id } },
     });
     channelRef.current = ch;
 
+    const startPos = myPosRef.current;
     const myData: PresenceUser = {
       user_id: currentProfile.id,
       display_name: currentProfile.display_name,
       color: myColor,
-      gx: myPos.gx,
-      gy: myPos.gy,
+      gx: startPos.gx,
+      gy: startPos.gy,
     };
 
     ch
       .on("presence", { event: "sync" }, () => {
         const state = ch.presenceState<PresenceUser>();
+        const others: PresenceUser[] = [];
+        for (const arr of Object.values(state)) {
+          const p = arr[0] as PresenceUser;
+          if (p?.user_id && p.user_id !== currentProfile.id) others.push(p);
+        }
         setUsers((prev) => {
           const next = new Map(prev);
-          for (const [, arr] of Object.entries(state)) {
-            const p = arr[0] as PresenceUser;
-            if (p?.user_id && p.user_id !== currentProfile.id && !next.has(p.user_id))
-              next.set(p.user_id, p);
+          for (const p of others) {
+            if (!next.has(p.user_id)) next.set(p.user_id, p);
           }
-          const activeIds = new Set(
-            Object.values(state).map((arr) => (arr[0] as PresenceUser)?.user_id).filter(Boolean)
-          );
+          const activeIds = new Set(others.map((p) => p.user_id));
           for (const uid of Array.from(next.keys())) {
             if (!activeIds.has(uid)) next.delete(uid);
           }
           return next;
         });
+        // Anti-collision: if our tile is taken, find nearest empty tile
+        const occupied = new Set(others.map((p) => `${p.gx},${p.gy}`));
+        const cur = myPosRef.current;
+        if (occupied.has(`${cur.gx},${cur.gy}`)) {
+          outer: for (let dist = 1; dist < Math.max(COLS, ROWS); dist++) {
+            for (let dgx = -dist; dgx <= dist; dgx++) {
+              for (let dgy = -dist; dgy <= dist; dgy++) {
+                if (Math.abs(dgx) !== dist && Math.abs(dgy) !== dist) continue;
+                const ngx = Math.max(0, Math.min(COLS - 1, cur.gx + dgx));
+                const ngy = Math.max(0, Math.min(ROWS - 1, cur.gy + dgy));
+                if (!occupied.has(`${ngx},${ngy}`)) {
+                  moveMyPos(ngx, ngy);
+                  broadcastMove(ngx, ngy);
+                  break outer;
+                }
+              }
+            }
+          }
+        }
       })
       .on("broadcast", { event: "move" }, ({ payload }) => {
         const p = payload as PresenceUser;
@@ -185,16 +240,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       })
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
+        { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${activeRoomId}` },
         async (payload) => {
           const sid: string = payload.new.user_id;
           const txt: string = payload.new.content;
-          // Speech bubble
           setBubbles((prev) => { const m = new Map(prev); m.set(sid, { text: txt, ts: Date.now() }); return m; });
           setTimeout(() => {
             setBubbles((prev) => { const m = new Map(prev); const b = m.get(sid); if (b && Date.now() - b.ts >= 4900) m.delete(sid); return m; });
           }, 5000);
-          // Fetch with profile for chat log
           const { data } = await supabase
             .from("messages")
             .select("id, content, user_id, created_at, profiles(display_name, avatar_color)")
@@ -210,7 +263,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
+  }, [activeRoomId]);
 
   useEffect(() => {
     const h = () => setCtxMenu(null);
@@ -221,7 +274,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const handleTileClick = (gx: number, gy: number) => {
     setCtxMenu(null);
     if (Array.from(users.values()).some((u) => u.user_id !== currentProfile.id && u.gx === gx && u.gy === gy)) return;
-    setMyPos({ gx, gy });
+    moveMyPos(gx, gy);
     broadcastMove(gx, gy);
   };
 
@@ -241,7 +294,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     const t = input.trim();
     if (!t) return;
     setInput("");
-    await supabase.from("messages").insert({ content: t, user_id: currentProfile.id, room_id: roomId });
+    lastActivityRef.current = Date.now();
+    await supabase.from("messages").insert({ content: t, user_id: currentProfile.id, room_id: activeRoomId });
+  };
+
+  const switchRoom = (id: string, name: string) => {
+    setActiveRoomId(id);
+    setActiveRoomName(name);
+    setShowRoomPicker(false);
+    lastActivityRef.current = Date.now();
   };
 
   const usersByCell = useMemo(() => {
@@ -277,7 +338,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         {/* ── Header ── */}
         <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 bg-[#07101c] border-b border-white/[0.06]">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-slate-100">#{roomName}</span>
+            <span className="text-sm font-bold text-slate-100">#{activeRoomName}</span>
             <span className="text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium">
               {totalUsers} online
             </span>
@@ -299,34 +360,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           </div>
         </div>
 
-        {/* ── Body: chat log left + isometric room right ── */}
+        {/* ── Body: isometric room left + right panel ── */}
         <div className="flex-1 flex overflow-hidden">
 
-          {/* Left panel — chat log only (no input) */}
-          <div className="w-52 flex-shrink-0 flex flex-col bg-[#07101c]/60 border-r border-white/[0.06]">
-            <div className="px-3 py-2 border-b border-white/[0.06]">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Chatlog</span>
-            </div>
-            <div ref={chatLogRef} className="flex-1 overflow-y-auto px-2.5 py-2 space-y-1.5">
-              {logMessages.length === 0 && (
-                <p className="text-[11px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>
-              )}
-              {logMessages.map((msg) => {
-                const p = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
-                const name = p?.display_name ?? "?";
-                const color = p?.avatar_color ?? "#8b5cf6";
-                const isMe = msg.user_id === currentProfile.id;
-                return (
-                  <div key={msg.id} className="text-[11px] leading-snug">
-                    <span className="font-semibold" style={{ color }}>{isMe ? "Du" : name}: </span>
-                    <span className="text-slate-300 break-words">{msg.content}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Right — isometric room */}
+          {/* Left — isometric room */}
           <div className="flex-1 flex items-center justify-center overflow-hidden bg-[#080e1a]">
             <svg
               viewBox={`${SVG_W / 2 - SVG_W / (2 * zoom)} ${SVG_H / 2 - SVG_H / (2 * zoom)} ${SVG_W / zoom} ${SVG_H / zoom}`}
@@ -350,7 +387,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   (gx + gy) % 2 === 0 ? "#0f1a2e" : "#0c1525";
 
                 const ax = x;
-                // Feet (at local +AR, scaled by AVG_SCALE) should rest on tile top (y - TH/2 + 4)
                 const ay = y - TH / 2 + 4 - AR_S;
 
                 return (
@@ -376,24 +412,18 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         strokeWidth={0.8}
                       />
                     )}
-
                     {cellUser && (
                       <g>
-                        {/* Shadow under feet */}
                         <ellipse cx={ax} cy={y - TH / 2 + 6} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={cellUser.color} glow={isMe} />
                         </g>
-
-                        {/* Name — double-pass for outline */}
                         <text x={ax} y={ay + AR_S + 13} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">
                           {isMe ? "Du" : cellUser.display_name}
                         </text>
                         <text x={ax} y={ay + AR_S + 13} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">
                           {isMe ? "Du" : cellUser.display_name}
                         </text>
-
-                        {/* Speech bubble */}
                         {bubble && (() => {
                           const chPerLine = 16;
                           const words = bubble.text.split(" ");
@@ -424,6 +454,63 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 );
               })}
             </svg>
+          </div>
+
+          {/* Right panel — chat log or room picker */}
+          <div className="w-52 flex-shrink-0 flex flex-col bg-[#07101c]/60 border-l border-white/[0.06]">
+            {showRoomPicker ? (
+              <>
+                <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Skift rum</span>
+                  <button onClick={() => setShowRoomPicker(false)} className="text-slate-500 hover:text-slate-300 transition-colors">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto py-1">
+                  {rooms.length === 0 && (
+                    <p className="text-[11px] text-slate-600 text-center mt-4">Ingen rum fundet</p>
+                  )}
+                  {rooms.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => switchRoom(r.id, r.name)}
+                      className={`w-full text-left px-3 py-2 text-[12px] transition-colors flex items-center gap-2 ${
+                        r.id === activeRoomId
+                          ? "bg-violet-500/20 text-violet-300"
+                          : "text-slate-300 hover:bg-white/[0.05]"
+                      }`}
+                    >
+                      <span className="text-slate-500">#</span>
+                      <span className="truncate">{r.name}</span>
+                      {r.id === activeRoomId && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="px-3 py-2 border-b border-white/[0.06]">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Chatlog</span>
+                </div>
+                <div ref={chatLogRef} className="flex-1 overflow-y-auto px-2.5 py-2 space-y-1.5">
+                  {logMessages.length === 0 && (
+                    <p className="text-[11px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>
+                  )}
+                  {logMessages.map((msg) => {
+                    const p = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
+                    const name = p?.display_name ?? "?";
+                    const color = p?.avatar_color ?? "#8b5cf6";
+                    const isMe = msg.user_id === currentProfile.id;
+                    return (
+                      <div key={msg.id} className="text-[11px] leading-snug">
+                        <span className="font-semibold" style={{ color }}>{isMe ? "Du" : name}: </span>
+                        <span className="text-slate-300 break-words">{msg.content}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -458,6 +545,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             </button>
             <button className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Brugere online">
               <Users className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => setShowRoomPicker((s) => !s)}
+              className={`p-1.5 rounded-lg transition-colors ${showRoomPicker ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`}
+              title="Skift rum"
+            >
+              <Hash className="w-3 h-3" />
             </button>
             <div className="flex items-center gap-0.5 ml-2">
               <button
