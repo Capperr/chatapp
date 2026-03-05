@@ -255,7 +255,7 @@ interface PresenceUser {
   mood?: string;
   outfit?: Record<string, string>; // slot → clothing_id
 }
-interface SpeechBubble { text: string; ts: number; }
+interface SpeechBubble { id: number; text: string; ts: number; }
 interface ClothingItem {
   id: string;
   name: string;
@@ -345,6 +345,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const usersRef = useRef<Map<string, PresenceUser>>(new Map());
   const coinsRef = useRef(1000);
   const lastCoinAwardRef = useRef<Date | null>(null);
+  const lastTypingBroadcastRef = useRef(0);
 
   const myColor = currentProfile.avatar_color ?? "#8b5cf6";
   const isAdmin = currentProfile.role === "admin";
@@ -354,7 +355,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [roomCols, setRoomCols] = useState(DEFAULT_COLS);
   const [roomRows, setRoomRows] = useState(DEFAULT_ROWS);
   const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
-  const [bubbles, setBubbles] = useState<Map<string, SpeechBubble>>(new Map());
+  const [bubbles, setBubbles] = useState<Map<string, SpeechBubble[]>>(new Map());
+  const [typingUsers, setTypingUsers] = useState<Map<string, number>>(new Map());
+  const [typingFrame, setTypingFrame] = useState(0);
   const [myPos, setMyPos] = useState(myPosRef.current);
   const [myMood, setMyMood] = useState("happy");
   const [draft, setDraft] = useState("");
@@ -609,10 +612,16 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       .on("broadcast", { event: "kick" }, ({ payload }) => {
         if ((payload as { user_id: string }).user_id === currentProfile.id) onClose();
       })
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        const p = payload as { user_id: string };
+        if (!p?.user_id || p.user_id === currentProfile.id) return;
+        setTypingUsers(prev => { const m = new Map(prev); m.set(p.user_id, Date.now()); return m; });
+      })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${activeRoomId}` }, async (payload) => {
         const sid: string = payload.new.user_id; const txt: string = payload.new.content;
-        setBubbles(prev => { const m = new Map(prev); m.set(sid, { text: txt, ts: Date.now() }); return m; });
-        setTimeout(() => { setBubbles(prev => { const m = new Map(prev); const b = m.get(sid); if (b && Date.now() - b.ts >= 4900) m.delete(sid); return m; }); }, 5000);
+        const newBubble: SpeechBubble = { id: Date.now() + Math.random(), text: txt, ts: Date.now() };
+        setBubbles(prev => { const m = new Map(prev); const existing = m.get(sid) ?? []; m.set(sid, [...existing.slice(-3), newBubble]); return m; });
+        setTimeout(() => { setBubbles(prev => { const m = new Map(prev); const arr = m.get(sid); if (!arr) return prev; const f = arr.filter(b => b.id !== newBubble.id); if (f.length === 0) m.delete(sid); else m.set(sid, f); return m; }); }, 7000);
         const { data } = await supabase.from("messages").select("id, content, user_id, created_at, profiles(display_name, avatar_color)").eq("id", payload.new.id).single();
         if (data) setLogMessages(prev => [...prev.slice(-49), data as LogMessage]);
       })
@@ -630,13 +639,31 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       if (e.key === "Escape") { draftRef.current = ""; setDraft(""); return; }
       if (e.key === "Backspace") { e.preventDefault(); setDraft(prev => { const n = prev.slice(0, -1); draftRef.current = n; return n; }); return; }
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (draftRef.current.length >= 200) return;
+        if (draftRef.current.length >= 80) return;
         e.preventDefault();
         setDraft(prev => { const n = prev + e.key; draftRef.current = n; return n; });
+        if (Date.now() - lastTypingBroadcastRef.current > 1500) {
+          lastTypingBroadcastRef.current = Date.now();
+          channelRef.current?.send({ type: "broadcast", event: "typing", payload: { user_id: currentProfile.id } });
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Typing users cleanup + animation frame
+  useEffect(() => {
+    const cleanup = setInterval(() => {
+      setTypingUsers(prev => {
+        const now = Date.now(); let changed = false;
+        const m = new Map(prev);
+        for (const [uid, ts] of Array.from(m.entries())) { if (now - ts > 3000) { m.delete(uid); changed = true; } }
+        return changed ? m : prev;
+      });
+    }, 500);
+    const frame = setInterval(() => setTypingFrame(f => (f + 1) % 3), 500);
+    return () => { clearInterval(cleanup); clearInterval(frame); };
   }, []);
 
   useEffect(() => {
@@ -835,19 +862,33 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     ? { width: "100vw", height: "100vh", borderRadius: "0" }
     : { width: "min(96vw, 1040px)", height: "min(88vh, 660px)" };
 
-  const renderSvgBubble = (ax: number, ay: number, text: string, color: string, opacity: number) => {
-    const words = text.split(" ");
-    const lines: string[] = [];
-    let cur = "";
-    words.forEach(w => { const n = cur ? `${cur} ${w}` : w; if (n.length > 16 && cur) { lines.push(cur); cur = w; } else { cur = n; } });
-    if (cur) lines.push(cur);
-    const capped = lines.slice(0, 3);
-    const bw = Math.min(130, Math.max(50, capped[0].length * 6 + 20));
-    const bh = capped.length * 14 + 10;
-    const bTop = ay - AR_S - 22 - bh;
+  const renderTypingBubble = (ax: number, ay: number, yOffset: number = 0) => {
+    const frames = ["●  ○  ○", "○  ●  ○", "○  ○  ●"];
+    const bw = 50; const bh = 22;
+    const bTop = ay - AR_S - 22 - bh - yOffset;
     return (
       <g>
-        <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={7} fill={color} opacity={opacity} />
+        <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={11} fill="white" opacity={0.92} />
+        <polygon points={`${ax - 4},${bTop + bh} ${ax + 4},${bTop + bh} ${ax},${bTop + bh + 7}`} fill="white" opacity={0.92} />
+        <text x={ax} y={bTop + 15} textAnchor="middle" fontSize={9} fill="#374151" letterSpacing="1">{frames[typingFrame]}</text>
+      </g>
+    );
+  };
+
+  const renderSvgBubble = (ax: number, ay: number, text: string, color: string, opacity: number, yOffset: number = 0) => {
+    const truncated = text.length > 80 ? text.slice(0, 80) + "…" : text;
+    const words = truncated.split(" ");
+    const lines: string[] = [];
+    let cur = "";
+    words.forEach(w => { const n = cur ? `${cur} ${w}` : w; if (n.length > 18 && cur) { lines.push(cur); cur = w; } else { cur = n; } });
+    if (cur) lines.push(cur);
+    const capped = lines.slice(0, 2);
+    const bw = Math.min(140, Math.max(50, capped[0].length * 6 + 20));
+    const bh = capped.length * 14 + 10;
+    const bTop = ay - AR_S - 22 - bh - yOffset;
+    return (
+      <g>
+        <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={8} fill={color} opacity={opacity} />
         <polygon points={`${ax - 4},${bTop + bh} ${ax + 4},${bTop + bh} ${ax},${bTop + bh + 7}`} fill={color} opacity={opacity} />
         {capped.map((line, i) => <text key={i} x={ax} y={bTop + 13 + i * 14} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="500" fill="white" opacity={opacity}>{line}</text>)}
       </g>
@@ -856,22 +897,23 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm" onClick={() => setCtxMenu(null)}>
-      <div className="flex flex-col rounded-2xl shadow-2xl border border-white/[0.08] overflow-hidden bg-[#0a1220]" style={windowStyle} onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md" onClick={() => setCtxMenu(null)}>
+      <div className="flex flex-col rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] overflow-hidden bg-gradient-to-b from-[#060d1a] to-[#04090f]" style={windowStyle} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 bg-[#07101c] border-b border-white/[0.06]">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-slate-100">#{activeRoomName}</span>
-            <span className="text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium">{totalUsers} online</span>
-            <span className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full font-medium">🪙 {coins}</span>
-            {movingBotId && <span className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">Klik på en tile for at placere bot</span>}
+        <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 bg-[#040c19]/95 border-b border-violet-500/20 shadow-[0_1px_0_rgba(99,102,241,0.06),0_4px_24px_rgba(0,0,0,0.4)]">
+          <div className="flex items-center gap-2.5">
+            <span className="text-[15px] font-extrabold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent tracking-tight">#{activeRoomName}</span>
+            {activeRoomType === "shop" && <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🛍 Butik</span>}
+            <span className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">{totalUsers} online</span>
+            <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🪙 {coins}</span>
+            {movingBotId && <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold animate-pulse">Klik på tile → placér bot</span>}
           </div>
           <div className="flex items-center gap-0.5">
-            <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors">
-              {fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            <button onClick={() => setFullscreen(f => !f)} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all">
+              {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"><X className="w-3.5 h-3.5" /></button>
+            <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all"><X className="w-4 h-4" /></button>
           </div>
         </div>
 
@@ -879,7 +921,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         <div className="flex-1 flex overflow-hidden">
 
           {/* Isometric room */}
-          <div className="flex-1 flex items-center justify-center overflow-hidden" style={{ background: theme.even }}>
+          <div className="flex-1 flex items-center justify-center overflow-hidden relative" style={{ background: theme.even }}>
             <svg viewBox={`${svgW / 2 - svgW / (2 * zoom)} ${svgH / 2 - svgH / (2 * zoom)} ${svgW / zoom} ${svgH / zoom}`}
               preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
               <rect width={svgW} height={svgH} fill={theme.even} />
@@ -887,14 +929,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               {sortedTiles.map(({ gx, gy }) => {
                 const { x, y } = isoCenter(gx, gy, svgW);
                 const cellKey = `${gx},${gy}`;
-                const cellUser = usersByCell.get(cellKey);
                 const cellItem = itemsByCell.get(cellKey);
                 const cellBot  = botsByCell.get(cellKey);
-                const isMe = cellUser?.user_id === currentProfile.id;
-                const bubble = cellUser ? bubbles.get(cellUser.user_id) : undefined;
+                const hasUser  = usersByCell.has(cellKey);
                 const isHov = hovered === cellKey;
                 const isMyTile = myPos.gx === gx && myPos.gy === gy;
-                const isBotTarget = !!movingBotId && !cellUser && !cellBot;
+                const isBotTarget = !!movingBotId && !cellBot;
 
                 const tileFill = isMyTile ? theme.highlight : isBotTarget && isHov ? "#1a3020" : isHov ? "#192e4a" : (gx + gy) % 2 === 0 ? theme.even : theme.odd;
                 const tileStroke = isMyTile ? myColor : isBotTarget && isHov ? "#22c55e" : "#16243a";
@@ -903,12 +943,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 return (
                   <g key={cellKey}
                     onClick={() => handleTileClick(gx, gy)}
-                    onContextMenu={e => handleRightClick(e, cellUser ?? null, cellItem ?? null, cellBot ?? null)}
+                    onContextMenu={e => handleRightClick(e, null, cellItem ?? null, cellBot ?? null)}
                     onMouseEnter={() => setHovered(cellKey)}
                     onMouseLeave={() => setHovered(null)}
-                    style={{ cursor: (cellUser && !isMe) || cellBot ? "default" : movingBotId ? "crosshair" : "pointer" }}>
+                    style={{ cursor: cellBot || hasUser ? "default" : movingBotId ? "crosshair" : "pointer" }}>
                     <polygon points={tilePts(x, y)} fill={tileFill} stroke={tileStroke} strokeWidth={isMyTile ? 1.5 : 0.7} />
-                    {isHov && !cellUser && !cellBot && !movingBotId && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
+                    {isHov && !hasUser && !cellBot && !movingBotId && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
 
                     {/* Shop counter (gy=0 row) */}
                     {activeRoomType === "shop" && gy === 0 && (
@@ -940,37 +980,87 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       </g>
                     )}
 
-                    {/* User avatar */}
-                    {cellUser && (
-                      <g>
-                        <ellipse cx={ax} cy={y} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
-                        <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
-                          <PersonAvatar color={cellUser.color} glow={isMe} mood={cellUser.mood} />
-                          {cellUser.outfit && Object.keys(cellUser.outfit).length > 0 && (
-                            <ClothingOverlay outfit={cellUser.outfit} catalog={clothingCatalog} />
-                          )}
-                        </g>
-                        <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">{isMe ? "Du" : cellUser.display_name}</text>
-                        <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{isMe ? "Du" : cellUser.display_name}</text>
-                        {isMe && draft && renderSvgBubble(ax, ay, draft + "…", "#475569", 0.85)}
-                        {bubble && renderSvgBubble(ax, ay, bubble.text, cellUser.color, 0.95)}
-                      </g>
-                    )}
                   </g>
                 );
               })}
+
+              {/* ── User avatars — separate layer with stable keys for smooth CSS transitions ── */}
+              {Array.from(usersByCell.values())
+                .sort((a, b) => (a.gx + a.gy) - (b.gx + b.gy))
+                .map(user => {
+                  const { x: ux, y: uy } = isoCenter(user.gx, user.gy, svgW);
+                  const isMe = user.user_id === currentProfile.id;
+                  const userBubbles = bubbles.get(user.user_id) ?? [];
+                  const isTyping = !isMe && typingUsers.has(user.user_id);
+                  return (
+                    <g key={user.user_id}
+                      onClick={() => handleTileClick(user.gx, user.gy)}
+                      onContextMenu={e => { e.preventDefault(); e.stopPropagation(); handleRightClick(e, user, null, null); }}>
+                      <g style={{ transform: `translate(${ux}px, ${uy}px)`, transition: "transform 0.38s cubic-bezier(0.22,1,0.36,1)" }}>
+                        <ellipse cx={0} cy={0} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
+                        <g transform={`translate(0,${-AR_S}) scale(${AVG_SCALE})`}>
+                          <PersonAvatar color={user.color} glow={isMe} mood={user.mood} />
+                          {user.outfit && Object.keys(user.outfit).length > 0 && (
+                            <ClothingOverlay outfit={user.outfit} catalog={clothingCatalog} />
+                          )}
+                        </g>
+                        <text x={0} y={-AR_S * 2 - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">{isMe ? "Du" : user.display_name}</text>
+                        <text x={0} y={-AR_S * 2 - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{isMe ? "Du" : user.display_name}</text>
+                        {isMe && draft && renderSvgBubble(0, -AR_S, draft + "…", "#475569", 0.85, userBubbles.length * 24)}
+                        {isTyping && renderTypingBubble(0, -AR_S, userBubbles.length * 24)}
+                        {userBubbles.map((bub, i) => (
+                          <g key={bub.id}>{renderSvgBubble(0, -AR_S, bub.text, user.color, 0.95, (userBubbles.length - 1 - i) * 24)}</g>
+                        ))}
+                      </g>
+                    </g>
+                  );
+                })}
             </svg>
+
+            {/* Floating draft bubble */}
+            {draft && (
+              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2.5 bg-[#040c19]/98 backdrop-blur-xl rounded-2xl border border-white/[0.12] shadow-[0_12px_40px_rgba(0,0,0,0.7)] max-w-[340px]">
+                <span className="text-[13px] text-slate-200 flex-1 truncate font-medium">{draft}</span>
+                <kbd className="text-[9px] text-slate-500 flex-shrink-0 bg-white/[0.07] border border-white/[0.08] px-1.5 py-0.5 rounded-md font-mono">↵</kbd>
+                <button onClick={() => { draftRef.current = ""; setDraft(""); }} className="text-slate-600 hover:text-rose-400 flex-shrink-0 transition-colors ml-0.5"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
+
+            {/* Floating toolbar dock */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-2.5 py-2 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
+              <button onClick={reloadChat} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs"><RefreshCw className="w-[18px] h-[18px]" /></button>
+              <div className="w-px h-5 bg-white/[0.08] mx-1" />
+              <button onClick={() => setRightPanel(p => p === "online" ? "chatlog" : "online")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
+                <Users className="w-[18px] h-[18px]" />
+                {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
+              </button>
+              <button onClick={() => setRightPanel(p => p === "wardrobe" ? "chatlog" : "wardrobe")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
+                <Shirt className="w-[18px] h-[18px]" />
+                {myWardrobe.filter(w => w.equipped).length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myWardrobe.filter(w => w.equipped).length}</span>}
+              </button>
+              <button onClick={() => setRightPanel(p => p === "inventory" ? "chatlog" : "inventory")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rygsæk">
+                <Package className="w-[18px] h-[18px]" />
+                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
+              </button>
+              <button onClick={() => setRightPanel(p => p === "shop" ? "chatlog" : "shop")} className={`p-2 rounded-xl transition-all ${rightPanel === "shop" ? "text-amber-400 bg-amber-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : activeRoomType === "shop" ? "text-amber-400/60 hover:text-amber-400 hover:bg-white/[0.08]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Butik"><ShoppingBag className="w-[18px] h-[18px]" /></button>
+              <button onClick={() => setRightPanel(p => p === "rooms" ? "chatlog" : "rooms")} className={`p-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rum"><Hash className="w-[18px] h-[18px]" /></button>
+              {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "chatlog" : "admin")} className={`p-2 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Admin"><Wrench className="w-[18px] h-[18px]" /></button>}
+              <div className="w-px h-5 bg-white/[0.08] mx-1" />
+              <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ind"><ZoomIn className="w-[18px] h-[18px]" /></button>
+              <span className="text-[10px] text-slate-600 w-7 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ud"><ZoomOut className="w-[18px] h-[18px]" /></button>
+            </div>
           </div>
 
           {/* Right panel */}
-          <div className="w-56 flex-shrink-0 flex flex-col bg-[#07101c]/60 border-l border-white/[0.06]">
+          <div className="w-60 flex-shrink-0 flex flex-col bg-[#030912]/95 border-l border-white/[0.07]">
 
             {/* Online users */}
             {rightPanel === "online" && (
               <>
-                <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Online ({globalUsers.size})</span>
-                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
+                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60">
+                  <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span className="text-[11px] font-bold text-slate-300 tracking-wide">Online — {globalUsers.size}</span></div>
+                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
                 <div className="flex-1 overflow-y-auto py-1">
                   {Array.from(globalUsers.values()).map(u => {
@@ -1285,41 +1375,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           </div>
         </div>
 
-        {/* Bottom toolbar */}
-        <div className="flex-shrink-0 border-t border-white/[0.06] bg-[#07101c]">
-          <div className="flex items-center gap-1 px-3 py-2">
-            <button onClick={reloadChat} className="p-2 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Genindlæs"><RefreshCw className="w-4 h-4" /></button>
-            <button onClick={() => setRightPanel(p => p === "online" ? "chatlog" : "online")} className={`p-2 rounded-lg transition-colors relative ${rightPanel === "online" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Online">
-              <Users className="w-4 h-4" />
-              {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
-            </button>
-            <button onClick={() => setRightPanel(p => p === "wardrobe" ? "chatlog" : "wardrobe")} className={`p-2 rounded-lg transition-colors relative ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Garderobe">
-              <Shirt className="w-4 h-4" />
-              {myWardrobe.filter(w => w.equipped).length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myWardrobe.filter(w => w.equipped).length}</span>}
-            </button>
-            <button onClick={() => setRightPanel(p => p === "inventory" ? "chatlog" : "inventory")} className={`p-2 rounded-lg transition-colors relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Rygsæk">
-              <Package className="w-4 h-4" />
-              {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
-            </button>
-            <button onClick={() => setRightPanel(p => p === "shop" ? "chatlog" : "shop")} className={`p-2 rounded-lg transition-colors relative ${rightPanel === "shop" ? "text-amber-400 bg-amber-500/10" : activeRoomType === "shop" ? "text-amber-500/60 hover:text-amber-400 hover:bg-white/[0.06]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Butik"><ShoppingBag className="w-4 h-4" /></button>
-            <button onClick={() => setRightPanel(p => p === "rooms" ? "chatlog" : "rooms")} className={`p-2 rounded-lg transition-colors ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Rum"><Hash className="w-4 h-4" /></button>
-            {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "chatlog" : "admin")} className={`p-2 rounded-lg transition-colors ${rightPanel === "admin" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Admin"><Wrench className="w-4 h-4" /></button>}
-            <div className="flex items-center gap-0.5 ml-1">
-              <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]" title="Zoom ind"><ZoomIn className="w-4 h-4" /></button>
-              <span className="text-[10px] text-slate-600 w-8 text-center">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="p-2 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]" title="Zoom ud"><ZoomOut className="w-4 h-4" /></button>
-            </div>
-            {draft ? (
-              <div className="ml-auto flex items-center gap-1.5 px-2.5 py-1 bg-slate-700/60 rounded-lg border border-white/[0.08] max-w-[200px]">
-                <span className="text-[11px] text-slate-300 flex-1 truncate">{draft}</span>
-                <span className="text-[9px] text-slate-500 flex-shrink-0">↵</span>
-                <button onClick={() => { draftRef.current = ""; setDraft(""); }} className="text-slate-500 hover:text-slate-300 flex-shrink-0"><X className="w-3 h-3" /></button>
-              </div>
-            ) : (
-              <span className="ml-auto text-[10px] text-slate-600 hidden sm:inline">Tast for at skrive</span>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Context menu */}
