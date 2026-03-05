@@ -1,10 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import {
-  Mail, Lock, Eye, EyeOff, Loader2, User, X, CheckCircle, ArrowLeft,
-} from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Loader2, User, X, CheckCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 // ─── Decorative static isometric scene ────────────────────────────────────────
@@ -59,9 +56,13 @@ function IsoPreview() {
   );
 }
 
+interface ChatGatewayProps {
+  onAuthSuccess?: () => void;
+  onClose?: () => void;
+}
+
 // ─── Main ChatGateway component ────────────────────────────────────────────────
-export function ChatGateway() {
-  const router = useRouter();
+export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
   const supabase = createClient();
 
   // Login state
@@ -88,7 +89,7 @@ export function ChatGateway() {
       setLoginLoading(false);
       return;
     }
-    window.location.href = "/chat";
+    if (onAuthSuccess) { onAuthSuccess(); } else { window.location.href = "/"; }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -129,7 +130,7 @@ export function ChatGateway() {
       password: regData.password,
     });
     if (!signInError) {
-      window.location.href = "/chat";
+      if (onAuthSuccess) { onAuthSuccess(); } else { window.location.href = "/"; }
       return;
     }
     setRegSuccess(true);
@@ -137,17 +138,12 @@ export function ChatGateway() {
   };
 
   return (
-    <div className="min-h-screen bg-[#030912] flex items-center justify-center p-4">
-      {/* Background glows */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute top-[-15%] left-[-10%] w-[500px] h-[500px] rounded-full bg-violet-600/8 blur-[100px]" />
-        <div className="absolute bottom-[-10%] right-[-5%] w-[400px] h-[400px] rounded-full bg-indigo-600/8 blur-[80px]" />
-      </div>
-
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md" onClick={onClose}>
       {/* Chat window */}
       <div
         className="relative z-10 flex flex-col rounded-2xl overflow-hidden border border-white/[0.1] bg-gradient-to-b from-[#060d1a] to-[#04090f] shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)]"
         style={{ width: "min(96vw, 1040px)", height: "min(88vh, 660px)" }}
+        onClick={e => e.stopPropagation()}
       >
         {/* ── Header (login area) ── */}
         <div className="flex-shrink-0 flex items-center gap-3 px-4 py-3 bg-[#040c19]/95 border-b border-violet-500/20 shadow-[0_1px_0_rgba(99,102,241,0.06),0_4px_24px_rgba(0,0,0,0.4)]">
@@ -204,9 +200,9 @@ export function ChatGateway() {
             <span className="text-[11px] text-rose-400 flex-shrink-0 max-w-[140px] truncate">{loginError}</span>
           )}
 
-          <a href="/" className="ml-2 p-1.5 rounded-lg text-slate-600 hover:text-slate-400 hover:bg-white/[0.05] transition-all flex-shrink-0" title="Tilbage">
-            <ArrowLeft className="w-4 h-4" />
-          </a>
+          <button onClick={onClose ?? (() => { window.location.href = "/"; })} className="ml-2 p-1.5 rounded-lg text-slate-600 hover:text-slate-400 hover:bg-white/[0.05] transition-all flex-shrink-0" title="Luk">
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* ── Body ── */}
