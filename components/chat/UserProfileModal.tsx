@@ -3,16 +3,17 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar } from "@/components/ui/Avatar";
-import { X, Shield, ShieldOff, VolumeX, Volume2, Ban, UserCheck } from "lucide-react";
+import { X, Shield, ShieldOff, VolumeX, Volume2, Ban, UserCheck, MessageCircle } from "lucide-react";
 import type { Profile } from "@/types";
 
 interface UserProfileModalProps {
   profile: Profile;
   currentProfile: Profile;
   onClose: () => void;
+  onStartDM?: () => void;
 }
 
-export function UserProfileModal({ profile, currentProfile, onClose }: UserProfileModalProps) {
+export function UserProfileModal({ profile, currentProfile, onClose, onStartDM }: UserProfileModalProps) {
   const isAdmin = currentProfile.role === "admin";
   const isSelf = currentProfile.id === profile.id;
   const [loading, setLoading] = useState(false);
@@ -101,6 +102,17 @@ export function UserProfileModal({ profile, currentProfile, onClose }: UserProfi
             <p className="mt-3 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
               {localProfile.bio}
             </p>
+          )}
+
+          {/* Send DM button */}
+          {onStartDM && !isSelf && (
+            <button
+              onClick={onStartDM}
+              className="mt-3 flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-500/10 hover:bg-primary-100 dark:hover:bg-primary-500/20 transition-colors"
+            >
+              <MessageCircle className="w-4 h-4" />
+              Send direkte besked
+            </button>
           )}
 
           {/* Admin controls */}

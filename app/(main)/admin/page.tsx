@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AdminUserTable } from "@/components/admin/AdminUserTable";
-import { Users, MessageCircle, MicOff, ShieldCheck, ArrowLeft } from "lucide-react";
+import { Users, MessageCircle, MicOff, ShieldCheck, ArrowLeft, Lock, Hash } from "lucide-react";
 import Link from "next/link";
 import type { Profile } from "@/types";
 
@@ -38,6 +38,14 @@ export default async function AdminPage() {
   (msgData ?? []).forEach((m: { user_id: string }) => {
     messageCounts[m.user_id] = (messageCounts[m.user_id] ?? 0) + 1;
   });
+
+  // Fetch recent conversation messages (admin can see all via RLS v6)
+  const { data: convMsgs } = await supabase
+    .from("conversation_messages")
+    .select("*, profiles(*), conversations(id, type, name, conversation_members(user_id, profiles(display_name)))")
+    .eq("is_deleted", false)
+    .order("created_at", { ascending: false })
+    .limit(50);
 
   // Stats
   const allUsers = (users ?? []) as Profile[];
@@ -99,6 +107,64 @@ export default async function AdminPage() {
           currentUserId={user.id}
           messageCounts={messageCounts}
         />
+      </div>
+
+      {/* Private messages section */}
+      <div>
+        <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+          <Lock className="w-5 h-5 text-violet-500" />
+          Private beskeder &amp; grupper
+          <span className="text-sm font-normal text-slate-400">(seneste 50)</span>
+        </h2>
+        <div className="card divide-y divide-black/[0.04] dark:divide-white/[0.04] overflow-hidden">
+          {(convMsgs ?? []).length === 0 ? (
+            <p className="p-6 text-center text-sm text-slate-400">Ingen private beskeder</p>
+          ) : (
+            (convMsgs ?? []).map((msg: {
+              id: string;
+              content: string;
+              created_at: string;
+              profiles: { display_name: string };
+              conversations: {
+                id: string;
+                type: string;
+                name: string | null;
+                conversation_members: { user_id: string; profiles: { display_name: string } }[];
+              };
+            }) => {
+              const conv = msg.conversations;
+              const members = conv?.conversation_members ?? [];
+              const convLabel = conv?.type === "group"
+                ? conv.name ?? "Gruppe"
+                : members.map((m) => m.profiles?.display_name).filter(Boolean).join(", ");
+              return (
+                <div key={msg.id} className="flex items-start gap-3 px-5 py-3">
+                  <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${conv?.type === "group" ? "bg-violet-50 dark:bg-violet-500/10" : "bg-primary-50 dark:bg-primary-500/10"}`}>
+                    {conv?.type === "group" ? (
+                      <Users className="w-3.5 h-3.5 text-violet-500" />
+                    ) : (
+                      <Hash className="w-3.5 h-3.5 text-primary-500" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        {msg.profiles?.display_name}
+                      </span>
+                      <span className="text-[10px] text-slate-400">→ {convLabel}</span>
+                      <span className="text-[10px] text-slate-400 ml-auto">
+                        {new Date(msg.created_at).toLocaleString("da-DK", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 truncate mt-0.5">
+                      {msg.content}
+                    </p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );

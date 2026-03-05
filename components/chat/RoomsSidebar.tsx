@@ -14,7 +14,9 @@ import {
   UserPlus,
   ChevronDown,
   ChevronRight,
+  Star,
 } from "lucide-react";
+import { UserProfileModal } from "./UserProfileModal";
 
 interface RoomsSidebarProps {
   rooms: ChatRoom[];
@@ -29,6 +31,7 @@ interface RoomsSidebarProps {
   onStartDM: (userId: string) => void;
   onCreateRoom: (name: string, description: string) => void;
   onDeleteRoom: (id: string) => void;
+  onSetDefaultRoom: (id: string) => void;
   onCreateGroup: (name: string, memberIds: string[]) => void;
   onClose: () => void;
 }
@@ -86,6 +89,7 @@ export function RoomsSidebar({
   onStartDM,
   onCreateRoom,
   onDeleteRoom,
+  onSetDefaultRoom,
   onCreateGroup,
   onClose,
 }: RoomsSidebarProps) {
@@ -93,6 +97,7 @@ export function RoomsSidebar({
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showUserPicker, setShowUserPicker] = useState(false);
+  const [onlineModalUser, setOnlineModalUser] = useState<Profile | null>(null);
   const [sectionsOpen, setSectionsOpen] = useState({
     rooms: true,
     dms: true,
@@ -171,15 +176,28 @@ export function RoomsSidebar({
                     </span>
                   )}
                 </button>
-                {isAdmin && !room.is_default && (
-                  <button
-                    onClick={() => {
-                      if (confirm(`Slet rummet "${room.name}"?`)) onDeleteRoom(room.id);
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors opacity-0 group-hover:opacity-100"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                {isAdmin && (
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-0.5 opacity-0 group-hover:opacity-100">
+                    {!room.is_default && (
+                      <button
+                        onClick={() => onSetDefaultRoom(room.id)}
+                        title="Sæt som standard rum"
+                        className="p-1 rounded-lg text-slate-300 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
+                      >
+                        <Star className="w-3 h-3" />
+                      </button>
+                    )}
+                    {!room.is_default && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Slet rummet "${room.name}"?`)) onDeleteRoom(room.id);
+                        }}
+                        className="p-1 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             ))}
@@ -279,8 +297,8 @@ export function RoomsSidebar({
             onlineUsers.map((user) => (
               <button
                 key={user.id}
-                onClick={() => onStartDM(user.id)}
-                title={`Send besked til ${user.display_name}`}
+                onClick={() => setOnlineModalUser(user)}
+                title={`Vis profil for ${user.display_name}`}
                 className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-xl mx-2 text-left text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all group"
                 style={{ width: "calc(100% - 1rem)" }}
               >
@@ -328,6 +346,17 @@ export function RoomsSidebar({
             setShowCreateGroup(false);
           }}
           onCancel={() => setShowCreateGroup(false)}
+        />
+      )}
+      {onlineModalUser && (
+        <UserProfileModal
+          profile={onlineModalUser}
+          currentProfile={currentProfile}
+          onClose={() => setOnlineModalUser(null)}
+          onStartDM={() => {
+            onStartDM(onlineModalUser.id);
+            setOnlineModalUser(null);
+          }}
         />
       )}
     </div>

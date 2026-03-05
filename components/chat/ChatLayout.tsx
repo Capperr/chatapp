@@ -29,6 +29,7 @@ export function ChatLayout({
   initialConvId,
 }: ChatLayoutProps) {
   const router = useRouter();
+  const [liveProfile, setLiveProfile] = useState(currentProfile);
   const [rooms, setRooms] = useState<ChatRoomType[]>(initialRooms);
   const [conversations, setConversations] = useState<Conversation[]>(initialConvs);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(
@@ -37,6 +38,20 @@ export function ChatLayout({
   const [activeConvId, setActiveConvId] = useState<string | null>(initialConvId);
   const [showSidebar, setShowSidebar] = useState(false);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+
+  // Realtime: update current user's profile (mute/ban takes effect immediately)
+  useEffect(() => {
+    const supabase = createClient();
+    const ch = supabase
+      .channel("my-profile")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${currentProfile.id}` },
+        (payload) => { setLiveProfile(payload.new as typeof currentProfile); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [currentProfile.id]);
 
   // Global presence tracking
   useEffect(() => {
@@ -205,6 +220,13 @@ export function ChatLayout({
     }
   };
 
+  const handleSetDefaultRoom = async (roomId: string) => {
+    const supabase = createClient();
+    await supabase.from("chat_rooms").update({ is_default: false }).eq("is_default", true);
+    await supabase.from("chat_rooms").update({ is_default: true }).eq("id", roomId);
+    setRooms((prev) => prev.map((r) => ({ ...r, is_default: r.id === roomId })));
+  };
+
   const handleCreateGroup = async (name: string, memberIds: string[]) => {
     const supabase = createClient();
     const { data: conv, error } = await supabase
@@ -261,7 +283,7 @@ export function ChatLayout({
           rooms={rooms}
           conversations={conversations}
           allUsers={allUsers}
-          currentProfile={currentProfile}
+          currentProfile={liveProfile}
           onlineUserIds={onlineUserIds}
           activeRoomId={activeRoomId}
           activeConvId={activeConvId}
@@ -270,6 +292,7 @@ export function ChatLayout({
           onStartDM={handleStartDM}
           onCreateRoom={handleCreateRoom}
           onDeleteRoom={handleDeleteRoom}
+          onSetDefaultRoom={handleSetDefaultRoom}
           onCreateGroup={handleCreateGroup}
           onClose={() => setShowSidebar(false)}
         />
@@ -283,7 +306,7 @@ export function ChatLayout({
             roomId={activeRoomId}
             roomName={activeRoom?.name ?? ""}
             roomDescription={activeRoom?.description ?? ""}
-            currentProfile={currentProfile}
+            currentProfile={liveProfile}
             onToggleSidebar={() => setShowSidebar(true)}
           />
         )}
@@ -291,7 +314,7 @@ export function ChatLayout({
           <ConversationRoom
             key={activeConvId}
             convId={activeConvId}
-            currentProfile={currentProfile}
+            currentProfile={liveProfile}
             allUsers={allUsers}
             onToggleSidebar={() => setShowSidebar(true)}
           />

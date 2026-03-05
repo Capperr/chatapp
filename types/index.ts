@@ -82,6 +82,22 @@ export interface AccountingShift {
   updated_at: string;
 }
 
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  type: "mention";
+  sender_id: string | null;
+  room_id: string | null;
+  message_id: string | null;
+  conversation_id: string | null;
+  conversation_message_id: string | null;
+  content_preview: string | null;
+  is_read: boolean;
+  created_at: string;
+  sender?: Profile;
+  room?: { id: string; name: string } | null;
+}
+
 export interface TaxSettings {
   user_id: string;
   loenstype: "loenmodtager" | "provisions";

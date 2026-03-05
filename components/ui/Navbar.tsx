@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MessageCircle, User, LogOut, Zap, ShieldCheck, Calculator, LayoutDashboard } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { Avatar } from "./Avatar";
+import { NotificationBell } from "./NotificationBell";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/types";
@@ -72,6 +73,7 @@ export function Navbar({ profile }: NavbarProps) {
               )}
             </Link>
           )}
+          <NotificationBell userId={profile.id} />
         </nav>
 
         {/* Bottom section */}
@@ -143,6 +145,7 @@ export function Navbar({ profile }: NavbarProps) {
               <span className="text-xs font-medium">Admin</span>
             </Link>
           )}
+          <NotificationBell userId={profile.id} compact />
           <ThemeToggle compact />
         </div>
       </nav>

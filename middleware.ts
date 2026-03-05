@@ -37,7 +37,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Redirect unauthenticated users to login
-  const protectedRoutes = ["/dashboard", "/chat", "/profile", "/accounting", "/admin"];
+  const protectedRoutes = ["/dashboard", "/chat", "/profile", "/accounting", "/admin", "/notifications"];
   if (!user && protectedRoutes.includes(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
@@ -46,5 +46,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/register", "/dashboard", "/chat", "/profile", "/accounting", "/admin"],
+  matcher: ["/", "/login", "/register", "/dashboard", "/chat", "/profile", "/accounting", "/admin", "/notifications"],
 };

@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useRef, KeyboardEvent, useEffect, useCallback } from "react";
-import { Send, MicOff } from "lucide-react";
+import { Send, MicOff, Share2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmojiPicker } from "./EmojiPicker";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Profile } from "@/types";
+import type { AccountingShift } from "@/types";
+import { formatKr } from "@/lib/tax";
+import { formatDate } from "@/lib/utils";
 
 interface ChatInputProps {
   onSend: (content: string) => Promise<void>;
@@ -35,6 +38,9 @@ function getMuteMessage(profile: Profile): string {
 export function ChatInput({ onSend, currentProfile, disabled }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [shifts, setShifts] = useState<AccountingShift[]>([]);
+  const [shiftsLoading, setShiftsLoading] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionSuggestions, setMentionSuggestions] = useState<Profile[]>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
@@ -43,6 +49,35 @@ export function ChatInput({ onSend, currentProfile, disabled }: ChatInputProps) 
   const supabase = createClient();
 
   const muted = isMuted(currentProfile);
+
+  const openShare = async () => {
+    setShowShare(true);
+    if (shifts.length > 0) return;
+    setShiftsLoading(true);
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("accounting_shifts")
+      .select("*")
+      .eq("user_id", currentProfile.id)
+      .order("shift_date", { ascending: false })
+      .limit(8);
+    setShifts((data as AccountingShift[]) ?? []);
+    setShiftsLoading(false);
+  };
+
+  const shareShift = async (shift: AccountingShift) => {
+    const msg = `📊 **Vagt ${formatDate(shift.shift_date)}**\nKonto: ${formatKr(shift.konto)} | Kreditkort: ${formatKr(shift.kreditkort)} | Kontant: ${formatKr(shift.kontant)}\n💰 Total indkørt: **${formatKr(shift.total_indkoert)}**`;
+    setShowShare(false);
+    await onSend(msg);
+  };
+
+  const shareAll = async () => {
+    if (shifts.length === 0) return;
+    const total = shifts.reduce((s, v) => s + v.total_indkoert, 0);
+    const msg = `📊 **Min afregning** (${shifts.length} vagter)\n💰 Total indkørt: **${formatKr(total)}**`;
+    setShowShare(false);
+    await onSend(msg);
+  };
 
   // Fetch mention suggestions when @query changes
   useEffect(() => {
@@ -173,6 +208,52 @@ export function ChatInput({ onSend, currentProfile, disabled }: ChatInputProps) 
 
   return (
     <div className="p-4 relative">
+      {/* Share panel */}
+      {showShare && (
+        <div className="absolute bottom-full left-4 right-4 mb-2 glass-strong rounded-xl shadow-xl border border-black/[0.08] dark:border-white/[0.08] overflow-hidden animate-slide-up z-20">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-black/[0.06] dark:border-white/[0.06]">
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Del med chat</span>
+            <button onClick={() => setShowShare(false)} className="text-slate-400 hover:text-slate-600">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {shiftsLoading ? (
+            <p className="px-4 py-3 text-xs text-slate-400 animate-pulse">Henter vagter...</p>
+          ) : shifts.length === 0 ? (
+            <p className="px-4 py-3 text-xs text-slate-400">Ingen vagter fundet</p>
+          ) : (
+            <>
+              <button
+                onClick={shareAll}
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors text-left border-b border-black/[0.04] dark:border-white/[0.04]"
+              >
+                <div className="w-7 h-7 rounded-lg bg-primary-50 dark:bg-primary-500/10 flex items-center justify-center flex-shrink-0">
+                  <Share2 className="w-3.5 h-3.5 text-primary-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Del fuld afregning</p>
+                  <p className="text-[10px] text-slate-400">{shifts.length} vagter · {formatKr(shifts.reduce((s, v) => s + v.total_indkoert, 0))} total</p>
+                </div>
+              </button>
+              {shifts.map((shift) => (
+                <button
+                  key={shift.id}
+                  onClick={() => shareShift(shift)}
+                  className="w-full flex items-center gap-3 px-4 py-2 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors text-left"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[10px] font-bold text-emerald-600">kr</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-slate-700 dark:text-slate-300">{formatDate(shift.shift_date)}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{formatKr(shift.total_indkoert)} indkørt</p>
+                  </div>
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
       {/* @Mention suggestions */}
       {mentionSuggestions.length > 0 && (
         <div className="absolute bottom-full left-4 right-4 mb-2 glass-strong rounded-xl shadow-xl border border-black/[0.08] dark:border-white/[0.08] overflow-hidden animate-slide-up z-20">
@@ -205,6 +286,18 @@ export function ChatInput({ onSend, currentProfile, disabled }: ChatInputProps) 
 
       {/* Input row */}
       <div className="flex items-end gap-2 glass rounded-2xl p-2 shadow-lg">
+        <button
+          onClick={openShare}
+          title="Del vagt"
+          className={cn(
+            "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
+            showShare
+              ? "bg-primary-100 dark:bg-primary-500/20 text-primary-600 dark:text-primary-400"
+              : "text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-white/[0.06]"
+          )}
+        >
+          <Share2 className="w-4 h-4" />
+        </button>
         <EmojiPicker onSelect={insertEmoji} />
         <textarea
           ref={textareaRef}

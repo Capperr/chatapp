@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { formatTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { Pencil, Trash2, Check, X } from "lucide-react";
+import { Pencil, Trash2, Check, X, VolumeX, Ban } from "lucide-react";
 import type { MessageWithProfile, Profile } from "@/types";
 
 interface ChatMessageProps {
@@ -140,6 +140,12 @@ export function ChatMessage({
               <span className="text-[9px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-1.5 py-0.5 rounded-full border border-violet-200 dark:border-violet-500/20">
                 🛡 MOD
               </span>
+            )}
+            {profile.is_banned && (
+              <span title="Udelukket bruger"><Ban className="w-3 h-3 text-rose-400" /></span>
+            )}
+            {!profile.is_banned && profile.muted_until && new Date(profile.muted_until) > new Date() && (
+              <span title="Muted"><VolumeX className="w-3 h-3 text-amber-400" /></span>
             )}
             <span className="text-[10px] text-slate-400">@{profile.username}</span>
           </div>
