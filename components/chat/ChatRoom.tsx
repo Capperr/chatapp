@@ -5,9 +5,10 @@ import { createClient } from "@/lib/supabase/client";
 import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { formatDate } from "@/lib/utils";
-import { Users, Wifi, WifiOff, Menu, Trash2, Hash } from "lucide-react";
+import { Users, Wifi, WifiOff, Menu, Trash2, Hash, Boxes } from "lucide-react";
 import type { MessageWithProfile, Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
+import { VirtualRoom } from "./VirtualRoom";
 import { playMessageSound } from "@/lib/sounds";
 
 interface ChatRoomProps {
@@ -44,6 +45,7 @@ export function ChatRoom({
   const [onlineCount, setOnlineCount] = useState(1);
   const [connected, setConnected] = useState(false);
   const [modalProfile, setModalProfile] = useState<Profile | null>(null);
+  const [showVirtual, setShowVirtual] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -204,6 +206,14 @@ export function ChatRoom({
 
   return (
     <div className="flex flex-col h-full relative">
+      {showVirtual && (
+        <VirtualRoom
+          roomId={roomId}
+          roomName={roomName}
+          currentProfile={currentProfile}
+          onClose={() => setShowVirtual(false)}
+        />
+      )}
       {modalProfile && (
         <UserProfileModal
           profile={modalProfile}
@@ -234,6 +244,13 @@ export function ChatRoom({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => setShowVirtual(true)}
+              title="Åben virtuelt rum"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-colors"
+            >
+              <Boxes className="w-4 h-4" />
+            </button>
             {isAdmin && (
               <button
                 onClick={handleClearChat}

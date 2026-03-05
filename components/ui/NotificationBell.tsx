@@ -30,19 +30,22 @@ export function NotificationBell({ userId, compact }: NotificationBellProps) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Fetch initial unread count
-  useEffect(() => {
-    const supabase = createClient();
-    supabase
+  const fetchUnread = async (supabase: ReturnType<typeof createClient>) => {
+    const { count } = await supabase
       .from("notifications")
       .select("id", { count: "exact" })
       .eq("user_id", userId)
-      .eq("is_read", false)
-      .then(({ count }) => setUnread(count ?? 0));
+      .eq("is_read", false);
+    setUnread(count ?? 0);
+  };
 
-    // Realtime subscription
+  // Fetch initial unread count + realtime subscription
+  useEffect(() => {
+    const supabase = createClient();
+    fetchUnread(supabase);
+
     const ch = supabase
-      .channel("my-notifications")
+      .channel(`notifications-${userId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
@@ -53,9 +56,21 @@ export function NotificationBell({ userId, compact }: NotificationBellProps) {
           playNotificationSound();
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (err) console.error("[NotificationBell] subscribe error:", err);
+      });
 
-    return () => { supabase.removeChannel(ch); };
+    // Fallback: refetch unread count when tab becomes visible again
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchUnread(supabase);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      supabase.removeChannel(ch);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const loadNotifications = async () => {
