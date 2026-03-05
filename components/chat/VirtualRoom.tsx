@@ -16,12 +16,41 @@ const OFFSET_Y = TH / 2 + 80;
 const SVG_W = (Math.max(COLS, ROWS) + 1) * TW;
 const SVG_H = (COLS + ROWS) * (TH / 2) + OFFSET_Y + TH * 2;
 
-const SHAPES = ["circle", "square", "hexagon", "diamond", "triangle", "pentagon"] as const;
-type ShapeType = typeof SHAPES[number];
-
-function getShape(userId: string): ShapeType {
-  const hash = userId.split("").reduce((sum, c) => sum + c.charCodeAt(0), 0);
-  return SHAPES[hash % SHAPES.length];
+// 2D person avatar drawn in SVG, centered at (0,0), ±20px vertically
+function PersonAvatar({ color, glow }: { color: string; glow?: boolean }) {
+  const skin = "#f5c5a3";
+  return (
+    <g>
+      {glow && <circle cx="0" cy="0" r="22" fill="none" stroke={color} strokeWidth="1.5" opacity={0.3} strokeDasharray="5 3" />}
+      {/* Hair */}
+      <ellipse cx="0" cy="-19" rx="7.5" ry="5" fill={color} stroke="white" strokeWidth="0.8" />
+      {/* Head */}
+      <circle cx="0" cy="-12" r="8" fill={skin} stroke="white" strokeWidth="0.9" />
+      {/* Eyes */}
+      <circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" />
+      <circle cx="3" cy="-13" r="1.3" fill="#2d1b0e" />
+      {/* Smile */}
+      <path d="M -2.5,-9.5 Q 0,-7.5 2.5,-9.5" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" />
+      {/* Shirt */}
+      <rect x="-8" y="-4" width="16" height="13" rx="3" fill={color} stroke="white" strokeWidth="0.8" />
+      {/* Left arm */}
+      <rect x="-13" y="-4" width="5" height="10" rx="2.5" fill={color} stroke="white" strokeWidth="0.7" />
+      {/* Right arm */}
+      <rect x="8" y="-4" width="5" height="10" rx="2.5" fill={color} stroke="white" strokeWidth="0.7" />
+      {/* Left hand */}
+      <circle cx="-10.5" cy="7" r="2.5" fill={skin} stroke="white" strokeWidth="0.6" />
+      {/* Right hand */}
+      <circle cx="10.5" cy="7" r="2.5" fill={skin} stroke="white" strokeWidth="0.6" />
+      {/* Pants left */}
+      <rect x="-7.5" y="9" width="6" height="10" rx="2" fill="#374151" stroke="white" strokeWidth="0.7" />
+      {/* Pants right */}
+      <rect x="1.5" y="9" width="6" height="10" rx="2" fill="#374151" stroke="white" strokeWidth="0.7" />
+      {/* Left shoe */}
+      <ellipse cx="-4.5" cy="20" rx="5.5" ry="2.5" fill="#1f2937" stroke="white" strokeWidth="0.6" />
+      {/* Right shoe */}
+      <ellipse cx="4.5" cy="20" rx="5.5" ry="2.5" fill="#1f2937" stroke="white" strokeWidth="0.6" />
+    </g>
+  );
 }
 
 function isoCenter(gx: number, gy: number) {
@@ -35,20 +64,11 @@ function tilePts(cx: number, cy: number): string {
   return `${cx},${cy - TH / 2} ${cx + TW / 2},${cy} ${cx},${cy + TH / 2} ${cx - TW / 2},${cy}`;
 }
 
-function polyPts(shape: ShapeType, r: number): string {
-  const n = shape === "triangle" ? 3 : shape === "diamond" ? 4 : shape === "pentagon" ? 5 : 6;
-  const off = shape === "hexagon" ? 30 : 0;
-  return Array.from({ length: n }, (_, i) => {
-    const a = ((i * 360) / n + off) * (Math.PI / 180);
-    return `${r * Math.sin(a)},${-r * Math.cos(a)}`;
-  }).join(" ");
-}
 
 interface PresenceUser {
   user_id: string;
   display_name: string;
   color: string;
-  shape: ShapeType;
   gx: number;
   gy: number;
 }
@@ -75,7 +95,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
 
-  const myShape = getShape(currentProfile.id);
   const myColor = currentProfile.avatar_color ?? "#8b5cf6";
 
   const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
@@ -117,12 +136,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         user_id: currentProfile.id,
         display_name: currentProfile.display_name,
         color: myColor,
-        shape: myShape,
         gx,
         gy,
       } satisfies PresenceUser,
     });
-  }, [currentProfile.id, currentProfile.display_name, myColor, myShape]);
+  }, [currentProfile.id, currentProfile.display_name, myColor]);
 
   useEffect(() => {
     const ch = supabase.channel(`virtual-${roomId}`, {
@@ -134,7 +152,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       user_id: currentProfile.id,
       display_name: currentProfile.display_name,
       color: myColor,
-      shape: myShape,
       gx: myPos.gx,
       gy: myPos.gy,
     };
@@ -227,9 +244,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const usersByCell = useMemo(() => {
     const m = new Map<string, PresenceUser>();
     Array.from(users.values()).forEach((u) => { if (u.user_id !== currentProfile.id) m.set(`${u.gx},${u.gy}`, u); });
-    m.set(`${myPos.gx},${myPos.gy}`, { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, shape: myShape, gx: myPos.gx, gy: myPos.gy });
+    m.set(`${myPos.gx},${myPos.gy}`, { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPos.gx, gy: myPos.gy });
     return m;
-  }, [users, myPos, currentProfile.id, currentProfile.display_name, myColor, myShape]);
+  }, [users, myPos, currentProfile.id, currentProfile.display_name, myColor]);
 
   const sortedTiles = useMemo(() => {
     const t: { gx: number; gy: number }[] = [];
@@ -282,8 +299,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         {/* ── Body: chat log left + isometric room right ── */}
         <div className="flex-1 flex overflow-hidden">
 
-          {/* Left panel — chat log */}
-          <div className="w-56 flex-shrink-0 flex flex-col bg-[#07101c]/60 border-r border-white/[0.06]">
+          {/* Left panel — chat log only (no input) */}
+          <div className="w-52 flex-shrink-0 flex flex-col bg-[#07101c]/60 border-r border-white/[0.06]">
             <div className="px-3 py-2 border-b border-white/[0.06]">
               <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Chatlog</span>
             </div>
@@ -303,24 +320,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   </div>
                 );
               })}
-            </div>
-            {/* Chat input */}
-            <div className="border-t border-white/[0.06] p-2 flex gap-1.5">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                placeholder="Skriv besked..."
-                className="flex-1 min-w-0 bg-white/[0.06] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-colors"
-              />
-              <button
-                onClick={sendMessage}
-                disabled={!input.trim()}
-                className="p-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-white flex-shrink-0"
-              >
-                <Send className="w-3 h-3" />
-              </button>
             </div>
           </div>
 
@@ -378,18 +377,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       <g>
                         <ellipse cx={ax} cy={y - TH / 2 + 6} rx={16} ry={5} fill="rgba(0,0,0,0.45)" />
                         <g transform={`translate(${ax}, ${ay})`}>
-                          {cellUser.shape === "circle" && (
-                            <circle cx={0} cy={0} r={AR} fill={cellUser.color} stroke="white" strokeWidth={2.5} />
-                          )}
-                          {cellUser.shape === "square" && (
-                            <rect x={-AR * 0.85} y={-AR * 0.85} width={AR * 1.7} height={AR * 1.7} rx={4} fill={cellUser.color} stroke="white" strokeWidth={2.5} />
-                          )}
-                          {!["circle", "square"].includes(cellUser.shape) && (
-                            <polygon points={polyPts(cellUser.shape, AR)} fill={cellUser.color} stroke="white" strokeWidth={2.5} />
-                          )}
-                          {isMe && (
-                            <circle cx={0} cy={0} r={AR + 7} fill="none" stroke={cellUser.color} strokeWidth={1.5} opacity={0.3} strokeDasharray="5 3" />
-                          )}
+                          <PersonAvatar color={cellUser.color} glow={isMe} />
                         </g>
 
                         {/* Name — double-pass for outline */}
@@ -434,25 +422,40 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           </div>
         </div>
 
-        {/* ── Bottom toolbar ── */}
-        <div className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 bg-[#07101c] border-t border-white/[0.06]">
-          <button
-            onClick={() => broadcastMove(myPos.gx, myPos.gy)}
-            className="p-2 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
-            title="Genopfrisk position"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
-          <button
-            className="p-2 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
-            title="Brugere online"
-          >
-            <Users className="w-3.5 h-3.5" />
-          </button>
-          <div className="flex-1" />
-          <span className="text-[11px] text-slate-600">
-            Klik på en flade for at bevæge dig · Højreklik på en avatar for muligheder
-          </span>
+        {/* ── Bottom toolbar + full-width chat input ── */}
+        <div className="flex-shrink-0 border-t border-white/[0.06] bg-[#07101c]">
+          {/* Chat input row */}
+          <div className="flex items-center gap-2 px-3 pt-2 pb-1.5">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              placeholder="Skriv en besked til rummet..."
+              className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-all"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim()}
+              className="p-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-white flex-shrink-0"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
+          {/* Icon row */}
+          <div className="flex items-center gap-1 px-3 pb-1.5">
+            <button
+              onClick={() => broadcastMove(myPos.gx, myPos.gy)}
+              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
+              title="Genopfrisk position"
+            >
+              <RefreshCw className="w-3 h-3" />
+            </button>
+            <button className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Brugere online">
+              <Users className="w-3 h-3" />
+            </button>
+            <span className="ml-2 text-[10px] text-slate-600">Klik for at bevæge dig · Højreklik på en figur for muligheder</span>
+          </div>
         </div>
       </div>
 
