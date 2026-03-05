@@ -7,6 +7,7 @@ import { ChatInput } from "./ChatInput";
 import { formatDate } from "@/lib/utils";
 import { Users, Wifi, WifiOff, Menu, Trash2, Hash } from "lucide-react";
 import type { MessageWithProfile, Profile } from "@/types";
+import { UserProfileModal } from "./UserProfileModal";
 
 interface ChatRoomProps {
   roomId: string;
@@ -39,6 +40,7 @@ export function ChatRoom({
   const [loading, setLoading] = useState(true);
   const [onlineCount, setOnlineCount] = useState(1);
   const [connected, setConnected] = useState(false);
+  const [modalProfile, setModalProfile] = useState<Profile | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -56,6 +58,7 @@ export function ChatRoom({
         .from("messages")
         .select("*, profiles(*)")
         .eq("room_id", roomId)
+        .eq("is_deleted", false)
         .order("created_at", { ascending: true })
         .limit(150);
       setMessages((data as MessageWithProfile[]) ?? []);
@@ -106,13 +109,17 @@ export function ChatRoom({
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
         (payload) => {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === payload.new.id
-                ? { ...m, content: payload.new.content, edited_at: payload.new.edited_at, is_deleted: payload.new.is_deleted }
-                : m
-            )
-          );
+          if (payload.new.is_deleted) {
+            setMessages((prev) => prev.filter((m) => m.id !== payload.new.id));
+          } else {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === payload.new.id
+                  ? { ...m, content: payload.new.content, edited_at: payload.new.edited_at }
+                  : m
+              )
+            );
+          }
         }
       )
       .on("presence", { event: "sync" }, () => {
@@ -183,6 +190,7 @@ export function ChatRoom({
               isAdmin={isAdmin}
               onDelete={handleDelete}
               onEdit={handleEdit}
+              onOpenProfile={setModalProfile}
             />
           </div>
         </div>
@@ -191,6 +199,13 @@ export function ChatRoom({
 
   return (
     <div className="flex flex-col h-full relative">
+      {modalProfile && (
+        <UserProfileModal
+          profile={modalProfile}
+          currentProfile={currentProfile}
+          onClose={() => setModalProfile(null)}
+        />
+      )}
       {/* Header */}
       <div className="flex-shrink-0 px-4 py-3.5 glass-strong border-b border-black/[0.06] dark:border-white/[0.06]">
         <div className="flex items-center justify-between gap-3">

@@ -5,7 +5,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { formatTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Pencil, Trash2, Check, X } from "lucide-react";
-import type { MessageWithProfile } from "@/types";
+import type { MessageWithProfile, Profile } from "@/types";
 
 interface ChatMessageProps {
   message: MessageWithProfile;
@@ -16,6 +16,7 @@ interface ChatMessageProps {
   isAdmin: boolean;
   onDelete: (id: string) => void;
   onEdit: (id: string, content: string) => void;
+  onOpenProfile?: (profile: Profile) => void;
 }
 
 function MessageContent({
@@ -66,6 +67,7 @@ export function ChatMessage({
   isAdmin,
   onDelete,
   onEdit,
+  onOpenProfile,
 }: ChatMessageProps) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
@@ -117,7 +119,9 @@ export function ChatMessage({
       {/* Avatar */}
       <div className={cn("flex-shrink-0 w-8", !showAvatar && "invisible")}>
         {showAvatar && (
-          <Avatar name={profile.display_name} color={profile.avatar_color} size="sm" />
+          <button onClick={() => onOpenProfile?.(profile)} className="block rounded-full focus:outline-none">
+            <Avatar name={profile.display_name} color={profile.avatar_color} size="sm" />
+          </button>
         )}
       </div>
 
@@ -126,9 +130,12 @@ export function ChatMessage({
         {/* Header */}
         {showHeader && !isOwn && (
           <div className="flex items-baseline gap-2 mb-1 px-1 flex-wrap">
-            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <button
+              onClick={() => onOpenProfile?.(profile)}
+              className="text-xs font-semibold text-slate-700 dark:text-slate-300 hover:underline"
+            >
               {profile.display_name}
-            </span>
+            </button>
             {profile.role === "admin" && (
               <span className="text-[9px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-1.5 py-0.5 rounded-full border border-violet-200 dark:border-violet-500/20">
                 🛡 MOD

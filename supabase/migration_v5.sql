@@ -29,6 +29,7 @@ create policy "Users and admins can update messages"
 drop policy if exists "Users can delete own messages" on public.messages;
 drop policy if exists "Users can delete own or admin delete any" on public.messages;
 drop policy if exists "Admins can delete any message" on public.messages;
+drop policy if exists "Users and admins can delete messages" on public.messages;
 
 create policy "Users and admins can delete messages"
   on public.messages for delete to authenticated
@@ -56,6 +57,19 @@ create policy "Users and admins can update profiles"
   );
 
 -- ============================================
+-- FIX: Conversations SELECT policy
+-- Creator must be able to see their own conversation while inserting members
+-- (without this, the 2nd member insert RLS check silently fails)
+-- ============================================
+drop policy if exists "Members can view their conversations" on public.conversations;
+create policy "Members can view their conversations"
+  on public.conversations for select to authenticated
+  using (
+    created_by = auth.uid() or
+    id in (select conversation_id from public.conversation_members where user_id = auth.uid())
+  );
+
+-- ============================================
 -- FIX: Set admin role
 -- Re-run safely even if already set
 -- ============================================
@@ -63,7 +77,7 @@ update public.profiles
 set role = 'admin'
 where id = (
   select id from auth.users
-  where lower(email) = lower('casperrehne1@gmail.com')
+  where lower(email) = lower('casperrehne3@gmail.com')
 );
 
 -- Confirm: run this to verify
