@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { X, Send } from "lucide-react";
 import type { Profile } from "@/types";
+import { UserProfileModal } from "./UserProfileModal";
 
-const COLS = 14;
+const COLS = 12;
 const ROWS = 9;
+const TW = 86;   // tile width in SVG units
+const TH = 43;   // tile height (2:1 isometric ratio)
+const AR = 22;   // avatar radius
+const OFFSET_Y = TH / 2 + 90;
+
+const SVG_W = (Math.max(COLS, ROWS) + 1) * TW;
+const SVG_H = (COLS + ROWS) * (TH / 2) + OFFSET_Y + TH * 2;
 
 const SHAPES = ["circle", "square", "hexagon", "diamond", "triangle", "pentagon"] as const;
 type ShapeType = typeof SHAPES[number];
@@ -16,43 +24,27 @@ function getShape(userId: string): ShapeType {
   return SHAPES[hash % SHAPES.length];
 }
 
-function shapePoints(shape: ShapeType, cx: number, cy: number, r: number): string {
-  const pts = (n: number, offset = 0) =>
-    Array.from({ length: n }, (_, i) => {
-      const a = ((i * 360) / n + offset) * (Math.PI / 180);
-      return `${cx + r * Math.sin(a)},${cy - r * Math.cos(a)}`;
-    }).join(" ");
-  switch (shape) {
-    case "hexagon": return pts(6, 30);
-    case "diamond": return pts(4, 0);
-    case "triangle": return pts(3, 0);
-    case "pentagon": return pts(5, 0);
-    default: return "";
-  }
+function isoCenter(gx: number, gy: number) {
+  return {
+    x: (gx - gy) * (TW / 2) + SVG_W / 2,
+    y: (gx + gy) * (TH / 2) + OFFSET_Y,
+  };
 }
 
-function AvatarShape({ shape, color, size = 34 }: { shape: ShapeType; color: string; size?: number }) {
-  const r = size / 2 - 3;
-  const c = size / 2;
-  if (shape === "circle") {
-    return (
-      <svg width={size} height={size} style={{ display: "block" }}>
-        <circle cx={c} cy={c} r={r} fill={color} stroke="white" strokeWidth={2} />
-      </svg>
-    );
-  }
-  if (shape === "square") {
-    return (
-      <svg width={size} height={size} style={{ display: "block" }}>
-        <rect x={3} y={3} width={size - 6} height={size - 6} rx={4} fill={color} stroke="white" strokeWidth={2} />
-      </svg>
-    );
-  }
-  return (
-    <svg width={size} height={size} style={{ display: "block" }}>
-      <polygon points={shapePoints(shape, c, c, r)} fill={color} stroke="white" strokeWidth={2} />
-    </svg>
-  );
+function tilePts(cx: number, cy: number): string {
+  return `${cx},${cy - TH / 2} ${cx + TW / 2},${cy} ${cx},${cy + TH / 2} ${cx - TW / 2},${cy}`;
+}
+
+function polyPts(shape: ShapeType, r: number): string {
+  const n =
+    shape === "triangle" ? 3 :
+    shape === "diamond" ? 4 :
+    shape === "pentagon" ? 5 : 6;
+  const off = shape === "hexagon" ? 30 : 0;
+  return Array.from({ length: n }, (_, i) => {
+    const a = ((i * 360) / n + off) * (Math.PI / 180);
+    return `${r * Math.sin(a)},${-r * Math.cos(a)}`;
+  }).join(" ");
 }
 
 interface PresenceUser {
@@ -64,10 +56,8 @@ interface PresenceUser {
   gy: number;
 }
 
-interface SpeechBubble {
-  text: string;
-  ts: number;
-}
+interface SpeechBubble { text: string; ts: number; }
+interface CtxMenu { clientX: number; clientY: number; user: PresenceUser; }
 
 interface VirtualRoomProps {
   roomId: string;
@@ -87,42 +77,33 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [bubbles, setBubbles] = useState<Map<string, SpeechBubble>>(new Map());
   const [myPos, setMyPos] = useState({ gx: Math.floor(COLS / 2), gy: Math.floor(ROWS / 2) });
   const [input, setInput] = useState("");
+  const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
+  const [profileView, setProfileView] = useState<Profile | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
 
-  const trackPresence = useCallback(
-    (gx: number, gy: number) => {
-      channelRef.current?.track({
-        user_id: currentProfile.id,
-        display_name: currentProfile.display_name,
-        color: myColor,
-        shape: myShape,
-        gx,
-        gy,
-      } satisfies PresenceUser);
-    },
-    [currentProfile.id, currentProfile.display_name, myColor, myShape]
-  );
-
-  const handleCellClick = (gx: number, gy: number) => {
-    const occupiedByOther = Array.from(users.values()).some(
-      (u) => u.user_id !== currentProfile.id && u.gx === gx && u.gy === gy
-    );
-    if (occupiedByOther) return;
-    setMyPos({ gx, gy });
-    trackPresence(gx, gy);
-  };
+  const trackPresence = useCallback((gx: number, gy: number) => {
+    channelRef.current?.track({
+      user_id: currentProfile.id,
+      display_name: currentProfile.display_name,
+      color: myColor,
+      shape: myShape,
+      gx,
+      gy,
+    } satisfies PresenceUser);
+  }, [currentProfile.id, currentProfile.display_name, myColor, myShape]);
 
   useEffect(() => {
-    const channel = supabase.channel(`virtual-${roomId}`, {
+    const ch = supabase.channel(`virtual-${roomId}`, {
       config: { presence: { key: currentProfile.id } },
     });
-    channelRef.current = channel;
+    channelRef.current = ch;
 
-    channel
+    ch
       .on("presence", { event: "sync" }, () => {
-        const state = channel.presenceState<PresenceUser>();
+        const state = ch.presenceState<PresenceUser>();
         const next = new Map<string, PresenceUser>();
-        for (const [, presences] of Object.entries(state)) {
-          const p = presences[0] as PresenceUser;
+        for (const [, arr] of Object.entries(state)) {
+          const p = arr[0] as PresenceUser;
           if (p?.user_id) next.set(p.user_id, p);
         }
         setUsers(next);
@@ -131,19 +112,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
         (payload) => {
-          const senderId: string = payload.new.user_id;
-          const content: string = payload.new.content;
+          const sid: string = payload.new.user_id;
+          const txt: string = payload.new.content;
           setBubbles((prev) => {
-            const next = new Map(prev);
-            next.set(senderId, { text: content, ts: Date.now() });
-            return next;
+            const m = new Map(prev);
+            m.set(sid, { text: txt, ts: Date.now() });
+            return m;
           });
           setTimeout(() => {
             setBubbles((prev) => {
-              const next = new Map(prev);
-              const b = next.get(senderId);
-              if (b && Date.now() - b.ts >= 4900) next.delete(senderId);
-              return next;
+              const m = new Map(prev);
+              const b = m.get(sid);
+              if (b && Date.now() - b.ts >= 4900) m.delete(sid);
+              return m;
             });
           }, 5000);
         }
@@ -152,39 +133,82 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
     trackPresence(myPos.gx, myPos.gy);
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
+  // Close context menu on outside click
+  useEffect(() => {
+    const h = () => setCtxMenu(null);
+    window.addEventListener("click", h);
+    return () => window.removeEventListener("click", h);
+  }, []);
+
+  const handleTileClick = (gx: number, gy: number) => {
+    setCtxMenu(null);
+    const blocked = Array.from(users.values()).some(
+      (u) => u.user_id !== currentProfile.id && u.gx === gx && u.gy === gy
+    );
+    if (blocked) return;
+    setMyPos({ gx, gy });
+    trackPresence(gx, gy);
+  };
+
+  const handleRightClick = (e: React.MouseEvent, user: PresenceUser | null) => {
+    e.preventDefault();
+    if (!user || user.user_id === currentProfile.id) return;
+    setCtxMenu({ clientX: e.clientX, clientY: e.clientY, user });
+  };
+
+  const openProfile = async (userId: string) => {
+    setCtxMenu(null);
+    const { data } = await supabase.from("profiles").select("*").eq("id", userId).single();
+    if (data) setProfileView(data as Profile);
+  };
+
+  const usersByCell = useMemo(() => {
+    const m = new Map<string, PresenceUser>();
+    Array.from(users.values()).forEach((u) => {
+      if (u.user_id !== currentProfile.id) m.set(`${u.gx},${u.gy}`, u);
+    });
+    m.set(`${myPos.gx},${myPos.gy}`, {
+      user_id: currentProfile.id,
+      display_name: currentProfile.display_name,
+      color: myColor,
+      shape: myShape,
+      gx: myPos.gx,
+      gy: myPos.gy,
+    });
+    return m;
+  }, [users, myPos, currentProfile.id, currentProfile.display_name, myColor, myShape]);
+
+  // Painter's algorithm: render back-to-front (lowest gx+gy first)
+  const sortedTiles = useMemo(() => {
+    const tiles: { gx: number; gy: number }[] = [];
+    for (let gy = 0; gy < ROWS; gy++)
+      for (let gx = 0; gx < COLS; gx++)
+        tiles.push({ gx, gy });
+    return tiles.sort((a, b) => (a.gx + a.gy) - (b.gx + b.gy));
+  }, []);
+
   const sendMessage = async () => {
-    const text = input.trim();
-    if (!text) return;
+    const t = input.trim();
+    if (!t) return;
     setInput("");
     await supabase.from("messages").insert({
-      content: text,
+      content: t,
       user_id: currentProfile.id,
       room_id: roomId,
     });
   };
 
-  // Build cell → user lookup
-  const usersByCell = new Map<string, PresenceUser>();
-  Array.from(users.values()).forEach((u) => {
-    if (u.user_id !== currentProfile.id) usersByCell.set(`${u.gx},${u.gy}`, u);
-  });
-  usersByCell.set(`${myPos.gx},${myPos.gy}`, {
-    user_id: currentProfile.id,
-    display_name: currentProfile.display_name,
-    color: myColor,
-    shape: myShape,
-    gx: myPos.gx,
-    gy: myPos.gy,
-  });
-
   const totalUsers = users.has(currentProfile.id) ? users.size : users.size + 1;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950">
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-[#080e1a]"
+      onClick={() => setCtxMenu(null)}
+    >
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
         <div className="flex items-center gap-2">
@@ -201,137 +225,237 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         </button>
       </div>
 
-      {/* Room */}
-      <div className="flex-1 flex items-center justify-center p-4 overflow-hidden">
-        <div
-          className="relative rounded-xl border-2 border-slate-700 overflow-hidden shadow-2xl"
-          style={{
-            width: "min(92vw, calc((100vh - 140px) * 14 / 9))",
-            aspectRatio: `${COLS} / ${ROWS}`,
-            background: "linear-gradient(160deg, #1a2744 0%, #0d1b2a 60%, #111827 100%)",
-          }}
+      {/* Isometric SVG canvas */}
+      <div className="flex-1 flex items-center justify-center overflow-hidden">
+        <svg
+          viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ width: "100%", height: "100%" }}
         >
-          {/* Floor grid lines */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              backgroundImage: `
-                linear-gradient(rgba(148,163,184,0.07) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(148,163,184,0.07) 1px, transparent 1px)
-              `,
-              backgroundSize: `${100 / COLS}% ${100 / ROWS}%`,
-            }}
-          />
+          <rect width={SVG_W} height={SVG_H} fill="#080e1a" />
 
-          {/* Cells grid */}
-          <div
-            className="absolute inset-0"
-            style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${COLS}, 1fr)`,
-              gridTemplateRows: `repeat(${ROWS}, 1fr)`,
-            }}
-          >
-            {Array.from({ length: ROWS }, (_, gy) =>
-              Array.from({ length: COLS }, (_, gx) => {
-                const cellUser = usersByCell.get(`${gx},${gy}`);
-                const isMe = cellUser?.user_id === currentProfile.id;
-                const bubble = cellUser ? bubbles.get(cellUser.user_id) : undefined;
-                const blockedByOther = cellUser && !isMe;
+          {sortedTiles.map(({ gx, gy }) => {
+            const { x, y } = isoCenter(gx, gy);
+            const cellKey = `${gx},${gy}`;
+            const cellUser = usersByCell.get(cellKey);
+            const isMe = cellUser?.user_id === currentProfile.id;
+            const bubble = cellUser ? bubbles.get(cellUser.user_id) : undefined;
+            const isHov = hovered === cellKey && !cellUser;
+            const isMyTile = myPos.gx === gx && myPos.gy === gy;
 
-                return (
-                  <div
-                    key={`${gx}-${gy}`}
-                    onClick={() => handleCellClick(gx, gy)}
-                    className={[
-                      "relative flex items-center justify-center transition-colors duration-100",
-                      !cellUser
-                        ? "hover:bg-white/[0.05] cursor-pointer active:bg-white/[0.09]"
-                        : blockedByOther
-                        ? "cursor-default"
-                        : "cursor-default",
-                    ].join(" ")}
-                  >
-                    {/* Highlight own cell */}
-                    {isMe && (
-                      <div
-                        className="absolute inset-0 rounded-sm"
-                        style={{ backgroundColor: `${myColor}22`, border: `1px solid ${myColor}55` }}
-                      />
-                    )}
+            const tileFill =
+              isMyTile ? "#241a52" :
+              isHov ? "#1a3050" :
+              (gx + gy) % 2 === 0 ? "#111d31" : "#0d1726";
 
-                    {cellUser && (
-                      <div className="relative z-10 flex flex-col items-center" style={{ gap: "1px" }}>
-                        {/* Speech bubble */}
-                        {bubble && (
-                          <div
-                            className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 pointer-events-none z-20"
-                            style={{
-                              filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.6))",
-                              minWidth: "60px",
-                              maxWidth: "110px",
-                            }}
-                          >
-                            <div
-                              className="text-white px-2 py-1 rounded-lg rounded-bl-none break-words leading-snug text-center"
-                              style={{
-                                backgroundColor: cellUser.color,
-                                fontSize: "9px",
-                                whiteSpace: "pre-wrap",
-                              }}
+            const tileBorder = isMyTile ? myColor : "#1a2840";
+
+            // Avatar sits above the top point of the tile
+            const ax = x;
+            const ay = y - TH / 2 - AR - 10;
+
+            return (
+              <g
+                key={cellKey}
+                onClick={() => handleTileClick(gx, gy)}
+                onContextMenu={(e) => handleRightClick(e, cellUser ?? null)}
+                onMouseEnter={() => setHovered(cellKey)}
+                onMouseLeave={() => setHovered(null)}
+                style={{ cursor: (cellUser && !isMe) ? "default" : "pointer" }}
+              >
+                {/* Tile floor */}
+                <polygon
+                  points={tilePts(x, y)}
+                  fill={tileFill}
+                  stroke={tileBorder}
+                  strokeWidth={isMyTile ? 1.5 : 0.8}
+                />
+
+                {/* Hover highlight */}
+                {isHov && (
+                  <polygon
+                    points={tilePts(x, y)}
+                    fill="rgba(100,160,255,0.07)"
+                    stroke="rgba(100,160,255,0.3)"
+                    strokeWidth={1}
+                  />
+                )}
+
+                {/* Avatar + label */}
+                {cellUser && (
+                  <g>
+                    {/* Drop shadow */}
+                    <ellipse
+                      cx={ax}
+                      cy={y - TH / 2 + 7}
+                      rx={18}
+                      ry={6}
+                      fill="rgba(0,0,0,0.45)"
+                    />
+
+                    {/* Avatar shape */}
+                    <g transform={`translate(${ax}, ${ay})`}>
+                      {cellUser.shape === "circle" && (
+                        <circle cx={0} cy={0} r={AR} fill={cellUser.color} stroke="white" strokeWidth={2.5} />
+                      )}
+                      {cellUser.shape === "square" && (
+                        <rect
+                          x={-AR * 0.85}
+                          y={-AR * 0.85}
+                          width={AR * 1.7}
+                          height={AR * 1.7}
+                          rx={5}
+                          fill={cellUser.color}
+                          stroke="white"
+                          strokeWidth={2.5}
+                        />
+                      )}
+                      {!["circle", "square"].includes(cellUser.shape) && (
+                        <polygon
+                          points={polyPts(cellUser.shape, AR)}
+                          fill={cellUser.color}
+                          stroke="white"
+                          strokeWidth={2.5}
+                        />
+                      )}
+
+                      {/* Glow ring for own avatar */}
+                      {isMe && (
+                        <circle
+                          cx={0}
+                          cy={0}
+                          r={AR + 8}
+                          fill="none"
+                          stroke={cellUser.color}
+                          strokeWidth={1.5}
+                          opacity={0.35}
+                          strokeDasharray="5 3"
+                        />
+                      )}
+                    </g>
+
+                    {/* Name label — double-rendered for outline effect */}
+                    <text
+                      x={ax}
+                      y={ay + AR + 17}
+                      textAnchor="middle"
+                      fontSize={10}
+                      fontFamily="system-ui, sans-serif"
+                      fontWeight="600"
+                      stroke="rgba(0,0,0,0.95)"
+                      strokeWidth={3}
+                      fill="rgba(0,0,0,0.95)"
+                    >
+                      {isMe ? "Du" : cellUser.display_name}
+                    </text>
+                    <text
+                      x={ax}
+                      y={ay + AR + 17}
+                      textAnchor="middle"
+                      fontSize={10}
+                      fontFamily="system-ui, sans-serif"
+                      fontWeight="600"
+                      fill="white"
+                    >
+                      {isMe ? "Du" : cellUser.display_name}
+                    </text>
+
+                    {/* Speech bubble */}
+                    {bubble && (() => {
+                      const chPerLine = 18;
+                      const words = bubble.text.split(" ");
+                      const lines: string[] = [];
+                      let cur = "";
+                      words.forEach((w) => {
+                        const next = cur ? `${cur} ${w}` : w;
+                        if (next.length > chPerLine && cur) {
+                          lines.push(cur);
+                          cur = w;
+                        } else {
+                          cur = next;
+                        }
+                      });
+                      if (cur) lines.push(cur);
+                      const capped = lines.slice(0, 3);
+                      const bw = Math.min(145, Math.max(55, capped[0].length * 6.2 + 22));
+                      const bh = capped.length * 15 + 12;
+                      const bTop = ay - AR - 14 - bh;
+
+                      return (
+                        <g>
+                          <rect
+                            x={ax - bw / 2}
+                            y={bTop}
+                            width={bw}
+                            height={bh}
+                            rx={8}
+                            fill={cellUser.color}
+                            opacity={0.95}
+                          />
+                          {/* Bubble tail */}
+                          <polygon
+                            points={`${ax - 5},${bTop + bh} ${ax + 5},${bTop + bh} ${ax},${bTop + bh + 8}`}
+                            fill={cellUser.color}
+                            opacity={0.95}
+                          />
+                          {capped.map((line, i) => (
+                            <text
+                              key={i}
+                              x={ax}
+                              y={bTop + 14 + i * 15}
+                              textAnchor="middle"
+                              fontSize={9.5}
+                              fontFamily="system-ui, sans-serif"
+                              fontWeight="500"
+                              fill="white"
                             >
-                              {bubble.text}
-                            </div>
-                            <div
-                              style={{
-                                width: 0,
-                                height: 0,
-                                borderLeft: "5px solid transparent",
-                                borderRight: 0,
-                                borderTop: `5px solid ${cellUser.color}`,
-                                marginLeft: "10px",
-                              }}
-                            />
-                          </div>
-                        )}
-
-                        {/* Avatar */}
-                        <div
-                          style={{
-                            filter: isMe
-                              ? `drop-shadow(0 0 5px ${myColor}88)`
-                              : "drop-shadow(0 2px 3px rgba(0,0,0,0.7))",
-                          }}
-                        >
-                          <AvatarShape shape={cellUser.shape} color={cellUser.color} size={30} />
-                        </div>
-
-                        {/* Name */}
-                        <span
-                          style={{
-                            fontSize: "8px",
-                            color: "white",
-                            backgroundColor: "rgba(0,0,0,0.65)",
-                            padding: "1px 4px",
-                            borderRadius: "3px",
-                            maxWidth: "100%",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            lineHeight: 1.4,
-                          }}
-                        >
-                          {isMe ? "Du" : cellUser.display_name}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
+                              {line}
+                            </text>
+                          ))}
+                        </g>
+                      );
+                    })()}
+                  </g>
+                )}
+              </g>
+            );
+          })}
+        </svg>
       </div>
+
+      {/* Right-click context menu */}
+      {ctxMenu && (
+        <div
+          className="fixed z-[60] bg-slate-800 border border-white/[0.1] rounded-xl shadow-2xl overflow-hidden min-w-[170px]"
+          style={{ left: ctxMenu.clientX, top: ctxMenu.clientY }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center gap-2">
+            <div
+              className="w-6 h-6 rounded-full flex-shrink-0"
+              style={{ backgroundColor: ctxMenu.user.color }}
+            />
+            <span className="text-xs font-semibold text-slate-200 truncate">
+              {ctxMenu.user.display_name}
+            </span>
+          </div>
+          <button
+            className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06] transition-colors"
+            onClick={() => openProfile(ctxMenu.user.user_id)}
+          >
+            Se profil
+          </button>
+        </div>
+      )}
+
+      {/* Profile modal */}
+      {profileView && (
+        <UserProfileModal
+          profile={profileView}
+          currentProfile={currentProfile}
+          onClose={() => setProfileView(null)}
+        />
+      )}
 
       {/* Chat input */}
       <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 border-t border-white/[0.06] bg-slate-900/60">
@@ -340,7 +464,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              sendMessage();
+            }
           }}
           placeholder="Skriv en besked — vises som taleboble over din avatar..."
           className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 transition-all"
