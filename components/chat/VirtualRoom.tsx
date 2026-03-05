@@ -2,24 +2,21 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Send, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus } from "lucide-react";
+import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus } from "lucide-react";
 import type { Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
 // ─── Grid constants ────────────────────────────────────────────────────────────
-const COLS = 10;
-const ROWS = 8;
 const TW = 80;
 const TH = 40;
 const AR = 20;
 const AVG_SCALE = 1.4;
 const AR_S = Math.round(AR * AVG_SCALE); // 28 – scaled avatar half-height
 const OFFSET_Y = TH / 2 + 80;
-const SVG_W = (Math.max(COLS, ROWS) + 1) * TW;
-const SVG_H = (COLS + ROWS) * (TH / 2) + OFFSET_Y + TH * 2;
+const DEFAULT_COLS = 10;
+const DEFAULT_ROWS = 8;
 
 // ─── Room themes ───────────────────────────────────────────────────────────────
-// Maps room name keywords → tile colors
 function getRoomTheme(roomName: string): { even: string; odd: string; highlight: string } {
   const n = roomName.toLowerCase();
   if (n.includes("køkken") || n.includes("kitchen"))
@@ -32,14 +29,12 @@ function getRoomTheme(roomName: string): { even: string; odd: string; highlight:
     return { even: "#0e1e22", odd: "#0b181c", highlight: "#0e2e38" };
   if (n.includes("kontor") || n.includes("office"))
     return { even: "#1a1510", odd: "#14100c", highlight: "#2e2010" };
-  // default dark blue
   return { even: "#0f1a2e", odd: "#0c1525", highlight: "#231850" };
 }
 
 // ─── Person Avatar ─────────────────────────────────────────────────────────────
 function PersonAvatar({ color, glow, mood = "happy" }: { color: string; glow?: boolean; mood?: string }) {
   const skin = "#f5c5a3";
-
   const face = (() => {
     switch (mood) {
       case "sad":
@@ -47,21 +42,17 @@ function PersonAvatar({ color, glow, mood = "happy" }: { color: string; glow?: b
           <g>
             <circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" />
             <circle cx="3" cy="-13" r="1.3" fill="#2d1b0e" />
-            {/* single teardrop */}
             <ellipse cx="-2.5" cy="-10" rx="0.7" ry="1.1" fill="#93c5fd" opacity="0.85" />
-            {/* frown */}
             <path d="M -2.5,-7.5 Q 0,-9.5 2.5,-7.5" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" />
           </g>
         );
       case "angry":
         return (
           <g>
-            {/* V-shaped angry brows */}
             <line x1="-5.5" y1="-17" x2="-1" y2="-14.5" stroke="#2d1b0e" strokeWidth="1.3" strokeLinecap="round" />
             <line x1="5.5" y1="-17" x2="1" y2="-14.5" stroke="#2d1b0e" strokeWidth="1.3" strokeLinecap="round" />
             <circle cx="-3" cy="-12.5" r="1.3" fill="#2d1b0e" />
             <circle cx="3" cy="-12.5" r="1.3" fill="#2d1b0e" />
-            {/* grumpy mouth */}
             <path d="M -2.5,-8 Q 0,-6.5 2.5,-8" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" />
           </g>
         );
@@ -70,16 +61,13 @@ function PersonAvatar({ color, glow, mood = "happy" }: { color: string; glow?: b
           <g>
             <circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" />
             <circle cx="3" cy="-13" r="1.3" fill="#2d1b0e" />
-            {/* droopy eyelids */}
             <path d="M -4.8,-13 Q -3,-15 -1.2,-13" fill={skin} stroke="none" />
             <path d="M 1.2,-13 Q 3,-15 4.8,-13" fill={skin} stroke="none" />
-            {/* zzz */}
             <text x="6" y="-16" fontSize="4.5" fill="#94a3b8" fontFamily="system-ui">zzz</text>
-            {/* flat mouth */}
             <path d="M -2,-8.5 L 2,-8.5" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" />
           </g>
         );
-      default: // happy
+      default:
         return (
           <g>
             <circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" />
@@ -89,7 +77,6 @@ function PersonAvatar({ color, glow, mood = "happy" }: { color: string; glow?: b
         );
     }
   })();
-
   return (
     <g>
       {glow && <circle cx="0" cy="0" r="22" fill="none" stroke={color} strokeWidth="1.5" opacity={0.3} strokeDasharray="5 3" />}
@@ -210,9 +197,9 @@ function ItemSVG({ type }: { type: string }) {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-function isoCenter(gx: number, gy: number) {
+function isoCenter(gx: number, gy: number, svgW: number) {
   return {
-    x: (gx - gy) * (TW / 2) + SVG_W / 2,
+    x: (gx - gy) * (TW / 2) + svgW / 2,
     y: (gx + gy) * (TH / 2) + OFFSET_Y,
   };
 }
@@ -261,6 +248,12 @@ interface GlobalUser {
   room_id: string;
   room_name: string;
 }
+interface ChatRoom {
+  id: string;
+  name: string;
+  cols: number;
+  rows: number;
+}
 interface VirtualRoomProps {
   roomId: string;
   roomName: string;
@@ -275,20 +268,26 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const globalChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
-  const myPosRef = useRef({ gx: Math.floor(Math.random() * COLS), gy: Math.floor(Math.random() * ROWS) });
+  const myPosRef = useRef({ gx: Math.floor(Math.random() * DEFAULT_COLS), gy: Math.floor(Math.random() * DEFAULT_ROWS) });
   const lastActivityRef = useRef(Date.now());
   const myMoodRef = useRef("happy");
+  const draftRef = useRef("");
+  const sendDraftRef = useRef<() => void>(() => {});
+  const roomColsRef = useRef(DEFAULT_COLS);
+  const roomRowsRef = useRef(DEFAULT_ROWS);
 
   const myColor = currentProfile.avatar_color ?? "#8b5cf6";
   const isAdmin = currentProfile.role === "admin";
 
   const [activeRoomId, setActiveRoomId] = useState(roomId);
   const [activeRoomName, setActiveRoomName] = useState(roomName);
+  const [roomCols, setRoomCols] = useState(DEFAULT_COLS);
+  const [roomRows, setRoomRows] = useState(DEFAULT_ROWS);
   const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
   const [bubbles, setBubbles] = useState<Map<string, SpeechBubble>>(new Map());
   const [myPos, setMyPos] = useState(myPosRef.current);
   const [myMood, setMyMood] = useState("happy");
-  const [input, setInput] = useState("");
+  const [draft, setDraft] = useState("");
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [profileView, setProfileView] = useState<Profile | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -296,11 +295,23 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [fullscreen, setFullscreen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [rightPanel, setRightPanel] = useState<RightPanel>("chatlog");
-  const [rooms, setRooms] = useState<{ id: string; name: string }[]>([]);
+  const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [items, setItems] = useState<RoomItem[]>([]);
   const [createForm, setCreateForm] = useState<{ name: string; item_type: string } | null>(null);
   const [editItem, setEditItem] = useState<RoomItem | null>(null);
   const [globalUsers, setGlobalUsers] = useState<Map<string, GlobalUser>>(new Map());
+  const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number } | null>(null);
+
+  // Derived SVG dimensions
+  const svgW = useMemo(() => (Math.max(roomCols, roomRows) + 1) * TW, [roomCols, roomRows]);
+  const svgH = useMemo(() => (roomCols + roomRows) * (TH / 2) + OFFSET_Y + TH * 2, [roomCols, roomRows]);
+
+  const setRoomDimensions = (cols: number, rows: number) => {
+    roomColsRef.current = cols;
+    roomRowsRef.current = rows;
+    setRoomCols(cols);
+    setRoomRows(rows);
+  };
 
   const moveMyPos = useCallback((gx: number, gy: number) => {
     myPosRef.current = { gx, gy };
@@ -311,7 +322,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const changeMood = (mood: string) => {
     myMoodRef.current = mood;
     setMyMood(mood);
-    // Broadcast new mood immediately
     channelRef.current?.send({
       type: "broadcast",
       event: "move",
@@ -319,10 +329,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     });
   };
 
-  // Fetch rooms list (correct table name)
+  // Fetch rooms list
   useEffect(() => {
-    supabase.from("chat_rooms").select("id, name").order("name").then(({ data }) => {
-      if (data) setRooms(data as { id: string; name: string }[]);
+    supabase.from("chat_rooms").select("id, name, cols, rows").order("name").then(({ data }) => {
+      if (data) {
+        const list = (data as ChatRoom[]).map(r => ({ ...r, cols: r.cols ?? DEFAULT_COLS, rows: r.rows ?? DEFAULT_ROWS }));
+        setRooms(list);
+        const cur = list.find(r => r.id === roomId);
+        if (cur) setRoomDimensions(cur.cols, cur.rows);
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -429,16 +444,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           for (const uid of Array.from(next.keys())) { if (!activeIds.has(uid)) next.delete(uid); }
           return next;
         });
-        // Anti-collision
+        const cols = roomColsRef.current;
+        const rows = roomRowsRef.current;
         const occupied = new Set(others.map((p) => `${p.gx},${p.gy}`));
         const cur = myPosRef.current;
         if (occupied.has(`${cur.gx},${cur.gy}`)) {
-          outer: for (let dist = 1; dist < Math.max(COLS, ROWS); dist++) {
+          outer: for (let dist = 1; dist < Math.max(cols, rows); dist++) {
             for (let dgx = -dist; dgx <= dist; dgx++) {
               for (let dgy = -dist; dgy <= dist; dgy++) {
                 if (Math.abs(dgx) !== dist && Math.abs(dgy) !== dist) continue;
-                const ngx = Math.max(0, Math.min(COLS - 1, cur.gx + dgx));
-                const ngy = Math.max(0, Math.min(ROWS - 1, cur.gy + dgy));
+                const ngx = Math.max(0, Math.min(cols - 1, cur.gx + dgx));
+                const ngy = Math.max(0, Math.min(rows - 1, cur.gy + dgy));
                 if (!occupied.has(`${ngx},${ngy}`)) { moveMyPos(ngx, ngy); broadcastMove(ngx, ngy); break outer; }
               }
             }
@@ -468,6 +484,35 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId]);
+
+  // Keyboard input → draft (capture any keypress not in an input/textarea)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      if (e.key === "Enter") {
+        sendDraftRef.current();
+        return;
+      }
+      if (e.key === "Escape") {
+        draftRef.current = "";
+        setDraft("");
+        return;
+      }
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        setDraft((prev) => { const next = prev.slice(0, -1); draftRef.current = next; return next; });
+        return;
+      }
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (draftRef.current.length >= 200) return;
+        e.preventDefault();
+        setDraft((prev) => { const next = prev + e.key; draftRef.current = next; return next; });
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []); // uses refs — no stale closures
 
   useEffect(() => {
     const h = () => setCtxMenu(null);
@@ -501,14 +546,26 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     channelRef.current?.send({ type: "broadcast", event: "kick", payload: { user_id: user.user_id } });
   };
 
-  const sendMessage = async () => {
-    const t = input.trim(); if (!t) return;
-    setInput(""); lastActivityRef.current = Date.now();
-    await supabase.from("messages").insert({ content: t, user_id: currentProfile.id, room_id: activeRoomId });
+  const switchRoom = (id: string, name: string, cols?: number, rows?: number) => {
+    const nc = cols ?? roomColsRef.current;
+    const nr = rows ?? roomRowsRef.current;
+    setActiveRoomId(id);
+    setActiveRoomName(name);
+    setRoomDimensions(nc, nr);
+    setRightPanel("chatlog");
+    lastActivityRef.current = Date.now();
+    myPosRef.current = { gx: Math.floor(Math.random() * nc), gy: Math.floor(Math.random() * nr) };
+    setMyPos(myPosRef.current);
   };
 
-  const switchRoom = (id: string, name: string) => {
-    setActiveRoomId(id); setActiveRoomName(name); setRightPanel("chatlog"); lastActivityRef.current = Date.now();
+  // sendDraftRef.current is re-assigned every render so it always has latest activeRoomId
+  sendDraftRef.current = async () => {
+    const t = draftRef.current.trim();
+    if (!t) return;
+    draftRef.current = "";
+    setDraft("");
+    lastActivityRef.current = Date.now();
+    await supabase.from("messages").insert({ content: t, user_id: currentProfile.id, room_id: activeRoomId });
   };
 
   // Item actions
@@ -531,6 +588,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const updateItemScale = async (item: RoomItem, delta: number) => {
     const next = Math.round(Math.min(3, Math.max(0.3, (item.item_scale ?? 1) + delta)) * 10) / 10;
     await supabase.from("virtual_room_items").update({ item_scale: next }).eq("id", item.id);
+  };
+
+  const createRoom = async () => {
+    if (!createRoomForm?.name.trim()) return;
+    const { data } = await supabase.from("chat_rooms")
+      .insert({ name: createRoomForm.name.trim(), cols: createRoomForm.cols, rows: createRoomForm.rows })
+      .select("id, name, cols, rows").single();
+    if (data) setRooms((prev) => [...prev, data as ChatRoom].sort((a, b) => a.name.localeCompare(b.name)));
+    setCreateRoomForm(null);
   };
 
   const reloadChat = useCallback(async () => {
@@ -563,16 +629,45 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   const sortedTiles = useMemo(() => {
     const t: { gx: number; gy: number }[] = [];
-    for (let gy = 0; gy < ROWS; gy++) for (let gx = 0; gx < COLS; gx++) t.push({ gx, gy });
+    for (let gy = 0; gy < roomRows; gy++) for (let gx = 0; gx < roomCols; gx++) t.push({ gx, gy });
     return t.sort((a, b) => (a.gx + a.gy) - (b.gx + b.gy));
-  }, []);
+  }, [roomCols, roomRows]);
 
   const totalUsers = users.has(currentProfile.id) ? users.size : users.size + 1;
   const theme = useMemo(() => getRoomTheme(activeRoomName), [activeRoomName]);
 
+  const roomOccupancy = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const u of globalUsers.values()) m.set(u.room_id, (m.get(u.room_id) ?? 0) + 1);
+    return m;
+  }, [globalUsers]);
+
   const windowStyle = fullscreen
     ? { width: "100vw", height: "100vh", borderRadius: "0" }
     : { width: "min(96vw, 1040px)", height: "min(88vh, 660px)" };
+
+  // Reusable bubble renderer for SVG
+  const renderSvgBubble = (ax: number, ay: number, text: string, color: string, opacity: number) => {
+    const chPerLine = 16;
+    const words = text.split(" ");
+    const lines: string[] = [];
+    let cur = "";
+    words.forEach((w) => { const next = cur ? `${cur} ${w}` : w; if (next.length > chPerLine && cur) { lines.push(cur); cur = w; } else { cur = next; } });
+    if (cur) lines.push(cur);
+    const capped = lines.slice(0, 3);
+    const bw = Math.min(130, Math.max(50, capped[0].length * 6 + 20));
+    const bh = capped.length * 14 + 10;
+    const bTop = ay - AR_S - 22 - bh;
+    return (
+      <g>
+        <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={7} fill={color} opacity={opacity} />
+        <polygon points={`${ax - 4},${bTop + bh} ${ax + 4},${bTop + bh} ${ax},${bTop + bh + 7}`} fill={color} opacity={opacity} />
+        {capped.map((line, i) => (
+          <text key={i} x={ax} y={bTop + 13 + i * 14} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="500" fill="white" opacity={opacity}>{line}</text>
+        ))}
+      </g>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm" onClick={() => setCtxMenu(null)}>
@@ -598,14 +693,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           {/* Isometric room */}
           <div className="flex-1 flex items-center justify-center overflow-hidden" style={{ background: theme.even }}>
             <svg
-              viewBox={`${SVG_W / 2 - SVG_W / (2 * zoom)} ${SVG_H / 2 - SVG_H / (2 * zoom)} ${SVG_W / zoom} ${SVG_H / zoom}`}
+              viewBox={`${svgW / 2 - svgW / (2 * zoom)} ${svgH / 2 - svgH / (2 * zoom)} ${svgW / zoom} ${svgH / zoom}`}
               preserveAspectRatio="xMidYMid meet"
               style={{ width: "100%", height: "100%" }}
             >
-              <rect width={SVG_W} height={SVG_H} fill={theme.even} />
+              <rect width={svgW} height={svgH} fill={theme.even} />
 
               {sortedTiles.map(({ gx, gy }) => {
-                const { x, y } = isoCenter(gx, gy);
+                const { x, y } = isoCenter(gx, gy, svgW);
                 const cellKey = `${gx},${gy}`;
                 const cellUser = usersByCell.get(cellKey);
                 const cellItem = itemsByCell.get(cellKey);
@@ -616,7 +711,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
                 const tileFill = isMyTile ? theme.highlight : isHov ? "#192e4a" : (gx + gy) % 2 === 0 ? theme.even : theme.odd;
                 const ax = x;
-                const ay = y - AR_S; // feet at y (tile center) — no floating
+                const ay = y - AR_S;
 
                 return (
                   <g key={cellKey} onClick={() => handleTileClick(gx, gy)} onContextMenu={(e) => handleRightClick(e, cellUser ?? null, cellItem ?? null)} onMouseEnter={() => setHovered(cellKey)} onMouseLeave={() => setHovered(null)} style={{ cursor: (cellUser && !isMe) ? "default" : "pointer" }}>
@@ -637,31 +732,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={cellUser.color} glow={isMe} mood={cellUser.mood} />
                         </g>
-                        {/* Name label above head */}
                         <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">{isMe ? "Du" : cellUser.display_name}</text>
                         <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{isMe ? "Du" : cellUser.display_name}</text>
-                        {/* Speech bubble */}
-                        {bubble && (() => {
-                          const chPerLine = 16;
-                          const words = bubble.text.split(" ");
-                          const lines: string[] = [];
-                          let cur = "";
-                          words.forEach((w) => { const next = cur ? `${cur} ${w}` : w; if (next.length > chPerLine && cur) { lines.push(cur); cur = w; } else { cur = next; } });
-                          if (cur) lines.push(cur);
-                          const capped = lines.slice(0, 3);
-                          const bw = Math.min(130, Math.max(50, capped[0].length * 6 + 20));
-                          const bh = capped.length * 14 + 10;
-                          const bTop = ay - AR_S - 22 - bh;
-                          return (
-                            <g>
-                              <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={7} fill={cellUser.color} opacity={0.95} />
-                              <polygon points={`${ax - 4},${bTop + bh} ${ax + 4},${bTop + bh} ${ax},${bTop + bh + 7}`} fill={cellUser.color} opacity={0.95} />
-                              {capped.map((line, i) => (
-                                <text key={i} x={ax} y={bTop + 13 + i * 14} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="500" fill="white">{line}</text>
-                              ))}
-                            </g>
-                          );
-                        })()}
+                        {/* Gray draft bubble while typing */}
+                        {isMe && draft && renderSvgBubble(ax, ay, draft + "…", "#475569", 0.85)}
+                        {/* Sent speech bubble */}
+                        {bubble && renderSvgBubble(ax, ay, bubble.text, cellUser.color, 0.95)}
                       </g>
                     )}
                   </g>
@@ -695,8 +771,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           <p className="text-[12px] text-slate-300 truncate">{isMe ? `${u.display_name} (dig)` : u.display_name}</p>
                           <p className={`text-[10px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</p>
                         </div>
-                        {!inSameRoom && (
-                          <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name); }} className="text-[10px] text-slate-500 hover:text-violet-400 transition-colors flex-shrink-0">Gå til</button>
+                        {!inSameRoom && !isMe && (
+                          <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows); }} className="text-[10px] text-slate-500 hover:text-violet-400 transition-colors flex-shrink-0">Gå til</button>
                         )}
                       </div>
                     );
@@ -710,19 +786,48 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <>
                 <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
                   <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Skift rum</span>
-                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-3 h-3" /></button>
+                  <div className="flex items-center gap-1">
+                    {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8 })} className="p-1 rounded text-slate-500 hover:text-emerald-400 transition-colors" title="Opret rum"><Plus className="w-3 h-3" /></button>}
+                    <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-3 h-3" /></button>
+                  </div>
                 </div>
+                {createRoomForm && isAdmin && (
+                  <div className="px-3 py-2 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0">
+                    <p className="text-[10px] font-semibold text-slate-500 mb-1.5">Nyt rum</p>
+                    <input autoFocus value={createRoomForm.name} onChange={(e) => setCreateRoomForm({ ...createRoomForm, name: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") createRoom(); if (e.key === "Escape") setCreateRoomForm(null); }} placeholder="Rum navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50" />
+                    <div className="flex gap-1.5 mb-1">
+                      <div className="flex-1">
+                        <p className="text-[9px] text-slate-500 mb-0.5">Bredde</p>
+                        <input type="number" min={4} max={20} value={createRoomForm.cols} onChange={(e) => setCreateRoomForm({ ...createRoomForm, cols: Math.max(4, Math.min(20, parseInt(e.target.value) || 10)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-violet-500/50" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[9px] text-slate-500 mb-0.5">Dybde</p>
+                        <input type="number" min={4} max={16} value={createRoomForm.rows} onChange={(e) => setCreateRoomForm({ ...createRoomForm, rows: Math.max(4, Math.min(16, parseInt(e.target.value) || 8)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-violet-500/50" />
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-slate-600 mb-1.5">{createRoomForm.cols * createRoomForm.rows} felter</p>
+                    <div className="flex gap-1">
+                      <button onClick={createRoom} className="flex-1 py-1 bg-violet-600 hover:bg-violet-500 rounded text-[10px] text-white transition-colors">Opret</button>
+                      <button onClick={() => setCreateRoomForm(null)} className="flex-1 py-1 bg-white/[0.06] hover:bg-white/[0.1] rounded text-[10px] text-slate-300 transition-colors">Annuller</button>
+                    </div>
+                  </div>
+                )}
                 <div className="flex-1 overflow-y-auto py-1">
                   {rooms.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen rum fundet</p>}
-                  {rooms.map((r) => (
-                    <button key={r.id} onClick={() => switchRoom(r.id, r.name)}
-                      className={`w-full text-left px-3 py-2 text-[12px] transition-colors flex items-center gap-2 ${r.id === activeRoomId ? "bg-violet-500/20 text-violet-300" : "text-slate-300 hover:bg-white/[0.05]"}`}
-                    >
-                      <span className="text-slate-500">#</span>
-                      <span className="truncate">{r.name}</span>
-                      {r.id === activeRoomId && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" />}
-                    </button>
-                  ))}
+                  {rooms.map((r) => {
+                    const occupancy = roomOccupancy.get(r.id) ?? 0;
+                    const capacity = r.cols * r.rows;
+                    return (
+                      <button key={r.id} onClick={() => switchRoom(r.id, r.name, r.cols, r.rows)}
+                        className={`w-full text-left px-3 py-2 text-[12px] transition-colors flex items-center gap-2 ${r.id === activeRoomId ? "bg-violet-500/20 text-violet-300" : "text-slate-300 hover:bg-white/[0.05]"}`}
+                      >
+                        <span className="text-slate-500">#</span>
+                        <span className="flex-1 truncate">{r.name}</span>
+                        <span className={`text-[10px] flex-shrink-0 ${occupancy > 0 ? "text-emerald-500" : "text-slate-700"}`}>{occupancy}/{capacity}</span>
+                        {r.id === activeRoomId && <span className="w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" />}
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             )}
@@ -805,7 +910,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                             <button onClick={() => deleteItem(item.id)} className="p-0.5 text-slate-500 hover:text-rose-400 transition-colors"><Trash2 className="w-2.5 h-2.5" /></button>
                           </div>
                         </div>
-                        {/* Scale controls */}
                         <div className="flex items-center gap-1 mt-1 pl-7">
                           <button onClick={() => updateItemScale(item, -0.2)} className="w-5 h-5 rounded bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-400 transition-colors"><Minus className="w-2.5 h-2.5" /></button>
                           <span className="text-[9px] text-slate-500 w-8 text-center">{Math.round(scale * 100)}%</span>
@@ -818,7 +922,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </>
             )}
 
-            {/* Chat log (default) */}
             {/* Chat log (default) */}
             {(rightPanel === "chatlog" || (rightPanel === "admin" && !isAdmin)) && (
               <>
@@ -845,28 +948,33 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
         {/* Bottom toolbar */}
         <div className="flex-shrink-0 border-t border-white/[0.06] bg-[#07101c]">
-          <div className="flex items-center gap-2 px-3 pt-2 pb-1.5">
-            <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Skriv en besked til rummet..." className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-all" />
-            <button onClick={sendMessage} disabled={!input.trim()} className="p-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-white flex-shrink-0"><Send className="w-4 h-4" /></button>
-          </div>
-          <div className="flex items-center gap-1 px-3 pb-1.5">
-            <button onClick={reloadChat} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Genindlæs chat"><RefreshCw className="w-3 h-3" /></button>
-            <button onClick={() => setRightPanel((p) => p === "online" ? "chatlog" : "online")} className={`p-1.5 rounded-lg transition-colors relative ${rightPanel === "online" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Online brugere">
-              <Users className="w-3 h-3" />
-              {globalUsers.size > 0 && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
+          <div className="flex items-center gap-1 px-3 py-2">
+            <button onClick={reloadChat} className="p-2 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Genindlæs chat"><RefreshCw className="w-4 h-4" /></button>
+            <button onClick={() => setRightPanel((p) => p === "online" ? "chatlog" : "online")} className={`p-2 rounded-lg transition-colors relative ${rightPanel === "online" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Online brugere">
+              <Users className="w-4 h-4" />
+              {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
             </button>
-            <button onClick={() => setRightPanel((p) => p === "inventory" ? "chatlog" : "inventory")} className={`p-1.5 rounded-lg transition-colors relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Min rygsæk">
-              <Package className="w-3 h-3" />
-              {myInventory.length > 0 && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
+            <button onClick={() => setRightPanel((p) => p === "inventory" ? "chatlog" : "inventory")} className={`p-2 rounded-lg transition-colors relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Min rygsæk">
+              <Package className="w-4 h-4" />
+              {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
             </button>
-            <button onClick={() => setRightPanel((p) => p === "rooms" ? "chatlog" : "rooms")} className={`p-1.5 rounded-lg transition-colors ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Skift rum"><Hash className="w-3 h-3" /></button>
-            {isAdmin && <button onClick={() => setRightPanel((p) => p === "admin" ? "chatlog" : "admin")} className={`p-1.5 rounded-lg transition-colors ${rightPanel === "admin" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Admin: genstande"><Wrench className="w-3 h-3" /></button>}
+            <button onClick={() => setRightPanel((p) => p === "rooms" ? "chatlog" : "rooms")} className={`p-2 rounded-lg transition-colors ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Skift rum"><Hash className="w-4 h-4" /></button>
+            {isAdmin && <button onClick={() => setRightPanel((p) => p === "admin" ? "chatlog" : "admin")} className={`p-2 rounded-lg transition-colors ${rightPanel === "admin" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Admin: genstande"><Wrench className="w-4 h-4" /></button>}
             <div className="flex items-center gap-0.5 ml-1">
-              <button onClick={() => setZoom((z) => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Zoom ind"><ZoomIn className="w-3 h-3" /></button>
-              <span className="text-[10px] text-slate-600 w-7 text-center">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom((z) => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Zoom ud"><ZoomOut className="w-3 h-3" /></button>
+              <button onClick={() => setZoom((z) => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Zoom ind"><ZoomIn className="w-4 h-4" /></button>
+              <span className="text-[10px] text-slate-600 w-8 text-center">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom((z) => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="p-2 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Zoom ud"><ZoomOut className="w-4 h-4" /></button>
             </div>
-            <span className="ml-1 text-[10px] text-slate-600 hidden sm:inline">Klik for at bevæge dig</span>
+            {/* Draft preview */}
+            {draft ? (
+              <div className="ml-auto flex items-center gap-1.5 px-2.5 py-1 bg-slate-700/60 rounded-lg border border-white/[0.08] max-w-[220px]">
+                <span className="text-[11px] text-slate-300 flex-1 truncate">{draft}</span>
+                <span className="text-[9px] text-slate-500 flex-shrink-0">↵</span>
+                <button onClick={() => { draftRef.current = ""; setDraft(""); }} className="text-slate-500 hover:text-slate-300 transition-colors flex-shrink-0"><X className="w-3 h-3" /></button>
+              </div>
+            ) : (
+              <span className="ml-auto text-[10px] text-slate-600 hidden sm:inline">Tast for at skrive</span>
+            )}
           </div>
         </div>
       </div>
@@ -875,7 +983,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       {ctxMenu && (
         <div className="fixed z-[60] bg-slate-800 border border-white/[0.1] rounded-xl shadow-2xl overflow-hidden min-w-[200px] max-w-[240px]" style={{ left: ctxMenu.clientX, top: ctxMenu.clientY }} onClick={(e) => e.stopPropagation()}>
 
-          {/* Self → mood picker + inventory */}
           {ctxMenu.kind === "self" && (
             <>
               <div className="px-3 py-2 border-b border-white/[0.06]">
@@ -903,7 +1010,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             </>
           )}
 
-          {/* Other user */}
           {ctxMenu.kind === "user" && ctxMenu.user && (() => {
             const theirItems = items.filter((i) => i.owner_id === ctxMenu.user!.user_id);
             return (
@@ -913,7 +1019,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <span className="text-xs font-semibold text-slate-200 truncate">{ctxMenu.user.display_name}</span>
                 </div>
                 <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06] transition-colors" onClick={() => openProfile(ctxMenu.user!.user_id)}>Se profil</button>
-                {/* Their inventory */}
                 {theirItems.length > 0 && (
                   <div className="border-t border-white/[0.06]">
                     <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Bærer ({theirItems.length})</p>
@@ -947,7 +1052,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             );
           })()}
 
-          {/* Item on tile */}
           {ctxMenu.kind === "tile_item" && ctxMenu.item && (
             <>
               <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center gap-2">
