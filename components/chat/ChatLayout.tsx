@@ -168,34 +168,29 @@ export function ChatLayout({
     }
 
     const supabase = createClient();
-    const { data: conv, error } = await supabase
-      .from("conversations")
-      .insert({ type: "dm", created_by: currentProfile.id })
-      .select()
-      .single();
+    // Use security definer RPC to bypass RLS insert complexity
+    const { data: convId, error } = await supabase.rpc("create_dm", { target_user_id: targetUserId });
 
-    if (error || !conv) {
+    if (error || !convId) {
       console.error("DM creation failed:", error);
       return;
     }
 
-    const { error: membersError } = await supabase.from("conversation_members").insert([
-      { conversation_id: conv.id, user_id: currentProfile.id },
-      { conversation_id: conv.id, user_id: targetUserId },
-    ]);
-    if (membersError) console.error("DM members insert failed:", membersError);
-
     const newConv: Conversation = {
-      ...conv,
+      id: convId as string,
+      type: "dm",
+      name: null,
+      created_by: currentProfile.id,
+      created_at: new Date().toISOString(),
       conversation_members: [
         {
-          conversation_id: conv.id,
+          conversation_id: convId as string,
           user_id: currentProfile.id,
           joined_at: new Date().toISOString(),
           profiles: currentProfile,
         },
         {
-          conversation_id: conv.id,
+          conversation_id: convId as string,
           user_id: targetUserId,
           joined_at: new Date().toISOString(),
           profiles: allUsers.find((u) => u.id === targetUserId),
@@ -203,8 +198,11 @@ export function ChatLayout({
       ],
     };
 
-    setConversations((prev) => [newConv, ...prev]);
-    selectConv(conv.id);
+    setConversations((prev) => {
+      if (prev.some((c) => c.id === convId)) return prev;
+      return [newConv, ...prev];
+    });
+    selectConv(convId as string);
   };
 
   const handleCreateRoom = async (name: string, description: string) => {
@@ -239,35 +237,37 @@ export function ChatLayout({
 
   const handleCreateGroup = async (name: string, memberIds: string[]) => {
     const supabase = createClient();
-    const { data: conv, error } = await supabase
-      .from("conversations")
-      .insert({ type: "group", name, created_by: currentProfile.id })
-      .select()
-      .single();
+    // Use security definer RPC to bypass RLS insert complexity
+    const { data: convId, error } = await supabase.rpc("create_group_chat", {
+      group_name: name,
+      member_ids: memberIds,
+    });
 
-    if (error || !conv) {
+    if (error || !convId) {
       console.error("Group creation failed:", error);
       return;
     }
 
     const allMembers = Array.from(new Set([currentProfile.id, ...memberIds]));
-    const { error: membersError } = await supabase.from("conversation_members").insert(
-      allMembers.map((uid) => ({ conversation_id: conv.id, user_id: uid }))
-    );
-    if (membersError) console.error("Group members insert failed:", membersError);
-
     const newConv: Conversation = {
-      ...conv,
+      id: convId as string,
+      type: "group",
+      name,
+      created_by: currentProfile.id,
+      created_at: new Date().toISOString(),
       conversation_members: allMembers.map((uid) => ({
-        conversation_id: conv.id,
+        conversation_id: convId as string,
         user_id: uid,
         joined_at: new Date().toISOString(),
         profiles: allUsers.find((u) => u.id === uid),
       })),
     };
 
-    setConversations((prev) => [newConv, ...prev]);
-    selectConv(conv.id);
+    setConversations((prev) => {
+      if (prev.some((c) => c.id === convId)) return prev;
+      return [newConv, ...prev];
+    });
+    selectConv(convId as string);
   };
 
   const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null;
