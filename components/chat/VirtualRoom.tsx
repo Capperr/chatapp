@@ -254,18 +254,26 @@ interface RoomItem {
   gy: number | null;
   owner_id: string | null;
 }
+interface GlobalUser {
+  user_id: string;
+  display_name: string;
+  color: string;
+  room_id: string;
+  room_name: string;
+}
 interface VirtualRoomProps {
   roomId: string;
   roomName: string;
   currentProfile: Profile;
   onClose: () => void;
 }
-type RightPanel = "chatlog" | "rooms" | "admin" | "inventory";
+type RightPanel = "chatlog" | "rooms" | "admin" | "inventory" | "online";
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: VirtualRoomProps) {
   const supabase = createClient();
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const globalChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
   const myPosRef = useRef({ gx: Math.floor(Math.random() * COLS), gy: Math.floor(Math.random() * ROWS) });
   const lastActivityRef = useRef(Date.now());
@@ -292,6 +300,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [items, setItems] = useState<RoomItem[]>([]);
   const [createForm, setCreateForm] = useState<{ name: string; item_type: string } | null>(null);
   const [editItem, setEditItem] = useState<RoomItem | null>(null);
+  const [globalUsers, setGlobalUsers] = useState<Map<string, GlobalUser>>(new Map());
 
   const moveMyPos = useCallback((gx: number, gy: number) => {
     myPosRef.current = { gx, gy };
@@ -317,6 +326,33 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Global presence — tracks all users across all rooms
+  useEffect(() => {
+    const globalCh = supabase.channel("virtual-global", { config: { presence: { key: currentProfile.id } } });
+    globalChannelRef.current = globalCh;
+    globalCh
+      .on("presence", { event: "sync" }, () => {
+        const state = globalCh.presenceState<GlobalUser>();
+        const all = new Map<string, GlobalUser>();
+        for (const arr of Object.values(state)) {
+          const p = arr[0] as GlobalUser;
+          if (p?.user_id) all.set(p.user_id, p);
+        }
+        setGlobalUsers(all);
+      })
+      .subscribe(() => {
+        globalCh.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
+      });
+    return () => { supabase.removeChannel(globalCh); globalChannelRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-track global presence when room changes
+  useEffect(() => {
+    globalChannelRef.current?.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoomId, activeRoomName]);
 
   // Fetch items + realtime
   useEffect(() => {
@@ -497,6 +533,18 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     await supabase.from("virtual_room_items").update({ item_scale: next }).eq("id", item.id);
   };
 
+  const reloadChat = useCallback(async () => {
+    const { data } = await supabase
+      .from("messages")
+      .select("id, content, user_id, created_at, profiles(display_name, avatar_color)")
+      .eq("room_id", activeRoomId)
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (data) setLogMessages((data as LogMessage[]).reverse());
+    broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
+  }, [activeRoomId, broadcastMove]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Derived data
   const usersByCell = useMemo(() => {
     const m = new Map<string, PresenceUser>();
@@ -575,14 +623,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <polygon points={tilePts(x, y)} fill={tileFill} stroke={isMyTile ? myColor : "#16243a"} strokeWidth={isMyTile ? 1.5 : 0.7} />
                     {isHov && !cellUser && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
 
-                    {/* Item on tile */}
-                    {cellItem && !cellUser && (
-                      <g>
-                        <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (cellItem.item_scale ?? 1)})`}>
-                          <ItemSVG type={cellItem.item_type} />
-                        </g>
-                        <text x={x} y={y + TH / 4 + 8} textAnchor="middle" fontSize={7} fontFamily="system-ui,sans-serif" fontWeight="600" stroke="rgba(0,0,0,0.9)" strokeWidth={2.5} fill="rgba(0,0,0,0.9)">{cellItem.name}</text>
-                        <text x={x} y={y + TH / 4 + 8} textAnchor="middle" fontSize={7} fontFamily="system-ui,sans-serif" fontWeight="600" fill="#94a3b8">{cellItem.name}</text>
+                    {/* Item on tile — always rendered, avatar draws on top */}
+                    {cellItem && (
+                      <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (cellItem.item_scale ?? 1)})`}>
+                        <ItemSVG type={cellItem.item_type} />
                       </g>
                     )}
 
@@ -628,6 +672,38 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
           {/* Right panel */}
           <div className="w-56 flex-shrink-0 flex flex-col bg-[#07101c]/60 border-l border-white/[0.06]">
+
+            {/* Online users list */}
+            {rightPanel === "online" && (
+              <>
+                <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Online ({globalUsers.size})</span>
+                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-3 h-3" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto py-1">
+                  {globalUsers.size === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen online</p>}
+                  {Array.from(globalUsers.values()).map((u) => {
+                    const isMe = u.user_id === currentProfile.id;
+                    const inSameRoom = u.room_id === activeRoomId;
+                    return (
+                      <div key={u.user_id} className="px-3 py-2 flex items-center gap-2 hover:bg-white/[0.03]">
+                        <div className="relative flex-shrink-0">
+                          <div className="w-5 h-5 rounded-full" style={{ backgroundColor: u.color }} />
+                          <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-[#07101c]" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[12px] text-slate-300 truncate">{isMe ? `${u.display_name} (dig)` : u.display_name}</p>
+                          <p className={`text-[10px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</p>
+                        </div>
+                        {!inSameRoom && (
+                          <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name); }} className="text-[10px] text-slate-500 hover:text-violet-400 transition-colors flex-shrink-0">Gå til</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
 
             {/* Room picker */}
             {rightPanel === "rooms" && (
@@ -743,6 +819,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             )}
 
             {/* Chat log (default) */}
+            {/* Chat log (default) */}
             {(rightPanel === "chatlog" || (rightPanel === "admin" && !isAdmin)) && (
               <>
                 <div className="px-3 py-2 border-b border-white/[0.06]">
@@ -773,8 +850,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <button onClick={sendMessage} disabled={!input.trim()} className="p-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-white flex-shrink-0"><Send className="w-4 h-4" /></button>
           </div>
           <div className="flex items-center gap-1 px-3 pb-1.5">
-            <button onClick={() => broadcastMove(myPos.gx, myPos.gy)} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Genopfrisk"><RefreshCw className="w-3 h-3" /></button>
-            <button className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Brugere online"><Users className="w-3 h-3" /></button>
+            <button onClick={reloadChat} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Genindlæs chat"><RefreshCw className="w-3 h-3" /></button>
+            <button onClick={() => setRightPanel((p) => p === "online" ? "chatlog" : "online")} className={`p-1.5 rounded-lg transition-colors relative ${rightPanel === "online" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Online brugere">
+              <Users className="w-3 h-3" />
+              {globalUsers.size > 0 && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
+            </button>
             <button onClick={() => setRightPanel((p) => p === "inventory" ? "chatlog" : "inventory")} className={`p-1.5 rounded-lg transition-colors relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Min rygsæk">
               <Package className="w-3 h-3" />
               {myInventory.length > 0 && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
