@@ -16,7 +16,6 @@ import {
   ChevronRight,
   Star,
 } from "lucide-react";
-import { UserProfileModal } from "./UserProfileModal";
 
 interface RoomsSidebarProps {
   rooms: ChatRoom[];
@@ -33,6 +32,7 @@ interface RoomsSidebarProps {
   onDeleteRoom: (id: string) => void;
   onSetDefaultRoom: (id: string) => void;
   onCreateGroup: (name: string, memberIds: string[]) => void;
+  onOpenOnlineProfile: (user: Profile) => void;
   onClose: () => void;
 }
 
@@ -91,13 +91,13 @@ export function RoomsSidebar({
   onDeleteRoom,
   onSetDefaultRoom,
   onCreateGroup,
+  onOpenOnlineProfile,
   onClose,
 }: RoomsSidebarProps) {
   const isAdmin = currentProfile.role === "admin";
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showUserPicker, setShowUserPicker] = useState(false);
-  const [onlineModalUser, setOnlineModalUser] = useState<Profile | null>(null);
   const [sectionsOpen, setSectionsOpen] = useState({
     rooms: true,
     dms: true,
@@ -297,7 +297,7 @@ export function RoomsSidebar({
             onlineUsers.map((user) => (
               <button
                 key={user.id}
-                onClick={() => setOnlineModalUser(user)}
+                onClick={() => onOpenOnlineProfile(user)}
                 title={`Vis profil for ${user.display_name}`}
                 className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-xl mx-2 text-left text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all group"
                 style={{ width: "calc(100% - 1rem)" }}
@@ -346,17 +346,6 @@ export function RoomsSidebar({
             setShowCreateGroup(false);
           }}
           onCancel={() => setShowCreateGroup(false)}
-        />
-      )}
-      {onlineModalUser && (
-        <UserProfileModal
-          profile={onlineModalUser}
-          currentProfile={currentProfile}
-          onClose={() => setOnlineModalUser(null)}
-          onStartDM={() => {
-            onStartDM(onlineModalUser.id);
-            setOnlineModalUser(null);
-          }}
         />
       )}
     </div>

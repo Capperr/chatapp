@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { RoomsSidebar } from "./RoomsSidebar";
 import { ChatRoom } from "./ChatRoom";
 import { ConversationRoom } from "./ConversationRoom";
+import { UserProfileModal } from "./UserProfileModal";
 import type { ChatRoom as ChatRoomType, Conversation, Profile } from "@/types";
 import { Menu } from "lucide-react";
 
@@ -38,6 +39,7 @@ export function ChatLayout({
   const [activeConvId, setActiveConvId] = useState<string | null>(initialConvId);
   const [showSidebar, setShowSidebar] = useState(false);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [onlineModalUser, setOnlineModalUser] = useState<Profile | null>(null);
 
   // Realtime: update current user's profile (mute/ban takes effect immediately)
   useEffect(() => {
@@ -168,12 +170,16 @@ export function ChatLayout({
       .select()
       .single();
 
-    if (error || !conv) return;
+    if (error || !conv) {
+      console.error("DM creation failed:", error);
+      return;
+    }
 
-    await supabase.from("conversation_members").insert([
+    const { error: membersError } = await supabase.from("conversation_members").insert([
       { conversation_id: conv.id, user_id: currentProfile.id },
       { conversation_id: conv.id, user_id: targetUserId },
     ]);
+    if (membersError) console.error("DM members insert failed:", membersError);
 
     const newConv: Conversation = {
       ...conv,
@@ -235,12 +241,16 @@ export function ChatLayout({
       .select()
       .single();
 
-    if (error || !conv) return;
+    if (error || !conv) {
+      console.error("Group creation failed:", error);
+      return;
+    }
 
     const allMembers = Array.from(new Set([currentProfile.id, ...memberIds]));
-    await supabase.from("conversation_members").insert(
+    const { error: membersError } = await supabase.from("conversation_members").insert(
       allMembers.map((uid) => ({ conversation_id: conv.id, user_id: uid }))
     );
+    if (membersError) console.error("Group members insert failed:", membersError);
 
     const newConv: Conversation = {
       ...conv,
@@ -260,6 +270,19 @@ export function ChatLayout({
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] md:h-screen relative">
+      {/* Online user profile modal — rendered here (not inside sidebar) to escape transform stacking context */}
+      {onlineModalUser && (
+        <UserProfileModal
+          profile={onlineModalUser}
+          currentProfile={liveProfile}
+          onClose={() => setOnlineModalUser(null)}
+          onStartDM={() => {
+            handleStartDM(onlineModalUser.id);
+            setOnlineModalUser(null);
+          }}
+        />
+      )}
+
       {/* Sidebar overlay for mobile */}
       {showSidebar && (
         <div
@@ -294,6 +317,7 @@ export function ChatLayout({
           onDeleteRoom={handleDeleteRoom}
           onSetDefaultRoom={handleSetDefaultRoom}
           onCreateGroup={handleCreateGroup}
+          onOpenOnlineProfile={setOnlineModalUser}
           onClose={() => setShowSidebar(false)}
         />
       </div>
