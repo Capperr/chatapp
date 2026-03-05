@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/client";
 import { X, Send } from "lucide-react";
 import type { Profile } from "@/types";
 
+const COLS = 14;
+const ROWS = 9;
+
 const SHAPES = ["circle", "square", "hexagon", "diamond", "triangle", "pentagon"] as const;
 type ShapeType = typeof SHAPES[number];
 
@@ -28,31 +31,25 @@ function shapePoints(shape: ShapeType, cx: number, cy: number, r: number): strin
   }
 }
 
-interface AvatarProps {
-  shape: ShapeType;
-  color: string;
-  size?: number;
-}
-
-function AvatarShape({ shape, color, size = 40 }: AvatarProps) {
+function AvatarShape({ shape, color, size = 34 }: { shape: ShapeType; color: string; size?: number }) {
   const r = size / 2 - 3;
   const c = size / 2;
   if (shape === "circle") {
     return (
-      <svg width={size} height={size}>
+      <svg width={size} height={size} style={{ display: "block" }}>
         <circle cx={c} cy={c} r={r} fill={color} stroke="white" strokeWidth={2} />
       </svg>
     );
   }
   if (shape === "square") {
     return (
-      <svg width={size} height={size}>
+      <svg width={size} height={size} style={{ display: "block" }}>
         <rect x={3} y={3} width={size - 6} height={size - 6} rx={4} fill={color} stroke="white" strokeWidth={2} />
       </svg>
     );
   }
   return (
-    <svg width={size} height={size}>
+    <svg width={size} height={size} style={{ display: "block" }}>
       <polygon points={shapePoints(shape, c, c, r)} fill={color} stroke="white" strokeWidth={2} />
     </svg>
   );
@@ -63,12 +60,11 @@ interface PresenceUser {
   display_name: string;
   color: string;
   shape: ShapeType;
-  x: number;
-  y: number;
+  gx: number;
+  gy: number;
 }
 
 interface SpeechBubble {
-  userId: string;
   text: string;
   ts: number;
 }
@@ -82,7 +78,6 @@ interface VirtualRoomProps {
 
 export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: VirtualRoomProps) {
   const supabase = createClient();
-  const canvasRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const myShape = getShape(currentProfile.id);
@@ -90,76 +85,32 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
   const [bubbles, setBubbles] = useState<Map<string, SpeechBubble>>(new Map());
-  const [myPos, setMyPos] = useState({ x: 50, y: 50 });
+  const [myPos, setMyPos] = useState({ gx: Math.floor(COLS / 2), gy: Math.floor(ROWS / 2) });
   const [input, setInput] = useState("");
-  const dragging = useRef(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
 
-  // Sync presence position
   const trackPresence = useCallback(
-    (x: number, y: number) => {
+    (gx: number, gy: number) => {
       channelRef.current?.track({
         user_id: currentProfile.id,
         display_name: currentProfile.display_name,
         color: myColor,
         shape: myShape,
-        x,
-        y,
+        gx,
+        gy,
       } satisfies PresenceUser);
     },
     [currentProfile.id, currentProfile.display_name, myColor, myShape]
   );
 
-  // Drag handlers
-  const startDrag = (e: React.MouseEvent | React.TouchEvent) => {
-    dragging.current = true;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
-    const avatarPx = ((myPos.x / 100) * rect.width);
-    const avatarPy = ((myPos.y / 100) * rect.height);
-    dragOffset.current = {
-      x: clientX - rect.left - avatarPx,
-      y: clientY - rect.top - avatarPy,
-    };
+  const handleCellClick = (gx: number, gy: number) => {
+    const occupiedByOther = Array.from(users.values()).some(
+      (u) => u.user_id !== currentProfile.id && u.gx === gx && u.gy === gy
+    );
+    if (occupiedByOther) return;
+    setMyPos({ gx, gy });
+    trackPresence(gx, gy);
   };
 
-  const onMouseMove = useCallback(
-    (e: MouseEvent | TouchEvent) => {
-      if (!dragging.current) return;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
-      const rawX = clientX - rect.left - dragOffset.current.x;
-      const rawY = clientY - rect.top - dragOffset.current.y;
-      const x = Math.min(95, Math.max(5, (rawX / rect.width) * 100));
-      const y = Math.min(95, Math.max(5, (rawY / rect.height) * 100));
-      setMyPos({ x, y });
-      trackPresence(x, y);
-    },
-    [trackPresence]
-  );
-
-  const stopDrag = () => { dragging.current = false; };
-
-  useEffect(() => {
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", stopDrag);
-    window.addEventListener("touchmove", onMouseMove, { passive: true });
-    window.addEventListener("touchend", stopDrag);
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", stopDrag);
-      window.removeEventListener("touchmove", onMouseMove);
-      window.removeEventListener("touchend", stopDrag);
-    };
-  }, [onMouseMove]);
-
-  // Supabase presence + messages
   useEffect(() => {
     const channel = supabase.channel(`virtual-${roomId}`, {
       config: { presence: { key: currentProfile.id } },
@@ -179,12 +130,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
-        async (payload) => {
+        (payload) => {
           const senderId: string = payload.new.user_id;
           const content: string = payload.new.content;
           setBubbles((prev) => {
             const next = new Map(prev);
-            next.set(senderId, { userId: senderId, text: content, ts: Date.now() });
+            next.set(senderId, { text: content, ts: Date.now() });
             return next;
           });
           setTimeout(() => {
@@ -199,7 +150,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       )
       .subscribe();
 
-    trackPresence(myPos.x, myPos.y);
+    trackPresence(myPos.gx, myPos.gy);
 
     return () => { supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -216,36 +167,30 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     });
   };
 
-  const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
+  // Build cell → user lookup
+  const usersByCell = new Map<string, PresenceUser>();
+  Array.from(users.values()).forEach((u) => {
+    if (u.user_id !== currentProfile.id) usersByCell.set(`${u.gx},${u.gy}`, u);
+  });
+  usersByCell.set(`${myPos.gx},${myPos.gy}`, {
+    user_id: currentProfile.id,
+    display_name: currentProfile.display_name,
+    color: myColor,
+    shape: myShape,
+    gx: myPos.gx,
+    gy: myPos.gy,
+  });
 
-  // Render all users (others from presence + self)
-  const allUsers: PresenceUser[] = [
-    ...Array.from(users.values()).filter((u) => u.user_id !== currentProfile.id),
-    {
-      user_id: currentProfile.id,
-      display_name: currentProfile.display_name,
-      color: myColor,
-      shape: myShape,
-      x: myPos.x,
-      y: myPos.y,
-    },
-  ];
-
-  const userCount = allUsers.length;
+  const totalUsers = users.has(currentProfile.id) ? users.size : users.size + 1;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950">
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-slate-200">Virtuelt rum — #{roomName}</span>
           <span className="text-xs text-slate-400 bg-white/[0.06] px-2 py-0.5 rounded-full">
-            {userCount} {userCount === 1 ? "person" : "personer"}
+            {totalUsers} {totalUsers === 1 ? "person" : "personer"}
           </span>
         </div>
         <button
@@ -256,86 +201,135 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         </button>
       </div>
 
-      {/* Canvas */}
-      <div
-        ref={canvasRef}
-        className="flex-1 relative overflow-hidden select-none"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle, rgba(148,163,184,0.12) 1px, transparent 1px)",
-          backgroundSize: "28px 28px",
-        }}
-      >
-        {allUsers.map((user) => {
-          const isMe = user.user_id === currentProfile.id;
-          const bubble = bubbles.get(user.user_id);
-          return (
-            <div
-              key={user.user_id}
-              style={{
-                position: "absolute",
-                left: `${user.x}%`,
-                top: `${user.y}%`,
-                transform: "translate(-50%, -50%)",
-                cursor: isMe ? "grab" : "default",
-                zIndex: isMe ? 10 : 5,
-              }}
-              onMouseDown={isMe ? startDrag : undefined}
-              onTouchStart={isMe ? startDrag : undefined}
-            >
-              {/* Speech bubble */}
-              {bubble && (
-                <div
-                  className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 max-w-[140px] animate-fade-in"
-                  style={{ filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.4))" }}
-                >
+      {/* Room */}
+      <div className="flex-1 flex items-center justify-center p-4 overflow-hidden">
+        <div
+          className="relative rounded-xl border-2 border-slate-700 overflow-hidden shadow-2xl"
+          style={{
+            width: "min(92vw, calc((100vh - 140px) * 14 / 9))",
+            aspectRatio: `${COLS} / ${ROWS}`,
+            background: "linear-gradient(160deg, #1a2744 0%, #0d1b2a 60%, #111827 100%)",
+          }}
+        >
+          {/* Floor grid lines */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundImage: `
+                linear-gradient(rgba(148,163,184,0.07) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148,163,184,0.07) 1px, transparent 1px)
+              `,
+              backgroundSize: `${100 / COLS}% ${100 / ROWS}%`,
+            }}
+          />
+
+          {/* Cells grid */}
+          <div
+            className="absolute inset-0"
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${COLS}, 1fr)`,
+              gridTemplateRows: `repeat(${ROWS}, 1fr)`,
+            }}
+          >
+            {Array.from({ length: ROWS }, (_, gy) =>
+              Array.from({ length: COLS }, (_, gx) => {
+                const cellUser = usersByCell.get(`${gx},${gy}`);
+                const isMe = cellUser?.user_id === currentProfile.id;
+                const bubble = cellUser ? bubbles.get(cellUser.user_id) : undefined;
+                const blockedByOther = cellUser && !isMe;
+
+                return (
                   <div
-                    className="text-xs text-white px-2.5 py-1.5 rounded-xl rounded-bl-none whitespace-pre-wrap break-words leading-snug"
-                    style={{ backgroundColor: user.color }}
+                    key={`${gx}-${gy}`}
+                    onClick={() => handleCellClick(gx, gy)}
+                    className={[
+                      "relative flex items-center justify-center transition-colors duration-100",
+                      !cellUser
+                        ? "hover:bg-white/[0.05] cursor-pointer active:bg-white/[0.09]"
+                        : blockedByOther
+                        ? "cursor-default"
+                        : "cursor-default",
+                    ].join(" ")}
                   >
-                    {bubble.text}
+                    {/* Highlight own cell */}
+                    {isMe && (
+                      <div
+                        className="absolute inset-0 rounded-sm"
+                        style={{ backgroundColor: `${myColor}22`, border: `1px solid ${myColor}55` }}
+                      />
+                    )}
+
+                    {cellUser && (
+                      <div className="relative z-10 flex flex-col items-center" style={{ gap: "1px" }}>
+                        {/* Speech bubble */}
+                        {bubble && (
+                          <div
+                            className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 pointer-events-none z-20"
+                            style={{
+                              filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.6))",
+                              minWidth: "60px",
+                              maxWidth: "110px",
+                            }}
+                          >
+                            <div
+                              className="text-white px-2 py-1 rounded-lg rounded-bl-none break-words leading-snug text-center"
+                              style={{
+                                backgroundColor: cellUser.color,
+                                fontSize: "9px",
+                                whiteSpace: "pre-wrap",
+                              }}
+                            >
+                              {bubble.text}
+                            </div>
+                            <div
+                              style={{
+                                width: 0,
+                                height: 0,
+                                borderLeft: "5px solid transparent",
+                                borderRight: 0,
+                                borderTop: `5px solid ${cellUser.color}`,
+                                marginLeft: "10px",
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Avatar */}
+                        <div
+                          style={{
+                            filter: isMe
+                              ? `drop-shadow(0 0 5px ${myColor}88)`
+                              : "drop-shadow(0 2px 3px rgba(0,0,0,0.7))",
+                          }}
+                        >
+                          <AvatarShape shape={cellUser.shape} color={cellUser.color} size={30} />
+                        </div>
+
+                        {/* Name */}
+                        <span
+                          style={{
+                            fontSize: "8px",
+                            color: "white",
+                            backgroundColor: "rgba(0,0,0,0.65)",
+                            padding: "1px 4px",
+                            borderRadius: "3px",
+                            maxWidth: "100%",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {isMe ? "Du" : cellUser.display_name}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  {/* Triangle pointer */}
-                  <div
-                    style={{
-                      width: 0,
-                      height: 0,
-                      borderLeft: "7px solid transparent",
-                      borderRight: "0px solid transparent",
-                      borderTop: `7px solid ${user.color}`,
-                      marginLeft: "10px",
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* Avatar */}
-              <div
-                style={{
-                  filter: isMe
-                    ? "drop-shadow(0 0 8px rgba(255,255,255,0.25))"
-                    : "drop-shadow(0 2px 4px rgba(0,0,0,0.5))",
-                }}
-              >
-                <AvatarShape shape={user.shape} color={user.color} size={44} />
-              </div>
-
-              {/* Name label */}
-              <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                <span
-                  className="text-[10px] font-medium px-1.5 py-0.5 rounded text-white"
-                  style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
-                >
-                  {isMe ? "Du" : user.display_name}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Hint */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-slate-500 pointer-events-none select-none">
-          Træk din avatar rundt
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
 
@@ -345,8 +339,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKey}
-          placeholder="Skriv en besked..."
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+          }}
+          placeholder="Skriv en besked — vises som taleboble over din avatar..."
           className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 transition-all"
         />
         <button
