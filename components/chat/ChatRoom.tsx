@@ -45,7 +45,7 @@ export function ChatRoom({
   const [onlineCount, setOnlineCount] = useState(1);
   const [connected, setConnected] = useState(false);
   const [modalProfile, setModalProfile] = useState<Profile | null>(null);
-  const [showVirtual, setShowVirtual] = useState(false);
+  const [showVirtual, setShowVirtual] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
