@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ChatLayout } from "@/components/chat/ChatLayout";
+import { ChatGateway } from "@/components/chat/ChatGateway";
 import type { ChatRoom, Conversation, Profile } from "@/types";
 
 interface PageProps {
@@ -13,7 +14,7 @@ export default async function ChatPage({ searchParams }: PageProps) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  if (!user) return <ChatGateway />;
 
   const { data: profileData } = await supabase
     .from("profiles")

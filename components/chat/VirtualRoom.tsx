@@ -382,6 +382,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [movingBotId, setMovingBotId] = useState<string | null>(null);
   const [coins, setCoins] = useState(1000);
   const [activeRoomType, setActiveRoomType] = useState("normal");
+  const [xp, setXp] = useState(0);
+  const [level, setLevel] = useState(1);
+  const xpRef = useRef(0);
 
   // Keep refs in sync
   useEffect(() => { botsRef.current = bots; }, [bots]);
@@ -443,8 +446,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("virtual_user_wardrobe").select("id, clothing_id, equipped").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyWardrobe(data as UserWardrobeEntry[]);
     });
-    supabase.from("profiles").select("coins, last_coin_award").eq("id", currentProfile.id).single().then(({ data }) => {
+    supabase.from("profiles").select("coins, last_coin_award, xp, level").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
+        if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
+        if (data.level != null) setLevel(data.level);
         const c = (data as { coins: number; last_coin_award: string }).coins ?? 1000;
         coinsRef.current = c; setCoins(c);
         const la = (data as { coins: number; last_coin_award: string }).last_coin_award;
@@ -732,6 +737,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     const t = draftRef.current.trim(); if (!t) return;
     draftRef.current = ""; setDraft(""); lastActivityRef.current = Date.now();
     await supabase.from("messages").insert({ content: t, user_id: currentProfile.id, room_id: activeRoomId });
+    // Award +10 XP per message
+    const newXp = xpRef.current + 10;
+    const newLevel = Math.floor(newXp / 100) + 1;
+    xpRef.current = newXp; setXp(newXp); setLevel(newLevel);
+    await supabase.from("profiles").update({ xp: newXp, level: newLevel }).eq("id", currentProfile.id);
   };
 
   // ─── Item actions ──────────────────────────────────────────────────────────
@@ -875,22 +885,31 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     );
   };
 
-  const renderSvgBubble = (ax: number, ay: number, text: string, color: string, opacity: number, yOffset: number = 0) => {
+  const renderSvgBubble = (ax: number, ay: number, text: string, _color: string, _opacity: number, yOffset: number = 0, showTail: boolean = true) => {
     const truncated = text.length > 80 ? text.slice(0, 80) + "…" : text;
     const words = truncated.split(" ");
     const lines: string[] = [];
     let cur = "";
-    words.forEach(w => { const n = cur ? `${cur} ${w}` : w; if (n.length > 18 && cur) { lines.push(cur); cur = w; } else { cur = n; } });
+    words.forEach(w => { const n = cur ? `${cur} ${w}` : w; if (n.length > 16 && cur) { lines.push(cur); cur = w; } else { cur = n; } });
     if (cur) lines.push(cur);
     const capped = lines.slice(0, 2);
-    const bw = Math.min(140, Math.max(50, capped[0].length * 6 + 20));
-    const bh = capped.length * 14 + 10;
+    const lineH = 15;
+    const padH = 10;
+    const padV = 7;
+    const bw = Math.min(160, Math.max(60, capped.reduce((m, l) => Math.max(m, l.length), 0) * 7 + padH * 2));
+    const bh = capped.length * lineH + padV * 2;
     const bTop = ay - AR_S - 22 - bh - yOffset;
     return (
       <g>
-        <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={8} fill={color} opacity={opacity} />
-        <polygon points={`${ax - 4},${bTop + bh} ${ax + 4},${bTop + bh} ${ax},${bTop + bh + 7}`} fill={color} opacity={opacity} />
-        {capped.map((line, i) => <text key={i} x={ax} y={bTop + 13 + i * 14} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="500" fill="white" opacity={opacity}>{line}</text>)}
+        {/* Drop shadow */}
+        <rect x={ax - bw / 2 + 1} y={bTop + 1} width={bw} height={bh} rx={8} fill="rgba(0,0,0,0.3)" />
+        {/* White bubble */}
+        <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={8} fill="white" />
+        {/* Tail - only on newest (lowest) bubble */}
+        {showTail && <polygon points={`${ax - 5},${bTop + bh} ${ax + 5},${bTop + bh} ${ax},${bTop + bh + 8}`} fill="white" />}
+        {capped.map((line, i) => (
+          <text key={i} x={ax} y={bTop + padV + 11 + i * lineH} textAnchor="middle" fontSize={11} fontFamily="system-ui,sans-serif" fontWeight="600" fill="#0f172a">{line}</text>
+        ))}
       </g>
     );
   };
@@ -906,6 +925,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <span className="text-[15px] font-extrabold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent tracking-tight">#{activeRoomName}</span>
             {activeRoomType === "shop" && <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🛍 Butik</span>}
             <span className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">{totalUsers} online</span>
+            <span className="text-[11px] text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2.5 py-0.5 rounded-full font-semibold">Lv.{level}</span>
             <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🪙 {coins}</span>
             {movingBotId && <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold animate-pulse">Klik på tile → placér bot</span>}
           </div>
@@ -1006,10 +1026,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         </g>
                         <text x={0} y={-AR_S * 2 - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">{isMe ? "Du" : user.display_name}</text>
                         <text x={0} y={-AR_S * 2 - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{isMe ? "Du" : user.display_name}</text>
-                        {isMe && draft && renderSvgBubble(0, -AR_S, draft + "…", "#475569", 0.85, userBubbles.length * 24)}
+                        {isMe && draft && renderSvgBubble(0, -AR_S, draft + "…", "#475569", 0.85, userBubbles.length * 24, false)}
                         {isTyping && renderTypingBubble(0, -AR_S, userBubbles.length * 24)}
                         {userBubbles.map((bub, i) => (
-                          <g key={bub.id}>{renderSvgBubble(0, -AR_S, bub.text, user.color, 0.95, (userBubbles.length - 1 - i) * 24)}</g>
+                          <g key={bub.id}>{renderSvgBubble(0, -AR_S, bub.text, user.color, 0.95, (userBubbles.length - 1 - i) * 24, i === userBubbles.length - 1)}</g>
                         ))}
                       </g>
                     </g>

@@ -9,6 +9,9 @@ export interface Profile {
   is_banned: boolean;
   created_at: string;
   updated_at: string;
+  xp?: number;
+  level?: number;
+  coins?: number;
 }
 
 export interface Message {
