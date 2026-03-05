@@ -6,6 +6,7 @@ import { Bell } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { AppNotification } from "@/types";
+import { playNotificationSound } from "@/lib/sounds";
 
 interface NotificationBellProps {
   userId: string;
@@ -48,7 +49,8 @@ export function NotificationBell({ userId, compact }: NotificationBellProps) {
         (payload) => {
           setUnread((n) => n + 1);
           setNotifications((prev) => [payload.new as AppNotification, ...prev.slice(0, 9)]);
-          setLoaded(false); // force reload on next open
+          setLoaded(false);
+          playNotificationSound();
         }
       )
       .subscribe();

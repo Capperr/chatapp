@@ -39,6 +39,7 @@ export function ChatLayout({
   const [activeConvId, setActiveConvId] = useState<string | null>(initialConvId);
   const [showSidebar, setShowSidebar] = useState(false);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [mobileUserIds, setMobileUserIds] = useState<Set<string>>(new Set());
   const [onlineModalUser, setOnlineModalUser] = useState<Profile | null>(null);
 
   // Realtime: update current user's profile (mute/ban takes effect immediately)
@@ -58,22 +59,25 @@ export function ChatLayout({
   // Global presence tracking
   useEffect(() => {
     const supabase = createClient();
+    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
     const channel = supabase
       .channel("global-presence", {
         config: { presence: { key: currentProfile.id } },
       })
       .on("presence", { event: "sync" }, () => {
-        const state = channel.presenceState<{ user_id: string }>();
-        const ids = new Set(
-          Object.values(state)
-            .flat()
-            .map((p) => p.user_id)
-        );
+        const state = channel.presenceState<{ user_id: string; device: string }>();
+        const ids = new Set<string>();
+        const mobileIds = new Set<string>();
+        Object.values(state).flat().forEach((p) => {
+          ids.add(p.user_id);
+          if (p.device === "mobile") mobileIds.add(p.user_id);
+        });
         setOnlineUserIds(ids);
+        setMobileUserIds(mobileIds);
       })
       .subscribe();
 
-    channel.track({ user_id: currentProfile.id });
+    channel.track({ user_id: currentProfile.id, device: isMobile ? "mobile" : "desktop" });
 
     return () => {
       supabase.removeChannel(channel);
@@ -308,6 +312,7 @@ export function ChatLayout({
           allUsers={allUsers}
           currentProfile={liveProfile}
           onlineUserIds={onlineUserIds}
+          mobileUserIds={mobileUserIds}
           activeRoomId={activeRoomId}
           activeConvId={activeConvId}
           onSelectRoom={selectRoom}
@@ -331,6 +336,7 @@ export function ChatLayout({
             roomName={activeRoom?.name ?? ""}
             roomDescription={activeRoom?.description ?? ""}
             currentProfile={liveProfile}
+            mobileUserIds={mobileUserIds}
             onToggleSidebar={() => setShowSidebar(true)}
           />
         )}

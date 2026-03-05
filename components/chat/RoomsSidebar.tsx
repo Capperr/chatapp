@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronRight,
   Star,
+  Smartphone,
 } from "lucide-react";
 
 interface RoomsSidebarProps {
@@ -23,6 +24,7 @@ interface RoomsSidebarProps {
   allUsers: Profile[];
   currentProfile: Profile;
   onlineUserIds: Set<string>;
+  mobileUserIds: Set<string>;
   activeRoomId: string | null;
   activeConvId: string | null;
   onSelectRoom: (id: string) => void;
@@ -82,6 +84,7 @@ export function RoomsSidebar({
   allUsers,
   currentProfile,
   onlineUserIds,
+  mobileUserIds,
   activeRoomId,
   activeConvId,
   onSelectRoom,
@@ -307,7 +310,12 @@ export function RoomsSidebar({
                   <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white dark:border-slate-900" />
                 </div>
                 <span className="text-sm truncate">{user.display_name}</span>
-                <UserPlus className="w-3.5 h-3.5 ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-primary-500" />
+                <div className="ml-auto flex items-center gap-1">
+                  {mobileUserIds.has(user.id) && (
+                    <span title="Mobil"><Smartphone className="w-3 h-3 text-slate-400" /></span>
+                  )}
+                  <UserPlus className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-primary-500" />
+                </div>
               </button>
             ))}
           {sectionsOpen.online && onlineUsers.length === 0 && (

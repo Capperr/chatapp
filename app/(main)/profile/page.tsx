@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ProfileForm } from "@/components/profile/ProfileForm";
+import { SoundSettings } from "@/components/profile/SoundSettings";
 import { formatDate } from "@/lib/utils";
 import { Calendar, MessageCircle, Shield } from "lucide-react";
 import type { Profile } from "@/types";
@@ -86,6 +87,9 @@ export default async function ProfilePage() {
         </h2>
         <ProfileForm profile={profile as Profile} />
       </div>
+
+      {/* Sound settings */}
+      <SoundSettings />
 
       {/* Account info */}
       <div className="card p-6 space-y-3">

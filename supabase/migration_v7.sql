@@ -194,9 +194,14 @@ create trigger on_conv_message_mention
   for each row execute procedure public.handle_conv_message_mentions();
 
 -- ============================================
--- REALTIME for notifications
+-- REALTIME for notifications (skip if already added)
 -- ============================================
-alter publication supabase_realtime add table public.notifications;
+do $$
+begin
+  alter publication supabase_realtime add table public.notifications;
+exception
+  when sqlstate '42710' then null; -- already a member, ignore
+end $$;
 
 -- ============================================
 -- SET ADMIN ROLE

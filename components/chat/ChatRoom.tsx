@@ -8,12 +8,14 @@ import { formatDate } from "@/lib/utils";
 import { Users, Wifi, WifiOff, Menu, Trash2, Hash } from "lucide-react";
 import type { MessageWithProfile, Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
+import { playMessageSound } from "@/lib/sounds";
 
 interface ChatRoomProps {
   roomId: string;
   roomName: string;
   roomDescription: string;
   currentProfile: Profile;
+  mobileUserIds?: Set<string>;
   onToggleSidebar: () => void;
 }
 
@@ -34,6 +36,7 @@ export function ChatRoom({
   roomName,
   roomDescription,
   currentProfile,
+  mobileUserIds,
   onToggleSidebar,
 }: ChatRoomProps) {
   const [messages, setMessages] = useState<MessageWithProfile[]>([]);
@@ -102,6 +105,7 @@ export function ChatRoom({
               if (prev.some((m) => m.id === data.id)) return prev;
               return [...prev, data as MessageWithProfile];
             });
+            if (payload.new.user_id !== currentProfile.id) playMessageSound();
           }
         }
       )
@@ -188,6 +192,7 @@ export function ChatRoom({
               showHeader={isNewGroup && !isOwn}
               currentUsername={currentProfile.username}
               isAdmin={isAdmin}
+              isMobile={!isOwn && mobileUserIds?.has(msg.user_id)}
               onDelete={handleDelete}
               onEdit={handleEdit}
               onOpenProfile={setModalProfile}

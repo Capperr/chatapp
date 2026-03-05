@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { formatTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { Pencil, Trash2, Check, X, VolumeX, Ban } from "lucide-react";
+import { Pencil, Trash2, Check, X, VolumeX, Ban, Smartphone } from "lucide-react";
 import type { MessageWithProfile, Profile } from "@/types";
 
 interface ChatMessageProps {
@@ -14,6 +14,7 @@ interface ChatMessageProps {
   showHeader: boolean;
   currentUsername: string;
   isAdmin: boolean;
+  isMobile?: boolean;
   onDelete: (id: string) => void;
   onEdit: (id: string, content: string) => void;
   onOpenProfile?: (profile: Profile) => void;
@@ -65,6 +66,7 @@ export function ChatMessage({
   showHeader,
   currentUsername,
   isAdmin,
+  isMobile,
   onDelete,
   onEdit,
   onOpenProfile,
@@ -146,6 +148,9 @@ export function ChatMessage({
             )}
             {!profile.is_banned && profile.muted_until && new Date(profile.muted_until) > new Date() && (
               <span title="Muted"><VolumeX className="w-3 h-3 text-amber-400" /></span>
+            )}
+            {isMobile && (
+              <span title="På mobil"><Smartphone className="w-3 h-3 text-slate-400" /></span>
             )}
             <span className="text-[10px] text-slate-400">@{profile.username}</span>
           </div>
