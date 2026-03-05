@@ -88,7 +88,7 @@ export function ChatGateway() {
       setLoginLoading(false);
       return;
     }
-    router.push("/chat");
+    window.location.href = "/chat";
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -129,7 +129,7 @@ export function ChatGateway() {
       password: regData.password,
     });
     if (!signInError) {
-      router.push("/chat");
+      window.location.href = "/chat";
       return;
     }
     setRegSuccess(true);
