@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS public.virtual_room_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  room_id uuid NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  room_id uuid NOT NULL,
   name text NOT NULL,
   item_type text NOT NULL DEFAULT 'flower',
   gx int,

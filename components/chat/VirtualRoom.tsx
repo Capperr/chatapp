@@ -606,10 +606,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={cellUser.color} glow={isMe} />
                         </g>
-                        <text x={ax} y={ay + AR_S + 13} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">
+                        {/* Name label above the head */}
+                        <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">
                           {isMe ? "Du" : cellUser.display_name}
                         </text>
-                        <text x={ax} y={ay + AR_S + 13} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">
+                        <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">
                           {isMe ? "Du" : cellUser.display_name}
                         </text>
                         {bubble && (() => {
@@ -622,7 +623,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           const capped = lines.slice(0, 3);
                           const bw = Math.min(130, Math.max(50, capped[0].length * 6 + 20));
                           const bh = capped.length * 14 + 10;
-                          const bTop = ay - AR_S - 12 - bh;
+                          const bTop = ay - AR_S - 22 - bh;
                           return (
                             <g>
                               <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={7} fill={cellUser.color} opacity={0.95} />
