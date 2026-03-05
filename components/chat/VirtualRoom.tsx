@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Send, Users, Maximize2, Minimize2, RefreshCw } from "lucide-react";
+import { X, Send, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
 import type { Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -11,7 +11,9 @@ const COLS = 10;
 const ROWS = 8;
 const TW = 80;
 const TH = 40;
-const AR = 20;
+const AR = 20;           // avatar half-height in local space
+const AVG_SCALE = 1.4;   // render scale for PersonAvatar
+const AR_S = Math.round(AR * AVG_SCALE); // scaled avatar half-height = 28
 const OFFSET_Y = TH / 2 + 80;
 const SVG_W = (Math.max(COLS, ROWS) + 1) * TW;
 const SVG_H = (COLS + ROWS) * (TH / 2) + OFFSET_Y + TH * 2;
@@ -106,6 +108,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [hovered, setHovered] = useState<string | null>(null);
   const [logMessages, setLogMessages] = useState<LogMessage[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
+  const [zoom, setZoom] = useState(1);
 
   // Fetch recent messages for chat log
   useEffect(() => {
@@ -326,7 +329,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           {/* Right — isometric room */}
           <div className="flex-1 flex items-center justify-center overflow-hidden bg-[#080e1a]">
             <svg
-              viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+              viewBox={`${SVG_W / 2 - SVG_W / (2 * zoom)} ${SVG_H / 2 - SVG_H / (2 * zoom)} ${SVG_W / zoom} ${SVG_H / zoom}`}
               preserveAspectRatio="xMidYMid meet"
               style={{ width: "100%", height: "100%" }}
             >
@@ -347,7 +350,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   (gx + gy) % 2 === 0 ? "#0f1a2e" : "#0c1525";
 
                 const ax = x;
-                const ay = y - TH / 2 - AR - 8;
+                // Feet (at local +AR, scaled by AVG_SCALE) should rest on tile top (y - TH/2 + 4)
+                const ay = y - TH / 2 + 4 - AR_S;
 
                 return (
                   <g
@@ -375,16 +379,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
                     {cellUser && (
                       <g>
-                        <ellipse cx={ax} cy={y - TH / 2 + 6} rx={16} ry={5} fill="rgba(0,0,0,0.45)" />
-                        <g transform={`translate(${ax}, ${ay})`}>
+                        {/* Shadow under feet */}
+                        <ellipse cx={ax} cy={y - TH / 2 + 6} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
+                        <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={cellUser.color} glow={isMe} />
                         </g>
 
                         {/* Name — double-pass for outline */}
-                        <text x={ax} y={ay + AR + 15} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">
+                        <text x={ax} y={ay + AR_S + 13} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">
                           {isMe ? "Du" : cellUser.display_name}
                         </text>
-                        <text x={ax} y={ay + AR + 15} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">
+                        <text x={ax} y={ay + AR_S + 13} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">
                           {isMe ? "Du" : cellUser.display_name}
                         </text>
 
@@ -402,7 +407,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           const capped = lines.slice(0, 3);
                           const bw = Math.min(130, Math.max(50, capped[0].length * 6 + 20));
                           const bh = capped.length * 14 + 10;
-                          const bTop = ay - AR - 12 - bh;
+                          const bTop = ay - AR_S - 12 - bh;
                           return (
                             <g>
                               <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={7} fill={cellUser.color} opacity={0.95} />
@@ -454,6 +459,23 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <button className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors" title="Brugere online">
               <Users className="w-3 h-3" />
             </button>
+            <div className="flex items-center gap-0.5 ml-2">
+              <button
+                onClick={() => setZoom((z) => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
+                title="Zoom ind"
+              >
+                <ZoomIn className="w-3 h-3" />
+              </button>
+              <span className="text-[10px] text-slate-600 w-7 text-center">{Math.round(zoom * 100)}%</span>
+              <button
+                onClick={() => setZoom((z) => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
+                title="Zoom ud"
+              >
+                <ZoomOut className="w-3 h-3" />
+              </button>
+            </div>
             <span className="ml-2 text-[10px] text-slate-600">Klik for at bevæge dig · Højreklik på en figur for muligheder</span>
           </div>
         </div>
