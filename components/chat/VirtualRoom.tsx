@@ -225,7 +225,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   // Render all users (others from presence + self)
   const allUsers: PresenceUser[] = [
-    ...[...users.values()].filter((u) => u.user_id !== currentProfile.id),
+    ...Array.from(users.values()).filter((u) => u.user_id !== currentProfile.id),
     {
       user_id: currentProfile.id,
       display_name: currentProfile.display_name,
