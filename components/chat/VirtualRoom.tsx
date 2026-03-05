@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut } from "lucide-react";
+import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare } from "lucide-react";
 import type { Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -15,24 +15,26 @@ const AR_S = Math.round(AR * AVG_SCALE);
 const OFFSET_Y = TH / 2 + 80;
 const DEFAULT_COLS = 10;
 const DEFAULT_ROWS = 8;
+const WALL_H = 110;
 
 // ─── Room themes ───────────────────────────────────────────────────────────────
-function getRoomTheme(roomName: string): { even: string; odd: string; highlight: string } {
+type RoomTheme = { even: string; odd: string; highlight: string; wallA: string; wallB: string };
+function getRoomTheme(roomName: string): RoomTheme {
   const n = roomName.toLowerCase();
   if (n.includes("køkken") || n.includes("kitchen"))
-    return { even: "#1a2010", odd: "#161d0e", highlight: "#2e3d10" };
+    return { even: "#1a2010", odd: "#161d0e", highlight: "#2e3d10", wallA: "#222b14", wallB: "#161f0c" };
   if (n.includes("stue") || n.includes("living"))
-    return { even: "#12181f", odd: "#0f1419", highlight: "#1a2d3a" };
+    return { even: "#12181f", odd: "#0f1419", highlight: "#1a2d3a", wallA: "#16202c", wallB: "#0d1620" };
   if (n.includes("soveværelse") || n.includes("bedroom") || n.includes("sove"))
-    return { even: "#1a1020", odd: "#15091a", highlight: "#2e1045" };
+    return { even: "#1a1020", odd: "#15091a", highlight: "#2e1045", wallA: "#22142e", wallB: "#160d1e" };
   if (n.includes("bad") || n.includes("bathroom") || n.includes("toilet"))
-    return { even: "#0e1e22", odd: "#0b181c", highlight: "#0e2e38" };
+    return { even: "#0e1e22", odd: "#0b181c", highlight: "#0e2e38", wallA: "#122630", wallB: "#0b1c24" };
   if (n.includes("kontor") || n.includes("office"))
-    return { even: "#1a1510", odd: "#14100c", highlight: "#2e2010" };
-  return { even: "#0f1a2e", odd: "#0c1525", highlight: "#231850" };
+    return { even: "#1a1510", odd: "#14100c", highlight: "#2e2010", wallA: "#221c12", wallB: "#16120c" };
+  return { even: "#0f1a2e", odd: "#0c1525", highlight: "#231850", wallA: "#132038", wallB: "#0a1222" };
 }
-function getShopTheme(): { even: string; odd: string; highlight: string } {
-  return { even: "#180f05", odd: "#130c04", highlight: "#2a1a06" };
+function getShopTheme(): RoomTheme {
+  return { even: "#180f05", odd: "#130c04", highlight: "#2a1a06", wallA: "#201408", wallB: "#140d04" };
 }
 
 // ─── Person Avatar ─────────────────────────────────────────────────────────────
@@ -936,17 +938,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md" onClick={() => setCtxMenu(null)}>
-      <div className="flex flex-col rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] overflow-hidden bg-gradient-to-b from-[#060d1a] to-[#04090f]" style={windowStyle} onClick={e => e.stopPropagation()}>
+      <div className="flex flex-col rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] overflow-hidden bg-gradient-to-b from-[#060d1a] to-[#04090f] max-sm:!w-screen max-sm:!h-[100dvh] max-sm:!rounded-none max-sm:border-0" style={windowStyle} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 bg-[#040c19]/95 border-b border-violet-500/20 shadow-[0_1px_0_rgba(99,102,241,0.06),0_4px_24px_rgba(0,0,0,0.4)]">
-          <div className="flex items-center gap-2.5">
-            <span className="text-[15px] font-extrabold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent tracking-tight">#{activeRoomName}</span>
-            {activeRoomType === "shop" && <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🛍 Butik</span>}
-            <span className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">{totalUsers} online</span>
+          <div className="flex items-center gap-1.5 flex-wrap min-w-0 overflow-hidden">
+            <span className="text-[15px] font-extrabold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent tracking-tight truncate max-w-[120px] sm:max-w-none">#{activeRoomName}</span>
+            {activeRoomType === "shop" && <span className="hidden sm:inline-flex text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🛍 Butik</span>}
+            <span className="hidden sm:inline-flex text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">{totalUsers} online</span>
             <span className="text-[11px] text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2.5 py-0.5 rounded-full font-semibold">Lv.{level}</span>
             <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🪙 {coins}</span>
-            {movingBotId && <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold animate-pulse">Klik på tile → placér bot</span>}
+            {movingBotId && <span className="hidden sm:inline-flex text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold animate-pulse">Klik → placér bot</span>}
           </div>
           <div className="flex items-center gap-0.5">
             <button onClick={() => setFullscreen(f => !f)} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all">
@@ -958,13 +960,73 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         </div>
 
         {/* Body */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
 
           {/* Isometric room */}
-          <div className="flex-1 flex items-center justify-center overflow-hidden relative" style={{ background: theme.even }}>
+          <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden relative" style={{ background: theme.even }}>
             <svg viewBox={`${svgW / 2 - svgW / (2 * zoom)} ${svgH / 2 - svgH / (2 * zoom)} ${svgW / zoom} ${svgH / zoom}`}
               preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
               <rect width={svgW} height={svgH} fill={theme.even} />
+
+              {/* ── Back walls ── */}
+              {(() => {
+                const tcx = svgW / 2;
+                const tcy = OFFSET_Y - TH / 2;
+                const rBR = { x: tcx + roomCols * TW / 2, y: tcy + roomCols * TH / 2 };
+                const lBL = { x: tcx - roomRows * TW / 2, y: tcy + roomRows * TH / 2 };
+                const apex = { x: tcx, y: tcy - WALL_H };
+                return (
+                  <g>
+                    {/* Right wall (gy=0 edge) */}
+                    <polygon
+                      points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
+                      fill={theme.wallA}
+                    />
+                    {/* Right wall baseboard */}
+                    <polygon
+                      points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 12} ${tcx},${tcy - 12}`}
+                      fill="rgba(0,0,0,0.25)"
+                    />
+                    {/* Right wall top stripe */}
+                    <polygon
+                      points={`${tcx},${tcy - WALL_H + 14} ${rBR.x},${rBR.y - WALL_H + 14} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
+                      fill="rgba(255,255,255,0.025)"
+                    />
+                    {/* Left wall (gx=0 edge) */}
+                    <polygon
+                      points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
+                      fill={theme.wallB}
+                    />
+                    {/* Left wall baseboard */}
+                    <polygon
+                      points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 12} ${tcx},${tcy - 12}`}
+                      fill="rgba(0,0,0,0.3)"
+                    />
+                    {/* Left wall top stripe */}
+                    <polygon
+                      points={`${tcx},${tcy - WALL_H + 14} ${lBL.x},${lBL.y - WALL_H + 14} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
+                      fill="rgba(255,255,255,0.015)"
+                    />
+                    {/* Floor-wall shadow */}
+                    <polygon
+                      points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 6} ${tcx},${tcy - 6}`}
+                      fill="rgba(0,0,0,0.35)"
+                    />
+                    <polygon
+                      points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 6} ${tcx},${tcy - 6}`}
+                      fill="rgba(0,0,0,0.4)"
+                    />
+                    {/* Wall border lines */}
+                    <line x1={tcx} y1={tcy} x2={rBR.x} y2={rBR.y} stroke="rgba(0,0,0,0.5)" strokeWidth={1} />
+                    <line x1={tcx} y1={tcy} x2={lBL.x} y2={lBL.y} stroke="rgba(0,0,0,0.5)" strokeWidth={1} />
+                    {/* Ridge lines at top of walls */}
+                    <line x1={apex.x} y1={apex.y} x2={rBR.x} y2={rBR.y - WALL_H} stroke="rgba(255,255,255,0.07)" strokeWidth={0.8} />
+                    <line x1={apex.x} y1={apex.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke="rgba(255,255,255,0.05)" strokeWidth={0.8} />
+                    {/* Corner ridge */}
+                    <line x1={tcx} y1={tcy} x2={apex.x} y2={apex.y} stroke="rgba(255,255,255,0.1)" strokeWidth={0.8} />
+                  </g>
+                );
+              })()}
 
               {sortedTiles.map(({ gx, gy }) => {
                 const { x, y } = isoCenter(gx, gy, svgW);
@@ -1070,6 +1132,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-2.5 py-2 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
               <button onClick={reloadChat} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs"><RefreshCw className="w-[18px] h-[18px]" /></button>
               <div className="w-px h-5 bg-white/[0.08] mx-1" />
+              <button onClick={() => setRightPanel("chatlog")} className={`sm:hidden p-2 rounded-xl transition-all ${rightPanel === "chatlog" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Chat"><MessageSquare className="w-[18px] h-[18px]" /></button>
               <button onClick={() => setRightPanel(p => p === "online" ? "chatlog" : "online")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
                 <Users className="w-[18px] h-[18px]" />
                 {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
@@ -1092,7 +1155,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           </div>
 
           {/* Right panel */}
-          <div className="w-60 flex-shrink-0 flex flex-col bg-[#030912]/95 border-l border-white/[0.07]">
+          <div className={`flex flex-col bg-[#030912]/98 border-white/[0.07] ${
+            rightPanel === "chatlog"
+              ? "sm:w-60 sm:flex-shrink-0 sm:border-l border-t sm:border-t-0 h-52 sm:h-auto flex-shrink-0"
+              : "absolute inset-0 z-20 sm:relative sm:inset-auto sm:w-60 sm:flex-shrink-0 border-l"
+          }`}>
 
             {/* Online users */}
             {rightPanel === "online" && (
