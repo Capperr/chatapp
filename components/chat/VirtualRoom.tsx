@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot } from "lucide-react";
+import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, ShoppingBag } from "lucide-react";
 import type { Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -30,6 +30,9 @@ function getRoomTheme(roomName: string): { even: string; odd: string; highlight:
   if (n.includes("kontor") || n.includes("office"))
     return { even: "#1a1510", odd: "#14100c", highlight: "#2e2010" };
   return { even: "#0f1a2e", odd: "#0c1525", highlight: "#231850" };
+}
+function getShopTheme(): { even: string; odd: string; highlight: string } {
+  return { even: "#180f05", odd: "#130c04", highlight: "#2a1a06" };
 }
 
 // ─── Person Avatar ─────────────────────────────────────────────────────────────
@@ -200,6 +203,18 @@ function DeskSVG() { return (<g><rect x="-13" y="-7" width="26" height="4" rx="2
 function MailboxSVG() { return (<g><rect x="-1.5" y="-4" width="3" height="16" rx="1" fill="#6b7280" /><rect x="-9" y="-10" width="18" height="12" rx="2" fill="#dc2626" /><path d="M-9,-10 Q0,-17 9,-10" fill="#b91c1c" /><rect x="8" y="-12" width="2" height="8" fill="#6b7280" /><rect x="10" y="-12" width="6" height="4" fill="#dc2626" /><rect x="-6" y="-4" width="10" height="2" rx="0.5" fill="#fca5a5" /></g>); }
 function CoffeeSVG() { return (<g><path d="M-3,-10 Q-6,-14 -3,-18" fill="none" stroke="#d1d5db" strokeWidth="1.2" strokeLinecap="round" opacity="0.7" /><path d="M3,-10 Q6,-14 3,-18" fill="none" stroke="#d1d5db" strokeWidth="1.2" strokeLinecap="round" opacity="0.7" /><rect x="-7" y="-9" width="14" height="12" rx="2" fill="#f97316" /><rect x="-5" y="-7" width="10" height="8" rx="1" fill="#7c2d12" opacity="0.8" /><path d="M7,-5 Q12,-5 12,-1 Q12,3 7,3" fill="none" stroke="#f97316" strokeWidth="2" /><ellipse cx="0" cy="3" rx="9" ry="2" fill="#e5e7eb" /></g>); }
 function SofaSVG() { return (<g><rect x="-14" y="-2" width="28" height="10" rx="3" fill="#4f46e5" /><rect x="-14" y="-10" width="28" height="10" rx="3" fill="#4338ca" /><rect x="-16" y="-10" width="6" height="18" rx="3" fill="#4338ca" /><rect x="10" y="-10" width="6" height="18" rx="3" fill="#4338ca" /><line x1="0" y1="-9" x2="0" y2="8" stroke="#6d61f0" strokeWidth="1" opacity="0.5" /></g>); }
+function ShopCounterSVG() {
+  return (
+    <g>
+      <rect x="-20" y="-15" width="40" height="15" rx="2" fill="#1c1008" stroke="#3d2a10" strokeWidth="0.8" />
+      <rect x="-17" y="-13" width="34" height="10" rx="1" fill="#0a0806" />
+      <rect x="-14" y="-11" width="8" height="6" rx="0.5" fill="#3b82f6" opacity="0.45" />
+      <rect x="-3" y="-11" width="8" height="6" rx="0.5" fill="#8b5cf6" opacity="0.45" />
+      <rect x="8" y="-11" width="8" height="6" rx="0.5" fill="#ef4444" opacity="0.45" />
+      <rect x="-20" y="-18" width="40" height="4" rx="1.5" fill="#4a3010" stroke="#5a3a14" strokeWidth="0.5" />
+    </g>
+  );
+}
 
 const ITEM_TYPES = [
   { type: "flower",  label: "Blomst",     color: "#fb7185" },
@@ -247,6 +262,7 @@ interface ClothingItem {
   slot: string;
   style_key: string;
   color: string;
+  price: number;
 }
 interface UserWardrobeEntry {
   id: string;
@@ -301,6 +317,7 @@ interface ChatRoom {
   name: string;
   cols: number;
   rows: number;
+  room_type: string;
 }
 interface VirtualRoomProps {
   roomId: string;
@@ -308,7 +325,7 @@ interface VirtualRoomProps {
   currentProfile: Profile;
   onClose: () => void;
 }
-type RightPanel = "chatlog" | "rooms" | "admin" | "inventory" | "online" | "wardrobe";
+type RightPanel = "chatlog" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop";
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: VirtualRoomProps) {
@@ -326,6 +343,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const outfitRef = useRef<Record<string, string>>({});
   const botsRef = useRef<RoomBot[]>([]);
   const usersRef = useRef<Map<string, PresenceUser>>(new Map());
+  const coinsRef = useRef(1000);
+  const lastCoinAwardRef = useRef<Date | null>(null);
 
   const myColor = currentProfile.avatar_color ?? "#8b5cf6";
   const isAdmin = currentProfile.role === "admin";
@@ -354,10 +373,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [createForm, setCreateForm] = useState<{ name: string; item_type: string } | null>(null);
   const [editItem, setEditItem] = useState<RoomItem | null>(null);
   const [globalUsers, setGlobalUsers] = useState<Map<string, GlobalUser>>(new Map());
-  const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number } | null>(null);
+  const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number; room_type: string } | null>(null);
   const [adminTab, setAdminTab] = useState<"items" | "bots">("items");
   const [createBotForm, setCreateBotForm] = useState<{ name: string; color: string; message: string; moves_randomly: boolean; gives_clothing_id: string } | null>(null);
   const [movingBotId, setMovingBotId] = useState<string | null>(null);
+  const [coins, setCoins] = useState(1000);
+  const [activeRoomType, setActiveRoomType] = useState("normal");
 
   // Keep refs in sync
   useEffect(() => { botsRef.current = bots; }, [bots]);
@@ -397,12 +418,16 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   // ─── Data fetches ──────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.from("chat_rooms").select("id, name, cols, rows").order("name").then(({ data }) => {
+    supabase.from("chat_rooms").select("id, name, cols, rows, room_type").order("name").then(({ data }) => {
       if (data) {
-        const list = (data as ChatRoom[]).map(r => ({ ...r, cols: r.cols ?? DEFAULT_COLS, rows: r.rows ?? DEFAULT_ROWS }));
+        const list = (data as ChatRoom[]).map(r => ({ ...r, cols: r.cols ?? DEFAULT_COLS, rows: r.rows ?? DEFAULT_ROWS, room_type: r.room_type ?? "normal" }));
         setRooms(list);
         const cur = list.find(r => r.id === roomId);
-        if (cur) setRoomDimensions(cur.cols, cur.rows);
+        if (cur) {
+          setRoomDimensions(cur.cols, cur.rows);
+          setActiveRoomType(cur.room_type);
+          if (cur.room_type === "shop") setRightPanel("shop");
+        }
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -415,6 +440,29 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("virtual_user_wardrobe").select("id, clothing_id, equipped").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyWardrobe(data as UserWardrobeEntry[]);
     });
+    supabase.from("profiles").select("coins, last_coin_award").eq("id", currentProfile.id).single().then(({ data }) => {
+      if (data) {
+        const c = (data as { coins: number; last_coin_award: string }).coins ?? 1000;
+        coinsRef.current = c; setCoins(c);
+        const la = (data as { coins: number; last_coin_award: string }).last_coin_award;
+        if (la) lastCoinAwardRef.current = new Date(la);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Hourly coin award (50 coins per active hour)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (Date.now() - lastActivityRef.current > 10 * 60 * 1000) return; // inactive
+      const now = new Date();
+      const last = lastCoinAwardRef.current;
+      if (last && now.getTime() - last.getTime() < 60 * 60 * 1000) return; // too soon
+      const newCoins = coinsRef.current + 50;
+      coinsRef.current = newCoins; setCoins(newCoins); lastCoinAwardRef.current = now;
+      await supabase.from("profiles").update({ coins: newCoins, last_coin_award: now.toISOString() }).eq("id", currentProfile.id);
+    }, 60_000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -628,12 +676,29 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     channelRef.current?.send({ type: "broadcast", event: "kick", payload: { user_id: user.user_id } });
   };
 
-  const switchRoom = (id: string, name: string, cols?: number, rows?: number) => {
+  const switchRoom = (id: string, name: string, cols?: number, rows?: number, roomType?: string) => {
     const nc = cols ?? roomColsRef.current; const nr = rows ?? roomRowsRef.current;
-    setActiveRoomId(id); setActiveRoomName(name); setRoomDimensions(nc, nr); setRightPanel("chatlog");
+    const rt = roomType ?? "normal";
+    setActiveRoomId(id); setActiveRoomName(name); setRoomDimensions(nc, nr);
+    setActiveRoomType(rt); setRightPanel(rt === "shop" ? "shop" : "chatlog");
     lastActivityRef.current = Date.now();
     myPosRef.current = { gx: Math.floor(Math.random() * nc), gy: Math.floor(Math.random() * nr) };
     setMyPos(myPosRef.current);
+  };
+
+  // ─── Shop / buy ────────────────────────────────────────────────────────────
+  const buyItem = async (item: ClothingItem) => {
+    if (coinsRef.current < item.price) return;
+    if (myWardrobe.some(w => w.clothing_id === item.id)) return;
+    const newCoins = coinsRef.current - item.price;
+    coinsRef.current = newCoins; setCoins(newCoins);
+    const tempEntry: UserWardrobeEntry = { id: "temp-" + Date.now(), clothing_id: item.id, equipped: false };
+    setMyWardrobe(prev => [...prev, tempEntry]);
+    await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
+    const { data } = await supabase.from("virtual_user_wardrobe")
+      .upsert({ user_id: currentProfile.id, clothing_id: item.id, equipped: false })
+      .select("id, clothing_id, equipped").single();
+    if (data) setMyWardrobe(prev => prev.map(w => w.id === tempEntry.id ? data as UserWardrobeEntry : w));
   };
 
   sendDraftRef.current = async () => {
@@ -717,7 +782,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   // ─── Room creation ─────────────────────────────────────────────────────────
   const createRoom = async () => {
     if (!createRoomForm?.name.trim()) return;
-    const { data } = await supabase.from("chat_rooms").insert({ name: createRoomForm.name.trim(), cols: createRoomForm.cols, rows: createRoomForm.rows }).select("id, name, cols, rows").single();
+    const { data } = await supabase.from("chat_rooms").insert({ name: createRoomForm.name.trim(), cols: createRoomForm.cols, rows: createRoomForm.rows, room_type: createRoomForm.room_type }).select("id, name, cols, rows, room_type").single();
     if (data) setRooms(prev => [...prev, data as ChatRoom].sort((a, b) => a.name.localeCompare(b.name)));
     setCreateRoomForm(null);
   };
@@ -758,7 +823,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   }, [roomCols, roomRows]);
 
   const totalUsers = users.has(currentProfile.id) ? users.size : users.size + 1;
-  const theme = useMemo(() => getRoomTheme(activeRoomName), [activeRoomName]);
+  const theme = useMemo(() => activeRoomType === "shop" ? getShopTheme() : getRoomTheme(activeRoomName), [activeRoomName, activeRoomType]);
 
   const roomOccupancy = useMemo(() => {
     const m = new Map<string, number>();
@@ -799,6 +864,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-slate-100">#{activeRoomName}</span>
             <span className="text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium">{totalUsers} online</span>
+            <span className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full font-medium">🪙 {coins}</span>
             {movingBotId && <span className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">Klik på en tile for at placere bot</span>}
           </div>
           <div className="flex items-center gap-0.5">
@@ -843,6 +909,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     style={{ cursor: (cellUser && !isMe) || cellBot ? "default" : movingBotId ? "crosshair" : "pointer" }}>
                     <polygon points={tilePts(x, y)} fill={tileFill} stroke={tileStroke} strokeWidth={isMyTile ? 1.5 : 0.7} />
                     {isHov && !cellUser && !cellBot && !movingBotId && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
+
+                    {/* Shop counter (gy=0 row) */}
+                    {activeRoomType === "shop" && gy === 0 && (
+                      <g transform={`translate(${x}, ${y - TH / 4})`}>
+                        <ShopCounterSVG />
+                      </g>
+                    )}
 
                     {/* Item on tile */}
                     {cellItem && (
@@ -913,7 +986,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           <p className="text-[12px] text-slate-300 truncate">{isMe ? `${u.display_name} (dig)` : u.display_name}</p>
                           <p className={`text-[10px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</p>
                         </div>
-                        {!inSameRoom && !isMe && <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows); }} className="text-[10px] text-slate-500 hover:text-violet-400 flex-shrink-0">Gå til</button>}
+                        {!inSameRoom && !isMe && <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type); }} className="text-[10px] text-slate-500 hover:text-violet-400 flex-shrink-0">Gå til</button>}
                       </div>
                     );
                   })}
@@ -962,13 +1035,56 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </>
             )}
 
+            {/* Shop */}
+            {rightPanel === "shop" && (
+              <>
+                <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Butik</span>
+                    <span className="text-[11px] text-amber-400 font-semibold">🪙 {coins}</span>
+                  </div>
+                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {CLOTHING_SLOTS.map(slot => {
+                    const slotItems = clothingCatalog.filter(c => c.slot === slot.id);
+                    if (slotItems.length === 0) return null;
+                    return (
+                      <div key={slot.id} className="border-b border-white/[0.04]">
+                        <div className="px-3 py-1.5 flex items-center gap-1.5">
+                          <span className="text-sm">{slot.emoji}</span>
+                          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{slot.label}</span>
+                        </div>
+                        {slotItems.map(item => {
+                          const owned = myWardrobe.some(w => w.clothing_id === item.id);
+                          const canAfford = coins >= item.price;
+                          return (
+                            <div key={item.id} className="px-3 py-1.5 flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                              <span className={`text-[11px] flex-1 truncate ${owned ? "text-violet-300" : canAfford ? "text-slate-300" : "text-slate-600"}`}>{item.name}</span>
+                              {owned
+                                ? <span className="text-[9px] text-emerald-500 flex-shrink-0">Ejet</span>
+                                : <button onClick={() => buyItem(item)} disabled={!canAfford} className={`text-[9px] flex-shrink-0 px-1.5 py-0.5 rounded font-semibold transition-colors ${canAfford ? "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30" : "text-slate-700 cursor-not-allowed"}`}>
+                                    🪙 {item.price}
+                                  </button>
+                              }
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
             {/* Room picker */}
             {rightPanel === "rooms" && (
               <>
                 <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
                   <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Skift rum</span>
                   <div className="flex items-center gap-1">
-                    {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8 })} className="p-1 rounded text-slate-500 hover:text-emerald-400" title="Opret rum"><Plus className="w-3 h-3" /></button>}
+                    {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8, room_type: "normal" })} className="p-1 rounded text-slate-500 hover:text-emerald-400" title="Opret rum"><Plus className="w-3 h-3" /></button>}
                     <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
                   </div>
                 </div>
@@ -980,6 +1096,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       <div className="flex-1"><p className="text-[9px] text-slate-500 mb-0.5">Bredde</p><input type="number" min={4} max={20} value={createRoomForm.cols} onChange={e => setCreateRoomForm({ ...createRoomForm, cols: Math.max(4, Math.min(20, parseInt(e.target.value) || 10)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-violet-500/50" /></div>
                       <div className="flex-1"><p className="text-[9px] text-slate-500 mb-0.5">Dybde</p><input type="number" min={4} max={16} value={createRoomForm.rows} onChange={e => setCreateRoomForm({ ...createRoomForm, rows: Math.max(4, Math.min(16, parseInt(e.target.value) || 8)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-violet-500/50" /></div>
                     </div>
+                    <p className="text-[9px] text-slate-500 mb-0.5">Type</p>
+                    <select value={createRoomForm.room_type} onChange={e => setCreateRoomForm({ ...createRoomForm, room_type: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none mb-1.5">
+                      <option value="normal">Normal</option>
+                      <option value="shop">Butik 🛍</option>
+                    </select>
                     <p className="text-[9px] text-slate-600 mb-1.5">{createRoomForm.cols * createRoomForm.rows} felter</p>
                     <div className="flex gap-1">
                       <button onClick={createRoom} className="flex-1 py-1 bg-violet-600 hover:bg-violet-500 rounded text-[10px] text-white">Opret</button>
@@ -992,7 +1113,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   {rooms.map(r => {
                     const occ = roomOccupancy.get(r.id) ?? 0;
                     return (
-                      <button key={r.id} onClick={() => switchRoom(r.id, r.name, r.cols, r.rows)}
+                      <button key={r.id} onClick={() => switchRoom(r.id, r.name, r.cols, r.rows, r.room_type)}
                         className={`w-full text-left px-3 py-2 text-[12px] transition-colors flex items-center gap-2 ${r.id === activeRoomId ? "bg-violet-500/20 text-violet-300" : "text-slate-300 hover:bg-white/[0.05]"}`}>
                         <span className="text-slate-500">#</span>
                         <span className="flex-1 truncate">{r.name}</span>
@@ -1180,6 +1301,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <Package className="w-4 h-4" />
               {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
             </button>
+            <button onClick={() => setRightPanel(p => p === "shop" ? "chatlog" : "shop")} className={`p-2 rounded-lg transition-colors relative ${rightPanel === "shop" ? "text-amber-400 bg-amber-500/10" : activeRoomType === "shop" ? "text-amber-500/60 hover:text-amber-400 hover:bg-white/[0.06]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Butik"><ShoppingBag className="w-4 h-4" /></button>
             <button onClick={() => setRightPanel(p => p === "rooms" ? "chatlog" : "rooms")} className={`p-2 rounded-lg transition-colors ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Rum"><Hash className="w-4 h-4" /></button>
             {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "chatlog" : "admin")} className={`p-2 rounded-lg transition-colors ${rightPanel === "admin" ? "text-violet-400 bg-violet-500/10" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.06]"}`} title="Admin"><Wrench className="w-4 h-4" /></button>}
             <div className="flex items-center gap-0.5 ml-1">
