@@ -762,7 +762,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   const roomOccupancy = useMemo(() => {
     const m = new Map<string, number>();
-    for (const u of globalUsers.values()) m.set(u.room_id, (m.get(u.room_id) ?? 0) + 1);
+    for (const u of Array.from(globalUsers.values())) m.set(u.room_id, (m.get(u.room_id) ?? 0) + 1);
     return m;
   }, [globalUsers]);
 
