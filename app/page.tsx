@@ -39,7 +39,7 @@ export default async function Home() {
           <span className="text-white font-bold text-[15px] tracking-tight">ChatApp</span>
         </div>
         <Link
-          href="/chat"
+          href="/login"
           className="text-[13px] text-slate-400 hover:text-white transition-colors font-medium"
         >
           Log ind
@@ -71,7 +71,7 @@ export default async function Home() {
 
         {/* CTA */}
         <Link
-          href="/chat"
+          href="/login"
           className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold text-[16px] shadow-[0_8px_32px_rgba(124,58,237,0.45)] hover:shadow-[0_12px_48px_rgba(124,58,237,0.65)] hover:scale-[1.03] active:scale-[0.98] transition-all duration-200"
         >
           <span>Åben chatten og kom igang nu</span>

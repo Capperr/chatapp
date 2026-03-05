@@ -88,7 +88,7 @@ export function ChatGateway() {
       setLoginLoading(false);
       return;
     }
-    router.refresh();
+    router.push("/chat");
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -129,7 +129,7 @@ export function ChatGateway() {
       password: regData.password,
     });
     if (!signInError) {
-      router.refresh();
+      router.push("/chat");
       return;
     }
     setRegSuccess(true);
