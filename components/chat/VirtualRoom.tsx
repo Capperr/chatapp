@@ -64,7 +64,7 @@ function getShopTheme(): RoomTheme {
 function PersonAvatar({ }: { color: string; glow?: boolean; mood?: string }) {
   return (
     <g>
-      <image href="/alien.png" x="-20" y="-30" width="40" height="50" />
+      <image href="/alien.png" x="-28" y="-50" width="56" height="70" />
     </g>
   );
 }
@@ -404,7 +404,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [logMessages, setLogMessages] = useState<LogMessage[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const [rightPanel, setRightPanel] = useState<RightPanel>("chatlog");
+  const [rightPanel, setRightPanel] = useState<RightPanel>("hidden");
+  const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
+  const levelRef = useRef(1);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [items, setItems] = useState<RoomItem[]>([]);
   const [bots, setBots] = useState<RoomBot[]>([]);
@@ -506,6 +508,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       totalSecondsRef.current = newTotal;
       setTotalSeconds(newTotal);
       const newLevel = levelFromSeconds(newTotal);
+      if (newLevel > levelRef.current) {
+        setShowLevelUp(newLevel);
+        setTimeout(() => setShowLevelUp(null), 3000);
+      }
+      levelRef.current = newLevel;
       setLevel(newLevel);
       supabase.from("profiles").update({ total_online_seconds: newTotal, level: newLevel }).eq("id", currentProfile.id);
     }, 30_000);
@@ -912,7 +919,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     const nc = cols ?? roomColsRef.current; const nr = rows ?? roomRowsRef.current;
     const rt = roomType ?? "normal";
     setActiveRoomId(id); setActiveRoomName(name); setRoomDimensions(nc, nr);
-    setActiveRoomType(rt); setRightPanel(rt === "shop" ? "shop" : "chatlog");
+    setActiveRoomType(rt); setRightPanel(rt === "shop" ? "shop" : "hidden");
     setActiveThemeKey(themeKey ?? "blue");
     setActiveFloorPattern(floorPattern ?? "standard");
     lastActivityRef.current = Date.now();
@@ -1179,7 +1186,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             </div>
             {/* Center: stats */}
             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-              <button onClick={() => setRightPanel(p => p === "profile" ? "chatlog" : "profile")} className={`flex items-center gap-1 px-2 py-1 rounded-lg border transition-all text-[11px] font-bold ${rightPanel === "profile" ? "text-violet-200 bg-violet-500/20 border-violet-400/30 shadow-[0_0_10px_rgba(139,92,246,0.3)]" : "text-violet-300 bg-violet-500/10 border-violet-500/15 hover:bg-violet-500/20"}`}>
+              <button onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")} className={`flex items-center gap-1 px-2 py-1 rounded-lg border transition-all text-[11px] font-bold ${rightPanel === "profile" ? "text-violet-200 bg-violet-500/20 border-violet-400/30 shadow-[0_0_10px_rgba(139,92,246,0.3)]" : "text-violet-300 bg-violet-500/10 border-violet-500/15 hover:bg-violet-500/20"}`}>
                 <span className="text-[9px] text-violet-400 font-black">LV</span>
                 <span className="tabular-nums">{level}</span>
               </button>
@@ -1488,7 +1495,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <circle cx={ax + 15} cy={ay - AR_S - 8} r={5} fill="#1e293b" stroke="#475569" strokeWidth={0.8} />
                         <text x={ax + 15} y={ay - AR_S - 5.5} textAnchor="middle" fontSize={6} fill="#94a3b8">⚙</text>
                         {cellBot.gives_clothing_id && <text x={ax} y={y + TH / 4 + 8} textAnchor="middle" fontSize={8}>🎁</text>}
-                        {cellBot.message && renderSvgBubble(ax, y - 60, cellBot.message, cellBot.color, 0.7)}
+                        {cellBot.message && renderSvgBubble(ax, y - 80, cellBot.message, cellBot.color, 0.7)}
                       </g>
                     );
                   }
@@ -1508,10 +1515,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         </g>
                         <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{user.display_name}</text>
                         <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
-                        {isMe && draft && renderSvgBubble(0, -60, draft + "…", "#475569", 0.85, 0, false)}
-                        {isTyping && renderTypingBubble(0, -60, 0)}
+                        {isMe && draft && renderSvgBubble(0, -80, draft + "…", "#475569", 0.85, 0, false)}
+                        {isTyping && renderTypingBubble(0, -80, 0)}
                         {userBubbles.length > 0 && (
-                          <g>{renderSvgBubble(0, -60, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
+                          <g>{renderSvgBubble(0, -80, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
                         )}
                       </g>
                     </g>
@@ -1519,6 +1526,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 });
               })()}
             </svg>
+
+            {/* Level-up overlay */}
+            {showLevelUp !== null && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+                <div className="animate-level-up flex flex-col items-center gap-2">
+                  <div className="text-[11px] font-black uppercase tracking-[0.3em] text-violet-400">Level Up!</div>
+                  <div className="text-6xl font-black text-white" style={{ textShadow: "0 0 40px rgba(139,92,246,0.9), 0 0 80px rgba(139,92,246,0.5)" }}>{showLevelUp}</div>
+                  <div className="text-[11px] font-semibold text-violet-300 opacity-80">Niveau {showLevelUp} opnået</div>
+                </div>
+              </div>
+            )}
 
             {/* Floating draft bubble */}
             {draft && (
@@ -1534,19 +1552,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); reloadChat(); }} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs / Genopret forbindelse"><RefreshCw className="w-[18px] h-[18px]" /></button>
               <div className="w-px h-5 bg-white/[0.08] mx-1" />
               <button onClick={() => setRightPanel(p => p === "chatlog" ? "hidden" : "chatlog")} className={`p-2 rounded-xl transition-all ${rightPanel === "chatlog" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Chatlog"><MessageSquare className="w-[18px] h-[18px]" /></button>
-              <button onClick={() => setRightPanel(p => p === "online" ? "chatlog" : "online")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
+              <button onClick={() => setRightPanel(p => p === "online" ? "hidden" : "online")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
                 <Users className="w-[18px] h-[18px]" />
                 {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
               </button>
-              <button onClick={() => setRightPanel(p => p === "wardrobe" ? "chatlog" : "wardrobe")} className={`p-2 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
+              <button onClick={() => setRightPanel(p => p === "wardrobe" ? "hidden" : "wardrobe")} className={`p-2 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
                 <Shirt className="w-[18px] h-[18px]" />
               </button>
-              <button onClick={() => setRightPanel(p => p === "inventory" ? "chatlog" : "inventory")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rygsæk">
+              <button onClick={() => setRightPanel(p => p === "inventory" ? "hidden" : "inventory")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rygsæk">
                 <Package className="w-[18px] h-[18px]" />
                 {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
               </button>
-              <button onClick={() => setRightPanel(p => p === "rooms" ? "chatlog" : "rooms")} className={`p-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rum"><Hash className="w-[18px] h-[18px]" /></button>
-              {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "chatlog" : "admin")} className={`p-2 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Admin"><Wrench className="w-[18px] h-[18px]" /></button>}
+              <button onClick={() => setRightPanel(p => p === "rooms" ? "hidden" : "rooms")} className={`p-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rum"><Hash className="w-[18px] h-[18px]" /></button>
+              {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "hidden" : "admin")} className={`p-2 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Admin"><Wrench className="w-[18px] h-[18px]" /></button>}
               <div className="w-px h-5 bg-white/[0.08] mx-1" />
               <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ind"><ZoomIn className="w-[18px] h-[18px]" /></button>
               <span className="text-[10px] text-slate-600 w-7 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
@@ -1568,7 +1586,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <>
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60">
                   <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span className="text-[11px] font-bold text-slate-300 tracking-wide">Online — {globalUsers.size}</span></div>
-                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
                 <div className="flex-1 overflow-y-auto py-1">
                   {Array.from(globalUsers.values()).map(u => {
@@ -1605,7 +1623,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   {/* Header */}
                   <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0 bg-[#030912]/60">
                     <span className="text-[11px] font-bold text-slate-300 tracking-wide">Garderobe</span>
-                    <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                   </div>
 
                   {/* Avatar preview */}
@@ -1696,7 +1714,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Butik</span>
                     <span className="text-[11px] text-amber-400 font-semibold">🪙 {coins}</span>
                   </div>
-                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
+                  <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
                 </div>
                 <div className="flex-1 overflow-y-auto">
                   {CLOTHING_SLOTS.map(slot => {
@@ -1738,7 +1756,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Skift rum</span>
                   <div className="flex items-center gap-1">
                     {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8, room_type: "normal", theme_key: "blue", floor_pattern: "standard" })} className="p-1 rounded text-slate-500 hover:text-emerald-400" title="Opret rum"><Plus className="w-3 h-3" /></button>}
-                    <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
+                    <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
                   </div>
                 </div>
                 {/* Room design form (shared for create + edit) */}
@@ -1812,7 +1830,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <>
                 <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
                   <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Rygsæk ({myInventory.length})</span>
-                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
+                  <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
                 </div>
                 <div className="flex-1 overflow-y-auto py-1">
                   {myInventory.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen genstande</p>}
@@ -1847,7 +1865,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <div className="flex items-center gap-1">
                     {adminTab === "items" && <button onClick={() => setCreateForm({ name: "", item_type: "flower" })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3 h-3" /></button>}
                     {adminTab === "bots" && <button onClick={() => setCreateBotForm({ name: "", color: "#6366f1", message: "", moves_randomly: false, gives_clothing_id: "" })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3 h-3" /></button>}
-                    <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
+                    <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
                   </div>
                 </div>
 
@@ -1953,7 +1971,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <>
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
                   <span className="text-[11px] font-bold text-slate-300 tracking-wide">Min profil</span>
-                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
                 {/* Avatar preview */}
                 <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-3 border-b border-white/[0.06] bg-gradient-to-b from-violet-500/[0.04] to-transparent">
