@@ -64,7 +64,7 @@ function getShopTheme(): RoomTheme {
 function PersonAvatar({ }: { color: string; glow?: boolean; mood?: string }) {
   return (
     <g>
-      <image href="/alien.png" x="-16" y="-24" width="32" height="40" />
+      <image href="/alien.png" x="-28" y="-46" width="56" height="70" />
     </g>
   );
 }
