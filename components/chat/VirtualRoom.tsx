@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck } from "lucide-react";
+import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck, Settings, Rocket } from "lucide-react";
 import type { Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -358,14 +358,24 @@ interface ChatRoom {
   room_type: string;
   theme_key: string;
   floor_pattern: string;
+  owner_id?: string | null;
+  spaceship_design?: string | null;
 }
+interface VisitRequest { from_id: string; from_name: string; spaceship_room_id: string; spaceship_room_name: string; }
+
+const SPACESHIP_VARIANTS: { id: string; name: string; emoji: string; desc: string; cols: number; rows: number; theme: string; price: number }[] = [
+  { id: "scout",    name: "Scout",    emoji: "🛸", desc: "Kompakt og hurtigt",      cols: 8,  rows: 6,  theme: "void",    price: 2000  },
+  { id: "cruiser",  name: "Cruiser",  emoji: "🚀", desc: "Komfortabelt og rummeligt", cols: 10, rows: 8,  theme: "plasma",  price: 4500  },
+  { id: "flagship", name: "Flagship", emoji: "🌌", desc: "Massivt og imponerende",   cols: 12, rows: 10, theme: "nebula",  price: 9000  },
+  { id: "titan",    name: "Titan",    emoji: "⚡", desc: "Det ultimative rumskib",   cols: 14, rows: 12, theme: "stealth", price: 18000 },
+];
 interface VirtualRoomProps {
   roomId: string;
   roomName: string;
   currentProfile: Profile;
   onClose: () => void;
 }
-type RightPanel = "chatlog" | "hidden" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile" | "userprofile";
+type RightPanel = "chatlog" | "hidden" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile" | "userprofile" | "settings";
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: VirtualRoomProps) {
@@ -411,6 +421,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
   const [otherLevelUps, setOtherLevelUps] = useState<Map<string, number>>(new Map());
   const [mutedUsers, setMutedUsers] = useState<Set<string>>(new Set());
+  const [mySpaceship, setMySpaceship] = useState<ChatRoom | null>(null);
+  const [spaceshipOf, setSpaceshipOf] = useState<Map<string, { id: string; name: string }>>(new Map());
+  const [visitRequest, setVisitRequest] = useState<VisitRequest | null>(null);
+  const [awaitingVisit, setAwaitingVisit] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"shop" | "profil">("shop");
   const levelRef = useRef(1);
   const lastMsgTimesRef = useRef<number[]>([]);
   const cooldownEndRef = useRef(0);
@@ -475,6 +490,25 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       setMutedUsers(new Set(data.filter(p => p.muted_until && p.muted_until > now).map(p => p.id)));
     });
   }, [users]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch spaceships for users in room
+  useEffect(() => {
+    const ids = Array.from(users.keys());
+    if (ids.length === 0) { setSpaceshipOf(new Map()); return; }
+    supabase.from("chat_rooms").select("id, name, owner_id").eq("room_type", "spaceship").in("owner_id", ids).then(({ data }) => {
+      if (!data) return;
+      const m = new Map<string, { id: string; name: string }>();
+      (data as ChatRoom[]).forEach(r => { if (r.owner_id) m.set(r.owner_id, { id: r.id, name: r.name }); });
+      setSpaceshipOf(m);
+    });
+  }, [users]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch own spaceship
+  useEffect(() => {
+    supabase.from("chat_rooms").select("*").eq("room_type", "spaceship").eq("owner_id", currentProfile.id).maybeSingle().then(({ data }) => {
+      setMySpaceship(data as ChatRoom | null);
+    });
+  }, [currentProfile.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Activity / session timer ───────────────────────────────────────────────
   const triggerDisconnect = useCallback((msg: string) => {
@@ -860,6 +894,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         if (!p?.user_id || p.user_id === currentProfile.id) return;
         setOtherLevelUps(prev => { const m = new Map(prev); m.set(p.user_id, p.level); return m; });
         setTimeout(() => setOtherLevelUps(prev => { const m = new Map(prev); m.delete(p.user_id); return m; }), 4000);
+      })
+      .on("broadcast", { event: "spaceship_request" }, ({ payload }) => {
+        const p = payload as VisitRequest & { to_id: string };
+        if (p.to_id !== currentProfile.id) return;
+        setVisitRequest({ from_id: p.from_id, from_name: p.from_name, spaceship_room_id: p.spaceship_room_id, spaceship_room_name: p.spaceship_room_name });
+      })
+      .on("broadcast", { event: "spaceship_invite" }, ({ payload }) => {
+        const p = payload as { to_id: string; accepted: boolean; spaceship_room_id?: string; spaceship_room_name?: string };
+        if (p.to_id !== currentProfile.id) return;
+        setAwaitingVisit(false);
+        if (p.accepted && p.spaceship_room_id) {
+          switchRoom(p.spaceship_room_id, p.spaceship_room_name ?? "Rumskib", undefined, undefined, "spaceship");
+        }
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${activeRoomId}` }, async (payload) => {
         const sid: string = payload.new.user_id; const txt: string = payload.new.content;
@@ -1665,6 +1712,26 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </div>
             )}
 
+            {/* Visit request incoming */}
+            {visitRequest && (
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-3 px-5 py-4 bg-[#070f1e]/98 backdrop-blur-xl rounded-2xl border border-violet-500/30 shadow-[0_16px_48px_rgba(0,0,0,0.8)] w-72">
+                <div className="flex items-center gap-2"><Rocket className="w-4 h-4 text-violet-400" /><span className="text-[13px] font-bold text-white">Besøgsanmodning</span></div>
+                <p className="text-[12px] text-slate-300 text-center"><span className="text-violet-300 font-semibold">{visitRequest.from_name}</span> vil besøge dit rumskib</p>
+                <div className="flex gap-2 w-full">
+                  <button onClick={() => { channelRef.current?.send({ type: "broadcast", event: "spaceship_invite", payload: { to_id: visitRequest.from_id, accepted: true, spaceship_room_id: visitRequest.spaceship_room_id, spaceship_room_name: visitRequest.spaceship_room_name } }); setVisitRequest(null); }} className="flex-1 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[12px] font-semibold transition-colors">Accepter</button>
+                  <button onClick={() => { channelRef.current?.send({ type: "broadcast", event: "spaceship_invite", payload: { to_id: visitRequest.from_id, accepted: false } }); setVisitRequest(null); }} className="flex-1 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-slate-300 text-[12px] font-semibold transition-colors">Afvis</button>
+                </div>
+              </div>
+            )}
+            {/* Awaiting visit response */}
+            {awaitingVisit && (
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-3 bg-[#070f1e]/98 backdrop-blur-xl rounded-2xl border border-violet-500/20 shadow-[0_12px_40px_rgba(0,0,0,0.7)]">
+                <Rocket className="w-4 h-4 text-violet-400 animate-pulse" />
+                <span className="text-[12px] text-slate-300">Venter på svar...</span>
+                <button onClick={() => setAwaitingVisit(false)} className="text-slate-600 hover:text-slate-400 ml-1"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
+
             {/* Spam cooldown indicator */}
             {cooldownSec > 0 && (
               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2.5 bg-rose-950/95 backdrop-blur-xl rounded-2xl border border-rose-500/30 shadow-[0_12px_40px_rgba(0,0,0,0.7)]">
@@ -1701,6 +1768,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </button>
               <button onClick={() => setRightPanel(p => p === "rooms" ? "hidden" : "rooms")} className={`p-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rum"><Hash className="w-[18px] h-[18px]" /></button>
               {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "hidden" : "admin")} className={`p-2 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Admin"><Wrench className="w-[18px] h-[18px]" /></button>}
+              <button onClick={() => setRightPanel(p => p === "settings" ? "hidden" : "settings")} className={`p-2 rounded-xl transition-all ${rightPanel === "settings" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Indstillinger"><Settings className="w-[18px] h-[18px]" /></button>
               <div className="w-px h-5 bg-white/[0.08] mx-1" />
               <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ind"><ZoomIn className="w-[18px] h-[18px]" /></button>
               <span className="text-[10px] text-slate-600 w-7 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
@@ -2097,6 +2165,90 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             )}
 
             {/* Profile panel */}
+            {/* Settings panel */}
+            {rightPanel === "settings" && (
+              <>
+                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
+                  <span className="text-[11px] font-bold text-slate-300 tracking-wide">Indstillinger</span>
+                  <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                </div>
+                {/* Tabs */}
+                <div className="flex border-b border-white/[0.06] flex-shrink-0">
+                  {(["shop", "profil"] as const).map(tab => (
+                    <button key={tab} onClick={() => setSettingsTab(tab)} className={`flex-1 py-2 text-[11px] font-semibold capitalize transition-colors ${settingsTab === tab ? "text-violet-300 border-b-2 border-violet-500" : "text-slate-500 hover:text-slate-300"}`}>
+                      {tab === "shop" ? "🛒 Butik" : "👤 Profil"}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                  {settingsTab === "profil" && (
+                    <>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Rigtigt navn</p>
+                      <form onSubmit={async e => { e.preventDefault(); const v = (e.currentTarget.elements.namedItem("rn") as HTMLInputElement).value.trim(); if (!v) return; await supabase.from("profiles").update({ real_name: v }).eq("id", currentProfile.id); }} className="space-y-2">
+                        <input name="rn" defaultValue={(currentProfile as Profile & { real_name?: string }).real_name ?? ""} placeholder="Dit rigtige navn..." maxLength={60} className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg px-3 py-1.5 text-[12px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
+                        <button type="submit" className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[11px] text-white font-semibold transition-colors">Gem navn</button>
+                      </form>
+                      <div className="border-t border-white/[0.06] pt-3">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Alien farve</p>
+                        <div className="flex flex-wrap gap-2">
+                          {["#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#3b82f6","#84cc16","#f97316","#14b8a6"].map(c => (
+                            <button key={c} onClick={async () => { await supabase.from("profiles").update({ avatar_color: c }).eq("id", currentProfile.id); currentProfile.avatar_color = c; }} className="w-7 h-7 rounded-full transition-all border-2 flex-shrink-0" style={{ backgroundColor: c, borderColor: myColor === c ? "white" : "transparent", boxShadow: myColor === c ? `0 0 8px ${c}` : "none" }} />
+                          ))}
+                        </div>
+                        <p className="text-[9px] text-slate-600 mt-1.5">Farveændring er gratis — afspejles ved næste login</p>
+                      </div>
+                    </>
+                  )}
+                  {settingsTab === "shop" && (
+                    <>
+                      {/* Name change */}
+                      <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05] space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div><p className="text-[12px] font-bold text-slate-200">Navneændring</p><p className="text-[10px] text-slate-500">Skift dit visningsnavn</p></div>
+                          <span className="text-[11px] font-bold text-amber-400">500 🪙</span>
+                        </div>
+                        <form onSubmit={async e => { e.preventDefault(); const v = (e.currentTarget.elements.namedItem("dn") as HTMLInputElement).value.trim(); if (!v || coins < 500) return; const nc = coins - 500; coinsRef.current = nc; setCoins(nc); await supabase.from("profiles").update({ display_name: v, coins: nc }).eq("id", currentProfile.id); currentProfile.display_name = v; }} className="flex gap-2">
+                          <input name="dn" placeholder="Nyt navn..." maxLength={50} className="flex-1 bg-white/[0.05] border border-white/[0.07] rounded-lg px-2 py-1.5 text-[11px] text-slate-200 placeholder-slate-600 outline-none focus:border-amber-500/50 transition-all" />
+                          <button type="submit" disabled={coins < 500} className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 rounded-lg text-[11px] text-white font-semibold transition-colors flex-shrink-0">Køb</button>
+                        </form>
+                      </div>
+                      {/* Divider */}
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide pt-1">🚀 Rumskibe</p>
+                      {mySpaceship ? (
+                        <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Rocket className="w-4 h-4 text-violet-400" />
+                            <div><p className="text-[12px] font-bold text-violet-300">{mySpaceship.name}</p><p className="text-[10px] text-slate-500">Dit rumskib · {mySpaceship.cols}×{mySpaceship.rows} tiles</p></div>
+                          </div>
+                          <button onClick={() => switchRoom(mySpaceship.id, mySpaceship.name, mySpaceship.cols, mySpaceship.rows, "spaceship", mySpaceship.theme_key, mySpaceship.floor_pattern)} className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[11px] text-white font-semibold transition-colors">Gå til mit rumskib</button>
+                        </div>
+                      ) : (
+                        SPACESHIP_VARIANTS.map(v => (
+                          <div key={v.id} className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05] space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div><p className="text-[12px] font-bold text-slate-200">{v.emoji} {v.name}</p><p className="text-[10px] text-slate-500">{v.desc} · {v.cols}×{v.rows}</p></div>
+                              <span className="text-[11px] font-bold text-amber-400 flex-shrink-0">{v.price.toLocaleString()} 🪙</span>
+                            </div>
+                            <button disabled={coins < v.price} onClick={async () => {
+                              if (coins < v.price) return;
+                              const nc = coins - v.price;
+                              coinsRef.current = nc; setCoins(nc);
+                              const roomName = `${currentProfile.display_name}s rumskib`;
+                              const { data: newRoom } = await supabase.from("chat_rooms").insert({ name: roomName, cols: v.cols, rows: v.rows, room_type: "spaceship", theme_key: v.theme, floor_pattern: "grid", owner_id: currentProfile.id, spaceship_design: v.id }).select("*").single();
+                              await supabase.from("profiles").update({ coins: nc }).eq("id", currentProfile.id);
+                              if (newRoom) { setMySpaceship(newRoom as ChatRoom); setRooms(prev => [...prev, newRoom as ChatRoom]); }
+                            }} className="w-full py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-40 rounded-lg text-[11px] text-white font-semibold transition-all">
+                              {coins < v.price ? `Mangler ${(v.price - coins).toLocaleString()} 🪙` : "Køb rumskib"}
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+
             {/* Other user profile panel */}
             {rightPanel === "userprofile" && profileView && (() => {
               const isMutedNow = !!(profileView.muted_until && new Date(profileView.muted_until) > new Date());
@@ -2362,6 +2514,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <span className="text-xs font-semibold text-slate-200 truncate">{ctxMenu.user.display_name}</span>
                 </div>
                 <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06]" onClick={() => openProfile(ctxMenu.user!.user_id)}>Se profil</button>
+                {spaceshipOf.has(ctxMenu.user.user_id) && (
+                  <button className="w-full text-left px-3 py-2.5 text-sm text-violet-300 hover:bg-violet-500/10 flex items-center gap-2" onClick={() => {
+                    const ship = spaceshipOf.get(ctxMenu.user!.user_id)!;
+                    setCtxMenu(null);
+                    setAwaitingVisit(true);
+                    channelRef.current?.send({ type: "broadcast", event: "spaceship_request", payload: { to_id: ctxMenu.user!.user_id, from_id: currentProfile.id, from_name: currentProfile.display_name, spaceship_room_id: ship.id, spaceship_room_name: ship.name } });
+                    setTimeout(() => setAwaitingVisit(false), 30000);
+                  }}>
+                    <Rocket className="w-3.5 h-3.5" /> Gå til rumskib
+                  </button>
+                )}
                 {theirItems.length > 0 && (
                   <div className="border-t border-white/[0.06]">
                     <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Bærer ({theirItems.length})</p>

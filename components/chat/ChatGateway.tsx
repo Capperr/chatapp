@@ -74,6 +74,8 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
 
   // Register state
   const [regData, setRegData] = useState({ username: "", displayName: "", email: "", password: "" });
+  const [regColor, setRegColor] = useState("#8b5cf6");
+  const REG_COLORS = ["#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#3b82f6","#84cc16","#f97316","#14b8a6"];
   const [showRegPw, setShowRegPw] = useState(false);
   const [regLoading, setRegLoading] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
@@ -110,6 +112,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
         data: {
           username: regData.username.toLowerCase(),
           display_name: regData.displayName || regData.username,
+          avatar_color: regColor,
         },
         emailRedirectTo: `${window.location.origin}/api/auth/callback`,
       },
@@ -334,6 +337,18 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
                     <div className="flex gap-1 pt-0.5">
                       {[6, 8, 12].map(len => (
                         <div key={len} className={`h-0.5 flex-1 rounded-full transition-all ${regData.password.length >= len ? "bg-violet-500" : "bg-white/[0.06]"}`} />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Alien farve</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {REG_COLORS.map(c => (
+                        <button key={c} type="button" onClick={() => setRegColor(c)}
+                          className="w-6 h-6 rounded-full transition-all border-2 flex-shrink-0"
+                          style={{ backgroundColor: c, borderColor: regColor === c ? "white" : "transparent", boxShadow: regColor === c ? `0 0 8px ${c}` : "none" }}
+                        />
                       ))}
                     </div>
                   </div>
