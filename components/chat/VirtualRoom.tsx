@@ -407,6 +407,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [rightPanel, setRightPanel] = useState<RightPanel>("hidden");
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
   const levelRef = useRef(1);
+  const lastMsgTimesRef = useRef<number[]>([]);
+  const cooldownEndRef = useRef(0);
+  const [cooldownSec, setCooldownSec] = useState(0);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [items, setItems] = useState<RoomItem[]>([]);
   const [bots, setBots] = useState<RoomBot[]>([]);
@@ -635,7 +638,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           totalSecondsRef.current = data.total_online_seconds;
           setTotalSeconds(data.total_online_seconds);
           // Level is derived from total online time, override whatever is in DB
-          setLevel(levelFromSeconds(data.total_online_seconds));
+          const lv = levelFromSeconds(data.total_online_seconds);
+          levelRef.current = lv;
+          setLevel(lv);
         } else if (data.level != null) {
           setLevel(data.level);
         }
@@ -947,6 +952,21 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   sendDraftRef.current = async () => {
     const t = draftRef.current.trim(); if (!t) return;
+    const now = Date.now();
+    if (now < cooldownEndRef.current) return;
+    // Spam check: max 5 messages per 10 seconds → 5s cooldown
+    lastMsgTimesRef.current = lastMsgTimesRef.current.filter(ts => now - ts < 10000);
+    lastMsgTimesRef.current.push(now);
+    if (lastMsgTimesRef.current.length >= 5) {
+      cooldownEndRef.current = now + 5000;
+      lastMsgTimesRef.current = [];
+      setCooldownSec(5);
+      const tick = setInterval(() => {
+        const rem = Math.ceil((cooldownEndRef.current - Date.now()) / 1000);
+        if (rem <= 0) { setCooldownSec(0); clearInterval(tick); } else setCooldownSec(rem);
+      }, 200);
+      return;
+    }
     draftRef.current = ""; setDraft(""); lastActivityRef.current = Date.now();
     await supabase.from("messages").insert({ content: t, user_id: currentProfile.id, room_id: activeRoomId });
     // Award +10 XP per message
@@ -1131,7 +1151,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const renderTypingBubble = (ax: number, ay: number, yOffset: number = 0) => {
     const frames = ["●  ○  ○", "○  ●  ○", "○  ○  ●"];
     const bw = 50; const bh = 22;
-    const bTop = ay - AR_S - 22 - bh - yOffset;
+    const bTop = ay - bh - yOffset;
     return (
       <g>
         <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={11} fill="white" opacity={0.92} />
@@ -1143,10 +1163,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   const renderSvgBubble = (ax: number, ay: number, text: string, _color: string, _opacity: number, yOffset: number = 0, showTail: boolean = true) => {
     const truncated = text.length > 80 ? text.slice(0, 80) + "…" : text;
-    const words = truncated.split(" ");
+    // Break long words at 18 chars to prevent horizontal overflow
+    const allWords: string[] = [];
+    truncated.split(" ").forEach(w => { for (let i = 0; i < w.length; i += 18) allWords.push(w.slice(i, i + 18)); });
     const lines: string[] = [];
     let cur = "";
-    words.forEach(w => { const n = cur ? `${cur} ${w}` : w; if (n.length > 18 && cur) { lines.push(cur); cur = w; } else { cur = n; } });
+    allWords.forEach(w => { const n = cur ? `${cur} ${w}` : w; if (n.length > 18 && cur) { lines.push(cur); cur = w; } else { cur = n; } });
     if (cur) lines.push(cur);
     const capped = lines.slice(0, 3);
     const lineH = 15;
@@ -1154,7 +1176,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     const padV = 8;
     const bw = Math.min(180, Math.max(64, capped.reduce((m, l) => Math.max(m, l.length), 0) * 6.5 + padH * 2));
     const bh = capped.length * lineH + padV * 2;
-    const bTop = ay - AR_S - 22 - bh - yOffset;
+    const bTop = ay - bh - yOffset;
     return (
       <g>
         {/* Drop shadow */}
@@ -1171,9 +1193,23 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   };
 
   // ─── Render ────────────────────────────────────────────────────────────────
+  const extensionOpen = rightPanel !== "hidden" && rightPanel !== "chatlog" && !fullscreen;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md" onClick={() => setCtxMenu(null)}>
-      <div className="flex flex-col rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] overflow-hidden bg-gradient-to-b from-[#060d1a] to-[#04090f] max-sm:!w-screen max-sm:!h-[100dvh] max-sm:!rounded-none max-sm:border-0" style={windowStyle} onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setCtxMenu(null)}>
+      {/* Starfield background */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ background: "radial-gradient(ellipse at 50% 60%, #0a0f1e 0%, #04060d 100%)" }}>
+        {Array.from({ length: 120 }).map((_, i) => {
+          const x = (i * 137.508 + 23) % 100;
+          const y = (i * 97.3 + 41) % 100;
+          const size = i % 5 === 0 ? 2 : i % 3 === 0 ? 1.5 : 1;
+          const delay = (i * 0.23) % 4;
+          const dur = 2 + (i % 3);
+          return <div key={i} className="absolute rounded-full bg-white" style={{ left: `${x}%`, top: `${y}%`, width: size, height: size, opacity: 0.4 + (i % 4) * 0.1, animation: `pulse ${dur}s ${delay}s ease-in-out infinite alternate` }} />;
+        })}
+      </div>
+      <div className="flex items-stretch max-sm:w-screen max-sm:h-[100dvh]" onClick={e => e.stopPropagation()}>
+      <div className={`flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] overflow-hidden bg-gradient-to-b from-[#060d1a] to-[#04090f] max-sm:!rounded-none max-sm:border-0 ${extensionOpen ? "sm:rounded-l-2xl sm:rounded-r-none" : "sm:rounded-2xl"}`} style={windowStyle}>
 
         {/* Header */}
         <div className="flex-shrink-0 flex flex-col" style={{ background: "linear-gradient(180deg,#070f1e 0%,#040c19 100%)" }}>
@@ -1487,7 +1523,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     const cellBot = s.bot;
                     return (
                       <g key={`bot-${cellBot.id}`} onContextMenu={e => handleRightClick(e, null, null, cellBot)}>
-                        <ellipse cx={ax} cy={y} rx={16} ry={4} fill="rgba(0,0,0,0.3)" />
+                        <ellipse cx={ax} cy={y+16} rx={16} ry={4} fill="rgba(0,0,0,0.3)" />
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={cellBot.color} glow={false} mood="happy" />
                         </g>
@@ -1510,7 +1546,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       onClick={() => handleTileClick(user.gx, user.gy)}
                       onContextMenu={e => { e.preventDefault(); e.stopPropagation(); handleRightClick(e, user, null, null); }}>
                       <g style={{ transform: `translate(${x}px, ${y}px)`, transition: "transform 0.38s cubic-bezier(0.22,1,0.36,1)" }}>
-                        <ellipse cx={0} cy={0} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
+                        <ellipse cx={0} cy={16} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
                         <g transform={`translate(0,${-AR_S}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={user.color} glow={false} mood={user.mood} />
                         </g>
@@ -1539,10 +1575,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </div>
             )}
 
+            {/* Spam cooldown indicator */}
+            {cooldownSec > 0 && (
+              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2.5 bg-rose-950/95 backdrop-blur-xl rounded-2xl border border-rose-500/30 shadow-[0_12px_40px_rgba(0,0,0,0.7)]">
+                <span className="text-rose-400 text-[13px]">⛔</span>
+                <span className="text-[12px] font-semibold text-rose-300">Vent {cooldownSec}s — for mange beskeder</span>
+              </div>
+            )}
+
             {/* Floating draft bubble */}
-            {draft && (
+            {draft && cooldownSec === 0 && (
               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2.5 bg-[#040c19]/98 backdrop-blur-xl rounded-2xl border border-white/[0.12] shadow-[0_12px_40px_rgba(0,0,0,0.7)] max-w-[340px]">
                 <span className="text-[13px] text-slate-200 flex-1 truncate font-medium">{draft}</span>
+                <span className="text-[10px] text-slate-600 tabular-nums flex-shrink-0">{draft.length}/80</span>
                 <kbd className="text-[9px] text-slate-500 flex-shrink-0 bg-white/[0.07] border border-white/[0.08] px-1.5 py-0.5 rounded-md font-mono">↵</kbd>
                 <button onClick={() => { draftRef.current = ""; setDraft(""); }} className="text-slate-600 hover:text-rose-400 flex-shrink-0 transition-colors ml-0.5"><X className="w-3.5 h-3.5" /></button>
               </div>
@@ -2089,6 +2134,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         )}
 
       </div>
+      </div>{/* end flex items-stretch wrapper */}
 
       {/* Context menu */}
       {ctxMenu && (
