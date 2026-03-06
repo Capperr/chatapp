@@ -64,7 +64,7 @@ function getShopTheme(): RoomTheme {
 function PersonAvatar({ }: { color: string; glow?: boolean; mood?: string }) {
   return (
     <g>
-      <image href="/alien.png" x="-28" y="-50" width="56" height="70" />
+      <image href="/alien.png" x="-31" y="-36" width="62" height="77" />
     </g>
   );
 }
@@ -1254,6 +1254,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             }}
             onPointerUp={() => { dragStartRef.current = null; setTimeout(() => { isDraggingRef.current = false; }, 0); }}
             onPointerLeave={() => { if (!isDraggingRef.current) dragStartRef.current = null; }}
+            onWheel={e => { setZoom(z => parseFloat(Math.max(0.4, Math.min(2.5, z + (e.deltaY < 0 ? 0.1 : -0.1))).toFixed(2))); }}
           >
             <svg ref={svgRef} viewBox={roomViewBox}
               preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
