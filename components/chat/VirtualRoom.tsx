@@ -62,10 +62,12 @@ function getShopTheme(): RoomTheme {
 }
 
 // ─── Person Avatar ─────────────────────────────────────────────────────────────
-function PersonAvatar({ }: { color: string; glow?: boolean; mood?: string }) {
+const AVATAR_TINT_COLORS = ["#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#3b82f6","#84cc16","#f97316","#14b8a6"];
+function PersonAvatar({ color }: { color: string; glow?: boolean; mood?: string }) {
+  const filterId = AVATAR_TINT_COLORS.includes(color) ? `alien-tint-${color.slice(1)}` : undefined;
   return (
     <g>
-      <image href="/alien.png" x="-31" y="-36" width="62" height="77" />
+      <image href="/alien.png" x="-31" y="-36" width="62" height="77" filter={filterId ? `url(#${filterId})` : undefined} />
     </g>
   );
 }
@@ -407,6 +409,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [zoom, setZoom] = useState(1);
   const [rightPanel, setRightPanel] = useState<RightPanel>("hidden");
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
+  const [otherLevelUps, setOtherLevelUps] = useState<Map<string, number>>(new Map());
   const levelRef = useRef(1);
   const lastMsgTimesRef = useRef<number[]>([]);
   const cooldownEndRef = useRef(0);
@@ -515,9 +518,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       const newLevel = levelFromSeconds(newTotal);
       if (newLevel > levelRef.current) {
         setShowLevelUp(newLevel);
-        setTimeout(() => setShowLevelUp(null), 3000);
+        setTimeout(() => setShowLevelUp(null), 4000);
         levelRef.current = newLevel;
         setLevel(newLevel);
+        channelRef.current?.send({ type: "broadcast", event: "level_up", payload: { user_id: currentProfile.id, level: newLevel } });
       }
       supabase.from("profiles").update({ total_online_seconds: newTotal, level: newLevel }).eq("id", currentProfile.id);
     }, 30_000);
@@ -543,6 +547,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   const svgW = useMemo(() => (Math.max(roomCols, roomRows) + 1) * TW, [roomCols, roomRows]);
   const svgH = useMemo(() => (roomCols + roomRows) * (TH / 2) + OFFSET_Y + TH * 2, [roomCols, roomRows]);
+
+  const stars = useMemo(() => {
+    let seed = 98273;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    return Array.from({ length: 200 }, () => ({
+      x: (rand() - 0.25) * svgW * 6,
+      y: (rand() - 0.5) * svgH * 3.5,
+      r: rand() * 1.1 + 0.25,
+      op: rand() * 0.55 + 0.25,
+      dur: (rand() * 3 + 1.5).toFixed(2),
+      delay: (rand() * 5).toFixed(2),
+    }));
+  }, [svgW, svgH]);
 
   // Tight viewBox centered on the actual room geometry (accounts for wall height and asymmetric rooms)
   const roomViewBox = useMemo(() => {
@@ -828,6 +845,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         if (!p?.user_id || p.user_id === currentProfile.id) return;
         setTypingUsers(prev => { const m = new Map(prev); m.set(p.user_id, Date.now()); return m; });
       })
+      .on("broadcast", { event: "level_up" }, ({ payload }) => {
+        const p = payload as { user_id: string; level: number };
+        if (!p?.user_id || p.user_id === currentProfile.id) return;
+        setOtherLevelUps(prev => { const m = new Map(prev); m.set(p.user_id, p.level); return m; });
+        setTimeout(() => setOtherLevelUps(prev => { const m = new Map(prev); m.delete(p.user_id); return m; }), 4000);
+      })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${activeRoomId}` }, async (payload) => {
         const sid: string = payload.new.user_id; const txt: string = payload.new.content;
         const newBubble: SpeechBubble = { id: Date.now() + Math.random(), text: txt, ts: Date.now() };
@@ -978,7 +1001,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     const newLevel = Math.floor(newXp / 100) + 1;
     if (newLevel > levelRef.current) {
       setShowLevelUp(newLevel);
-      setTimeout(() => setShowLevelUp(null), 3000);
+      setTimeout(() => setShowLevelUp(null), 4000);
+      channelRef.current?.send({ type: "broadcast", event: "level_up", payload: { user_id: currentProfile.id, level: newLevel } });
     }
     levelRef.current = newLevel;
     xpRef.current = newXp; setXp(newXp); setLevel(newLevel);
@@ -1303,7 +1327,38 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <svg ref={svgRef} viewBox={roomViewBox}
               preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
               {/* Background fills entire visible area regardless of viewBox */}
+              <defs>
+                {/* Alien color tint filters */}
+                {AVATAR_TINT_COLORS.map(c => (
+                  <filter key={c} id={`alien-tint-${c.slice(1)}`} colorInterpolationFilters="sRGB">
+                    <feFlood floodColor={c} result="flood"/>
+                    <feComposite in="flood" in2="SourceAlpha" operator="in" result="mask"/>
+                    <feBlend in="mask" in2="SourceGraphic" mode="color"/>
+                  </filter>
+                ))}
+                {/* Nebula glow gradient */}
+                <radialGradient id="nebula1" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor={theme.color} stopOpacity="0.12"/>
+                  <stop offset="100%" stopColor={theme.color} stopOpacity="0"/>
+                </radialGradient>
+                <radialGradient id="nebula2" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="#818cf8" stopOpacity="0.08"/>
+                  <stop offset="100%" stopColor="#818cf8" stopOpacity="0"/>
+                </radialGradient>
+              </defs>
+
               <rect x={-svgW * 2} y={-svgH * 2} width={svgW * 6} height={svgH * 6} fill={theme.even} />
+
+              {/* ── Galaxy background ── */}
+              {/* Nebula blobs */}
+              <ellipse cx={svgW * 0.2} cy={-svgH * 0.3} rx={svgW * 1.2} ry={svgH * 0.9} fill="url(#nebula1)" />
+              <ellipse cx={svgW * 1.1} cy={svgH * 0.1} rx={svgW * 0.9} ry={svgH * 0.7} fill="url(#nebula2)" />
+              {/* Stars */}
+              {stars.map((s, i) => (
+                <circle key={i} cx={svgW / 2 + s.x} cy={svgH * 0.3 + s.y} r={s.r} fill="white">
+                  <animate attributeName="opacity" values={`${s.op};${Math.min(1, s.op + 0.4)};${s.op}`} dur={`${s.dur}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+                </circle>
+              ))}
 
               {/* ── Back walls ── */}
               {(() => {
@@ -1557,20 +1612,23 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         {userBubbles.length > 0 && (!isMe || !draft) && (
                           <g>{renderSvgBubble(0, -80, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
                         )}
-                        {/* Level-up ring animation */}
-                        {isMe && showLevelUp !== null && (
-                          <g>
-                            {([["#8b5cf6", 0], ["#c4b5fd", 0.35], ["#fbbf24", 0.7]] as [string, number][]).map(([color, delay], i) => (
-                              <circle key={i} cx={0} cy={0} fill="none" stroke={color} strokeWidth={2 - i * 0.4}>
-                                <animate attributeName="r" from="8" to="65" dur="1.3s" begin={`${delay}s`} repeatCount="indefinite" />
-                                <animate attributeName="opacity" from="0.85" to="0" dur="1.3s" begin={`${delay}s`} repeatCount="indefinite" />
-                              </circle>
-                            ))}
-                            <text x={0} y={-AR_S - 18} textAnchor="middle" fontSize={11} fontFamily="system-ui,sans-serif" fontWeight="900" fill="#fbbf24" stroke="rgba(0,0,0,0.9)" strokeWidth={2.5} paintOrder="stroke" style={{ animation: "svgLevelUpText 2.8s ease-out forwards" }}>
-                              ★ LEVEL {showLevelUp} ★
-                            </text>
-                          </g>
-                        )}
+                        {/* Level-up ring animation — shown for self and others */}
+                        {(isMe ? showLevelUp : otherLevelUps.get(user.user_id) ?? null) !== null && (() => {
+                          const lvNum = isMe ? showLevelUp! : otherLevelUps.get(user.user_id)!;
+                          return (
+                            <g>
+                              {([["#fbbf24", 0], ["#c4b5fd", 0.3], ["#8b5cf6", 0.6]] as [string, number][]).map(([ringColor, delay], i) => (
+                                <circle key={i} cx={0} cy={0} fill="none" stroke={ringColor} strokeWidth={2.2 - i * 0.4}>
+                                  <animate attributeName="r" from="8" to="70" dur="1.4s" begin={`${delay}s`} repeatCount="indefinite" />
+                                  <animate attributeName="opacity" from="0.9" to="0" dur="1.4s" begin={`${delay}s`} repeatCount="indefinite" />
+                                </circle>
+                              ))}
+                              <text x={0} y={-AR_S - 20} textAnchor="middle" fontSize={isMe ? 12 : 10} fontFamily="system-ui,sans-serif" fontWeight="900" fill="#fbbf24" stroke="rgba(0,0,0,0.95)" strokeWidth={3} paintOrder="stroke" style={{ animation: "svgLevelUpText 3s ease-out forwards" }}>
+                                ★ LEVEL {lvNum} ★
+                              </text>
+                            </g>
+                          );
+                        })()}
                       </g>
                     </g>
                   );
