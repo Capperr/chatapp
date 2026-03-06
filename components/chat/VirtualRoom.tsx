@@ -1610,10 +1610,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   | { kind: "user"; user: PresenceUser; gx: number; gy: number };
                 const sprites: Sprite[] = [];
                 items.filter(i => i.gx !== null && i.gy !== null && !i.wall_side).forEach(i => sprites.push({ kind: "item", item: i, gx: i.gx!, gy: i.gy! }));
-                bots.forEach(b => sprites.push({ kind: "bot", bot: b, gx: b.gx, gy: b.gy }));
+                bots.filter(b => b.gx >= 0 && b.gx < roomCols && b.gy >= 0 && b.gy < roomRows).forEach(b => sprites.push({ kind: "bot", bot: b, gx: b.gx, gy: b.gy }));
                 // Add current user from local state (excluded from presence users map)
                 sprites.push({ kind: "user", user: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPos.gx, gy: myPos.gy, mood: myMood, outfit: myOutfit }, gx: myPos.gx, gy: myPos.gy });
-                Array.from(users.values()).forEach(u => sprites.push({ kind: "user", user: u, gx: u.gx, gy: u.gy }));
+                Array.from(users.values()).filter(u => u.gx >= 0 && u.gx < roomCols && u.gy >= 0 && u.gy < roomRows).forEach(u => sprites.push({ kind: "user", user: u, gx: u.gx, gy: u.gy }));
                 sprites.sort((a, b) => {
                   const da = a.gx + a.gy + (a.kind === "user" ? 0.6 : a.kind === "bot" ? 0.4 : 0.2 * Math.min((a as { item: RoomItem }).item?.item_scale ?? 1, 1));
                   const db = b.gx + b.gy + (b.kind === "user" ? 0.6 : b.kind === "bot" ? 0.4 : 0.2 * Math.min((b as { item: RoomItem }).item?.item_scale ?? 1, 1));
