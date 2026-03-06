@@ -400,10 +400,81 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const xpRef = useRef(0);
   const [wardrobeActiveSlot, setWardrobeActiveSlot] = useState<string | null>(null);
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
+  const [disconnected, setDisconnected] = useState(false);
+  const [disconnectMsg, setDisconnectMsg] = useState("");
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmCountdown, setConfirmCountdown] = useState(120);
+  const lastHourConfirmRef = useRef(Date.now());
+  const showConfirmModalRef = useRef(false);
+  const disconnectedRef = useRef(false);
+  const minuteXpAccRef = useRef(0);
 
   // Keep refs in sync
   useEffect(() => { botsRef.current = bots; }, [bots]);
   useEffect(() => { usersRef.current = users; }, [users]);
+
+  // ─── Activity / session timer ───────────────────────────────────────────────
+  const triggerDisconnect = useCallback((msg: string) => {
+    if (disconnectedRef.current) return;
+    disconnectedRef.current = true;
+    setDisconnectMsg(msg);
+    setDisconnected(true);
+  }, []);
+
+  const confirmPresence = useCallback(async () => {
+    showConfirmModalRef.current = false;
+    setShowConfirmModal(false);
+    lastHourConfirmRef.current = Date.now();
+    const newCoins = coinsRef.current + 100;
+    coinsRef.current = newCoins; setCoins(newCoins);
+    await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
+  }, [supabase, currentProfile.id]);
+
+  // Inactivity + hourly check (every 30s)
+  useEffect(() => {
+    const check = setInterval(() => {
+      if (disconnectedRef.current) return;
+      const now = Date.now();
+      if (now - lastActivityRef.current > 30 * 60 * 1000) {
+        triggerDisconnect("Du har mistet forbindelsen til chatten");
+        return;
+      }
+      if (!showConfirmModalRef.current && now - lastHourConfirmRef.current > 60 * 60 * 1000) {
+        showConfirmModalRef.current = true;
+        setShowConfirmModal(true);
+        setConfirmCountdown(120);
+      }
+      // Time-based XP: +1 XP per minute (0.5 per 30s tick)
+      minuteXpAccRef.current += 0.5;
+      if (minuteXpAccRef.current >= 1) {
+        const add = Math.floor(minuteXpAccRef.current);
+        minuteXpAccRef.current -= add;
+        const newXp = xpRef.current + add;
+        xpRef.current = newXp;
+        const newLevel = Math.floor(newXp / 100) + 1;
+        setXp(newXp); setLevel(newLevel);
+        supabase.from("profiles").update({ xp: newXp, level: newLevel }).eq("id", currentProfile.id);
+      }
+    }, 30_000);
+    return () => clearInterval(check);
+  }, [triggerDisconnect, supabase, currentProfile.id]);
+
+  // Confirmation modal countdown
+  useEffect(() => {
+    if (!showConfirmModal) return;
+    const cd = setInterval(() => {
+      setConfirmCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(cd);
+          triggerDisconnect("Du har mistet forbindelsen til chatten");
+          setShowConfirmModal(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(cd);
+  }, [showConfirmModal, triggerDisconnect]);
 
   const svgW = useMemo(() => (Math.max(roomCols, roomRows) + 1) * TW, [roomCols, roomRows]);
   const svgH = useMemo(() => (roomCols + roomRows) * (TH / 2) + OFFSET_Y + TH * 2, [roomCols, roomRows]);
@@ -1074,7 +1145,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 })();
                 const tileFill = isMyTile ? theme.highlight : isBotTarget && isHov ? "#1a3020" : isHov ? "#192e4a" : baseFill;
                 const tileStroke = isMyTile ? myColor : isBotTarget && isHov ? "#22c55e" : "#16243a";
-                const ax = x; const ay = y - AR_S;
 
                 return (
                   <g key={cellKey}
@@ -1093,16 +1163,43 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       </g>
                     )}
 
-                    {/* Item on tile */}
-                    {cellItem && (
-                      <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (cellItem.item_scale ?? 1)})`}>
-                        <ItemSVG type={cellItem.item_type} />
-                      </g>
-                    )}
+                    {/* items + bots rendered in sprite pass below (z-order fix) */}
 
-                    {/* Bot */}
-                    {cellBot && (
-                      <g>
+                  </g>
+                );
+              })}
+
+              {/* ── Depth-sorted sprite layer: items + bots + users ── */}
+              {(() => {
+                type Sprite =
+                  | { kind: "item"; item: RoomItem; gx: number; gy: number }
+                  | { kind: "bot";  bot: RoomBot;   gx: number; gy: number }
+                  | { kind: "user"; user: PresenceUser; gx: number; gy: number };
+                const sprites: Sprite[] = [];
+                items.filter(i => i.gx !== null && i.gy !== null).forEach(i => sprites.push({ kind: "item", item: i, gx: i.gx!, gy: i.gy! }));
+                bots.forEach(b => sprites.push({ kind: "bot", bot: b, gx: b.gx, gy: b.gy }));
+                Array.from(users.values()).forEach(u => sprites.push({ kind: "user", user: u, gx: u.gx, gy: u.gy }));
+                sprites.sort((a, b) => {
+                  const da = a.gx + a.gy + (a.kind === "user" ? 0.6 : a.kind === "bot" ? 0.4 : 0.2 * Math.min((a as { item: RoomItem }).item?.item_scale ?? 1, 1));
+                  const db = b.gx + b.gy + (b.kind === "user" ? 0.6 : b.kind === "bot" ? 0.4 : 0.2 * Math.min((b as { item: RoomItem }).item?.item_scale ?? 1, 1));
+                  return da - db;
+                });
+                return sprites.map(s => {
+                  const { x, y } = isoCenter(s.gx, s.gy, svgW);
+                  const ax = x; const ay = y - AR_S;
+                  if (s.kind === "item") {
+                    return (
+                      <g key={`item-${s.item.id}`} onContextMenu={e => handleRightClick(e, null, s.item, null)}>
+                        <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (s.item.item_scale ?? 1)})`}>
+                          <ItemSVG type={s.item.item_type} />
+                        </g>
+                      </g>
+                    );
+                  }
+                  if (s.kind === "bot") {
+                    const cellBot = s.bot;
+                    return (
+                      <g key={`bot-${cellBot.id}`} onContextMenu={e => handleRightClick(e, null, null, cellBot)}>
                         <ellipse cx={ax} cy={y} rx={16} ry={4} fill="rgba(0,0,0,0.3)" />
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={cellBot.color} glow={false} mood="happy" />
@@ -1114,25 +1211,18 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         {cellBot.gives_clothing_id && <text x={ax} y={y + TH / 4 + 8} textAnchor="middle" fontSize={8}>🎁</text>}
                         {cellBot.message && renderSvgBubble(ax, ay, cellBot.message, cellBot.color, 0.7)}
                       </g>
-                    )}
-
-                  </g>
-                );
-              })}
-
-              {/* ── User avatars — separate layer with stable keys for smooth CSS transitions ── */}
-              {Array.from(usersByCell.values())
-                .sort((a, b) => (a.gx + a.gy) - (b.gx + b.gy))
-                .map(user => {
-                  const { x: ux, y: uy } = isoCenter(user.gx, user.gy, svgW);
+                    );
+                  }
+                  // user
+                  const user = s.user;
                   const isMe = user.user_id === currentProfile.id;
                   const userBubbles = bubbles.get(user.user_id) ?? [];
                   const isTyping = !isMe && typingUsers.has(user.user_id);
                   return (
-                    <g key={user.user_id}
+                    <g key={`user-${user.user_id}`}
                       onClick={() => handleTileClick(user.gx, user.gy)}
                       onContextMenu={e => { e.preventDefault(); e.stopPropagation(); handleRightClick(e, user, null, null); }}>
-                      <g style={{ transform: `translate(${ux}px, ${uy}px)`, transition: "transform 0.38s cubic-bezier(0.22,1,0.36,1)" }}>
+                      <g style={{ transform: `translate(${x}px, ${y}px)`, transition: "transform 0.38s cubic-bezier(0.22,1,0.36,1)" }}>
                         <ellipse cx={0} cy={0} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
                         <g transform={`translate(0,${-AR_S}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={user.color} glow={isMe} mood={user.mood} />
@@ -1150,7 +1240,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       </g>
                     </g>
                   );
-                })}
+                });
+              })()}
             </svg>
 
             {/* Floating draft bubble */}
@@ -1164,7 +1255,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
             {/* Floating toolbar dock */}
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-2.5 py-2 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
-              <button onClick={reloadChat} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs"><RefreshCw className="w-[18px] h-[18px]" /></button>
+              <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); reloadChat(); }} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs / Genopret forbindelse"><RefreshCw className="w-[18px] h-[18px]" /></button>
               <div className="w-px h-5 bg-white/[0.08] mx-1" />
               <button onClick={() => setRightPanel("chatlog")} className={`sm:hidden p-2 rounded-xl transition-all ${rightPanel === "chatlog" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Chat"><MessageSquare className="w-[18px] h-[18px]" /></button>
               <button onClick={() => setRightPanel(p => p === "online" ? "chatlog" : "online")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
@@ -1596,6 +1687,42 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             )}
           </div>
         </div>
+
+        {/* ── Disconnect overlay ── */}
+        {disconnected && (
+          <div className="absolute inset-0 z-[90] flex flex-col items-center justify-center bg-[#04090f]/96 backdrop-blur-sm">
+            <div className="text-4xl mb-4">🔌</div>
+            <p className="text-[17px] font-bold text-white mb-2 text-center px-6">{disconnectMsg}</p>
+            <p className="text-[12px] text-slate-500 mb-6 text-center px-8">Tryk på genindlæs-knappen for at genopret forbindelsen</p>
+            <button
+              onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); reloadChat(); }}
+              className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-[13px] font-semibold text-white transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" /> Genopret forbindelse
+            </button>
+          </div>
+        )}
+
+        {/* ── Hourly confirmation modal ── */}
+        {showConfirmModal && !disconnected && (
+          <div className="absolute inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-[#0d1526] border border-violet-500/30 rounded-2xl p-6 max-w-[320px] w-[90%] shadow-2xl text-center">
+              <div className="text-3xl mb-3">⏰</div>
+              <p className="text-[15px] font-bold text-white mb-1.5">Er du stadig her?</p>
+              <p className="text-[12px] text-slate-400 mb-4">Bekræft din tilstedeværelse for at forblive tilkoblet og modtage <span className="text-amber-400 font-semibold">🪙 100 mønter</span>.</p>
+              <div className="w-full bg-white/[0.06] rounded-full h-1.5 mb-4 overflow-hidden">
+                <div className="h-full bg-violet-500 transition-all duration-1000" style={{ width: `${(confirmCountdown / 120) * 100}%` }} />
+              </div>
+              <p className="text-[11px] text-slate-500 mb-5">{confirmCountdown}s tilbage</p>
+              <button
+                onClick={confirmPresence}
+                className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-[13px] font-bold text-white transition-colors"
+              >
+                Ja, jeg er her! 👋
+              </button>
+            </div>
+          </div>
+        )}
 
       </div>
 
