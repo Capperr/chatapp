@@ -104,7 +104,7 @@ export function UserProfileModal({ profile, currentProfile, onClose, onStartDM }
             </p>
           )}
 
-          {/* Stats (shown for all, highlighted for self) */}
+          {/* Stats */}
           {(localProfile.level != null || localProfile.xp != null || localProfile.coins != null) && (
             <div className="mt-3 grid grid-cols-3 gap-2">
               {localProfile.level != null && (
@@ -127,7 +127,7 @@ export function UserProfileModal({ profile, currentProfile, onClose, onStartDM }
               )}
             </div>
           )}
-          {isSelf && localProfile.xp != null && localProfile.level != null && (
+          {localProfile.xp != null && localProfile.level != null && (
             <div className="mt-2">
               <div className="flex justify-between text-[9px] text-slate-500 mb-1">
                 <span>{localProfile.xp % 100} / 100 XP</span>
@@ -136,6 +136,12 @@ export function UserProfileModal({ profile, currentProfile, onClose, onStartDM }
               <div className="w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-violet-600 to-violet-400" style={{ width: `${localProfile.xp % 100}%` }} />
               </div>
+            </div>
+          )}
+          {localProfile.total_online_seconds != null && localProfile.total_online_seconds > 0 && (
+            <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
+              <span>Total tid online</span>
+              <span className="text-slate-400 font-medium">{(() => { const h = Math.floor(localProfile.total_online_seconds! / 3600); const m = Math.floor((localProfile.total_online_seconds! % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
             </div>
           )}
 

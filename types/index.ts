@@ -12,6 +12,7 @@ export interface Profile {
   xp?: number;
   level?: number;
   coins?: number;
+  total_online_seconds?: number;
 }
 
 export interface Message {

@@ -224,13 +224,40 @@ function ShopCounterSVG() {
   );
 }
 
+function PaintingSVG() {
+  return (
+    <g>
+      <rect x="-14" y="-10" width="28" height="20" rx="1" fill="#5D2E0C" />
+      <rect x="-11" y="-7" width="22" height="14" fill="#E8D5B0" />
+      <rect x="-11" y="1" width="22" height="6" fill="#87CEEB" opacity="0.7" />
+      <ellipse cx="0" cy="2" rx="5" ry="4" fill="#228B22" />
+      <circle cx="-6" cy="4" r="2" fill="#228B22" opacity="0.7" />
+      <line x1="-11" y1="1" x2="11" y2="1" stroke="#C8B48A" strokeWidth="0.5" />
+    </g>
+  );
+}
+function PosterSVG() {
+  return (
+    <g>
+      <rect x="-11" y="-16" width="22" height="32" rx="1" fill="#1a1a2e" />
+      <rect x="-11" y="-16" width="22" height="32" rx="1" fill="#3b82f6" opacity="0.3" />
+      <text x="0" y="-2" textAnchor="middle" fontSize="10" fill="white" fontWeight="bold">★</text>
+      <line x1="-7" y1="4" x2="7" y2="4" stroke="white" strokeWidth="1" opacity="0.6" />
+      <line x1="-5" y1="8" x2="5" y2="8" stroke="white" strokeWidth="0.8" opacity="0.4" />
+      <rect x="-11" y="-16" width="22" height="32" rx="1" fill="none" stroke="#60a5fa" strokeWidth="0.8" />
+    </g>
+  );
+}
+
 const ITEM_TYPES = [
-  { type: "flower",  label: "Blomst",     color: "#fb7185" },
-  { type: "tv",      label: "TV",         color: "#1d4ed8" },
-  { type: "desk",    label: "Skrivebord", color: "#92400e" },
-  { type: "mailbox", label: "Postkasse",  color: "#dc2626" },
-  { type: "coffee",  label: "Kaffe",      color: "#f97316" },
-  { type: "sofa",    label: "Sofa",       color: "#4f46e5" },
+  { type: "flower",   label: "Blomst",     color: "#fb7185", wall: false },
+  { type: "tv",       label: "TV",         color: "#1d4ed8", wall: false },
+  { type: "desk",     label: "Skrivebord", color: "#92400e", wall: false },
+  { type: "mailbox",  label: "Postkasse",  color: "#dc2626", wall: false },
+  { type: "coffee",   label: "Kaffe",      color: "#f97316", wall: false },
+  { type: "sofa",     label: "Sofa",       color: "#4f46e5", wall: false },
+  { type: "painting", label: "Maleri",     color: "#d4a017", wall: true  },
+  { type: "poster",   label: "Plakat",     color: "#3b82f6", wall: true  },
 ];
 
 function ItemSVG({ type }: { type: string }) {
@@ -240,10 +267,14 @@ function ItemSVG({ type }: { type: string }) {
     case "desk": return <DeskSVG />;
     case "mailbox": return <MailboxSVG />;
     case "coffee": return <CoffeeSVG />;
-    case "sofa": return <SofaSVG />;
+    case "sofa":     return <SofaSVG />;
+    case "painting": return <PaintingSVG />;
+    case "poster":   return <PosterSVG />;
     default: return <circle r="8" fill="#6b7280" />;
   }
 }
+
+function isWallItemType(t: string) { return t === "painting" || t === "poster"; }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 function isoCenter(gx: number, gy: number, svgW: number) {
@@ -312,6 +343,10 @@ interface RoomItem {
   gx: number | null;
   gy: number | null;
   owner_id: string | null;
+  rotation: number;
+  wall_side: string | null;
+  wall_pos: number;
+  wall_height: number;
 }
 interface GlobalUser {
   user_id: string;
@@ -408,10 +443,18 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const showConfirmModalRef = useRef(false);
   const disconnectedRef = useRef(false);
   const minuteXpAccRef = useRef(0);
-  const sessionStartRef = useRef(Date.now());
+  // Session start persists across refreshes via localStorage (max 4h gap)
+  const _storedStart = typeof window !== "undefined" ? parseInt(localStorage.getItem("vr_session_start") ?? "0") : 0;
+  const _sessionStart = _storedStart && Date.now() - _storedStart < 4 * 60 * 60 * 1000 ? _storedStart : Date.now();
+  if (typeof window !== "undefined") localStorage.setItem("vr_session_start", _sessionStart.toString());
+  const sessionStartRef = useRef(_sessionStart);
   const confirmedHoursRef = useRef(0);
   const [confirmedHours, setConfirmedHours] = useState(0);
   const [timeToNextHour, setTimeToNextHour] = useState(3600);
+  const totalSecondsRef = useRef(0);
+  const [totalSeconds, setTotalSeconds] = useState(0);
+  const [placingItem, setPlacingItem] = useState<{ item: RoomItem; rotation: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   // Keep refs in sync
   useEffect(() => { botsRef.current = bots; }, [bots]);
@@ -463,6 +506,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       }
       // Update time-to-next-hour countdown
       setTimeToNextHour(Math.max(0, 3600 - Math.floor((now - lastHourConfirmRef.current) / 1000)));
+      // Accumulate total online seconds (+30 per tick)
+      const newTotal = totalSecondsRef.current + 30;
+      totalSecondsRef.current = newTotal;
+      setTotalSeconds(newTotal);
+      supabase.from("profiles").update({ total_online_seconds: newTotal }).eq("id", currentProfile.id);
     }, 30_000);
     return () => clearInterval(check);
   }, [triggerDisconnect, supabase, currentProfile.id]);
@@ -549,10 +597,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("virtual_user_wardrobe").select("id, clothing_id, equipped").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyWardrobe(data as UserWardrobeEntry[]);
     });
-    supabase.from("profiles").select("coins, last_coin_award, xp, level").eq("id", currentProfile.id).single().then(({ data }) => {
+    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
         if (data.level != null) setLevel(data.level);
+        if (data.total_online_seconds != null) { totalSecondsRef.current = data.total_online_seconds; setTotalSeconds(data.total_online_seconds); }
         const c = (data as { coins: number; last_coin_award: string }).coins ?? 1000;
         coinsRef.current = c; setCoins(c);
         const la = (data as { coins: number; last_coin_award: string }).last_coin_award;
@@ -744,7 +793,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
       if (e.key === "Enter") { sendDraftRef.current(); return; }
-      if (e.key === "Escape") { draftRef.current = ""; setDraft(""); return; }
+      if (e.key === "Escape") {
+        if (placingItem) { setPlacingItem(null); return; }
+        if (movingBotId) { setMovingBotId(null); return; }
+        draftRef.current = ""; setDraft(""); return;
+      }
+      if ((e.key === "r" || e.key === "R") && placingItem) { e.preventDefault(); setPlacingItem(p => p ? { ...p, rotation: (p.rotation + 1) % 4 } : null); return; }
       if (e.key === "Backspace") { e.preventDefault(); setDraft(prev => { const n = prev.slice(0, -1); draftRef.current = n; return n; }); return; }
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         if (draftRef.current.length >= 80) return;
@@ -785,6 +839,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     if (movingBotId) {
       supabase.from("virtual_room_bots").update({ gx, gy }).eq("id", movingBotId);
       setMovingBotId(null);
+      return;
+    }
+    if (placingItem && !isWallItemType(placingItem.item.item_type)) {
+      placeFloorItem(gx, gy, placingItem.rotation);
       return;
     }
     if (Array.from(users.values()).some(u => u.user_id !== currentProfile.id && u.gx === gx && u.gy === gy)) return;
@@ -850,8 +908,25 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   };
 
   // ─── Item actions ──────────────────────────────────────────────────────────
-  const pickupItem = async (item: RoomItem) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: currentProfile.id, gx: null, gy: null }).eq("id", item.id); };
+  const pickupItem = async (item: RoomItem) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: currentProfile.id, gx: null, gy: null, wall_side: null }).eq("id", item.id); };
   const dropItem   = async (item: RoomItem) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: null, gx: myPosRef.current.gx, gy: myPosRef.current.gy }).eq("id", item.id); };
+
+  const placeFloorItem = async (gx: number, gy: number, rotation: number) => {
+    if (!placingItem) return;
+    await supabase.from("virtual_room_items").update({ owner_id: null, gx, gy, rotation, wall_side: null }).eq("id", placingItem.item.id);
+    setPlacingItem(null);
+  };
+
+  const placeWallItem = async (wall_side: string, wall_pos: number, wall_height: number) => {
+    if (!placingItem) return;
+    await supabase.from("virtual_room_items").update({ owner_id: null, gx: null, gy: null, wall_side, wall_pos, wall_height }).eq("id", placingItem.item.id);
+    setPlacingItem(null);
+  };
+
+  const rotateItem = async (item: RoomItem) => {
+    const next = (item.rotation + 1) % 4;
+    await supabase.from("virtual_room_items").update({ rotation: next }).eq("id", item.id);
+  };
   const giveItem   = async (item: RoomItem, uid: string) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: uid, gx: null, gy: null }).eq("id", item.id); };
   const deleteItem = async (id: string) => { setCtxMenu(null); await supabase.from("virtual_room_items").delete().eq("id", id); };
 
@@ -967,7 +1042,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   const itemsByCell = useMemo(() => {
     const m = new Map<string, RoomItem>();
-    items.filter(i => i.gx !== null && i.gy !== null && i.owner_id === null).forEach(i => m.set(`${i.gx},${i.gy}`, i));
+    items.filter(i => i.gx !== null && i.gy !== null && i.owner_id === null && !i.wall_side).forEach(i => m.set(`${i.gx},${i.gy}`, i));
     return m;
   }, [items]);
 
@@ -1054,6 +1129,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <button onClick={() => setRightPanel(p => p === "profile" ? "chatlog" : "profile")} className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold transition-colors ${rightPanel === "profile" ? "text-violet-200 bg-violet-500/25 border border-violet-400/40" : "text-violet-300 bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/20"}`}>Lv.{level}</button>
             <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🪙 {coins}</span>
             {movingBotId && <span className="hidden sm:inline-flex text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold animate-pulse">Klik → placér bot</span>}
+            {placingItem && <span className="text-[11px] text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2.5 py-0.5 rounded-full font-semibold animate-pulse">{isWallItemType(placingItem.item.item_type) ? "Klik på væggen" : `Placer · R=roter (${placingItem.rotation * 90}°)`}</span>}
           </div>
           <div className="flex items-center gap-0.5">
             <button onClick={() => setFullscreen(f => !f)} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all">
@@ -1069,7 +1145,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
           {/* Isometric room */}
           <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden relative" style={{ background: theme.even }}>
-            <svg viewBox={`${svgW / 2 - svgW / (2 * zoom)} ${svgH / 2 - svgH / (2 * zoom)} ${svgW / zoom} ${svgH / zoom}`}
+            <svg ref={svgRef} viewBox={`${svgW / 2 - svgW / (2 * zoom)} ${svgH / 2 - svgH / (2 * zoom)} ${svgW / zoom} ${svgH / zoom}`}
               preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
               <rect width={svgW} height={svgH} fill={theme.even} />
 
@@ -1080,13 +1156,88 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 const rBR = { x: tcx + roomCols * TW / 2, y: tcy + roomCols * TH / 2 };
                 const lBL = { x: tcx - roomRows * TW / 2, y: tcy + roomRows * TH / 2 };
                 const apex = { x: tcx, y: tcy - WALL_H };
+
+                const isWallPlacing = !!placingItem && isWallItemType(placingItem.item.item_type);
+
+                const getSvgPos = (e: React.MouseEvent): { x: number; y: number } => {
+                  const svg = svgRef.current;
+                  if (!svg) return { x: 0, y: 0 };
+                  const pt = svg.createSVGPoint();
+                  pt.x = e.clientX; pt.y = e.clientY;
+                  const m = svg.getScreenCTM();
+                  if (!m) return { x: 0, y: 0 };
+                  const inv = pt.matrixTransform(m.inverse());
+                  return { x: inv.x, y: inv.y };
+                };
+
+                const handleWallClick = (e: React.MouseEvent, side: "right" | "left") => {
+                  if (!isWallPlacing) return;
+                  e.stopPropagation();
+                  const { x: sx, y: sy } = getSvgPos(e);
+                  if (side === "right") {
+                    const t = Math.max(0.05, Math.min(0.95, (sx - tcx) / (rBR.x - tcx)));
+                    const baseY = tcy + t * (rBR.y - tcy);
+                    const wh = Math.max(20, Math.min(WALL_H - 20, baseY - sy));
+                    placeWallItem("right", t, Math.round(wh));
+                  } else {
+                    const t = Math.max(0.05, Math.min(0.95, (tcx - sx) / (tcx - lBL.x)));
+                    const baseY = tcy + t * (lBL.y - tcy);
+                    const wh = Math.max(20, Math.min(WALL_H - 20, baseY - sy));
+                    placeWallItem("left", t, Math.round(wh));
+                  }
+                };
+                // ── Wall item renderer ──
+                const wallItems = items.filter(i => i.wall_side !== null && i.owner_id === null);
+                const renderWallItemSvg = (item: RoomItem) => {
+                  const t = item.wall_pos ?? 0.5;
+                  const wh = item.wall_height ?? 55;
+                  const hwx = 20; const hwy = 10; const hh = 22; // half-dims
+                  let frame: number[][], canvas: number[][];
+                  if (item.wall_side === "right") {
+                    const cx = tcx + t * roomCols * TW / 2;
+                    const cy = tcy + t * roomCols * TH / 2 - wh;
+                    frame  = [[cx-hwx-3,cy-hwy-3-hh],[cx+hwx+3,cy+hwy+3-hh],[cx+hwx+3,cy+hwy+3+hh],[cx-hwx-3,cy-hwy-3+hh]];
+                    canvas = [[cx-hwx, cy-hwy-hh],[cx+hwx,cy+hwy-hh],[cx+hwx,cy+hwy+hh],[cx-hwx,cy-hwy+hh]];
+                  } else {
+                    const cx = tcx - t * roomRows * TW / 2;
+                    const cy = tcy + t * roomRows * TH / 2 - wh;
+                    frame  = [[cx+hwx+3,cy-hwy-3-hh],[cx-hwx-3,cy+hwy+3-hh],[cx-hwx-3,cy+hwy+3+hh],[cx+hwx+3,cy-hwy-3+hh]];
+                    canvas = [[cx+hwx,cy-hwy-hh],[cx-hwx,cy+hwy-hh],[cx-hwx,cy+hwy+hh],[cx+hwx,cy-hwy+hh]];
+                  }
+                  const fPts = frame.map(p => p.join(",")).join(" ");
+                  const cPts = canvas.map(p => p.join(",")).join(" ");
+                  const [tl, tr, br, bl] = canvas;
+                  // interior art
+                  const sky = item.item_type === "painting"
+                    ? <polygon points={[tl, tr, [tr[0],tl[1]+(br[1]-tl[1])*0.45],[tl[0],tl[1]+(bl[1]-tl[1])*0.45]].map(p=>p.join(",")).join(" ")} fill="#5b8ec8" />
+                    : <polygon points={cPts} fill="#1a2540" />;
+                  const ground = item.item_type === "painting"
+                    ? <polygon points={[[tl[0],tl[1]+(bl[1]-tl[1])*0.45],[tr[0],tl[1]+(br[1]-tl[1])*0.45],br,bl].map(p=>p.join(",")).join(" ")} fill="#4a8c44" />
+                    : null;
+                  const cx2 = (tl[0]+tr[0]+br[0]+bl[0])/4;
+                  const cy2 = (tl[1]+tr[1]+br[1]+bl[1])/4;
+                  const star = item.item_type === "poster"
+                    ? <text x={cx2} y={cy2+4} textAnchor="middle" fontSize={14} fill="white" opacity={0.85}>★</text>
+                    : null;
+                  return (
+                    <g key={`wall-${item.id}`} onContextMenu={e => handleRightClick(e, null, item, null)} style={{ cursor: "context-menu" }}>
+                      <polygon points={fPts} fill={item.item_type === "painting" ? "#5D2E0C" : "#1e3a5f"} />
+                      <polygon points={cPts} fill={item.item_type === "painting" ? "#E8D5B0" : "#0d2040"} />
+                      {sky}{ground}{star}
+                    </g>
+                  );
+                };
+
                 return (
                   <g>
                     {/* Right wall (gy=0 edge) */}
                     <polygon
                       points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
                       fill={theme.wallA}
+                      onClick={e => handleWallClick(e, "right")}
+                      style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
+                    {isWallPlacing && <polygon points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`} fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.5)" strokeWidth={2} style={{ pointerEvents: "none" }} />}
                     {/* Right wall baseboard */}
                     <polygon
                       points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 12} ${tcx},${tcy - 12}`}
@@ -1101,7 +1252,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <polygon
                       points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
                       fill={theme.wallB}
+                      onClick={e => handleWallClick(e, "left")}
+                      style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
+                    {isWallPlacing && <polygon points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`} fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.5)" strokeWidth={2} style={{ pointerEvents: "none" }} />}
                     {/* Left wall baseboard */}
                     <polygon
                       points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 12} ${tcx},${tcy - 12}`}
@@ -1129,6 +1283,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <line x1={apex.x} y1={apex.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke="rgba(255,255,255,0.05)" strokeWidth={0.8} />
                     {/* Corner ridge */}
                     <line x1={tcx} y1={tcy} x2={apex.x} y2={apex.y} stroke="rgba(255,255,255,0.1)" strokeWidth={0.8} />
+                    {/* Wall-mounted items */}
+                    {wallItems.map(renderWallItemSvg)}
                   </g>
                 );
               })()}
@@ -1142,6 +1298,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 const isHov = hovered === cellKey;
                 const isMyTile = myPos.gx === gx && myPos.gy === gy;
                 const isBotTarget = !!movingBotId && !cellBot;
+                const isFloorPlacing = !!placingItem && !isWallItemType(placingItem.item.item_type);
+                const isPlaceTarget = isFloorPlacing && isHov && !hasUser && !cellBot;
 
                 const baseFill = (() => {
                   switch (activeFloorPattern) {
@@ -1151,8 +1309,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     default:             return (gx + gy) % 2 === 0 ? theme.even : theme.odd;
                   }
                 })();
-                const tileFill = isMyTile ? theme.highlight : isBotTarget && isHov ? "#1a3020" : isHov ? "#192e4a" : baseFill;
-                const tileStroke = isMyTile ? myColor : isBotTarget && isHov ? "#22c55e" : "#16243a";
+                const tileFill = isMyTile ? theme.highlight : isPlaceTarget ? "#1a2e48" : isBotTarget && isHov ? "#1a3020" : isHov ? "#192e4a" : baseFill;
+                const tileStroke = isMyTile ? myColor : isPlaceTarget ? "#6366f1" : isBotTarget && isHov ? "#22c55e" : "#16243a";
 
                 return (
                   <g key={cellKey}
@@ -1160,9 +1318,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     onContextMenu={e => handleRightClick(e, null, cellItem ?? null, cellBot ?? null)}
                     onMouseEnter={() => setHovered(cellKey)}
                     onMouseLeave={() => setHovered(null)}
-                    style={{ cursor: cellBot || hasUser ? "default" : movingBotId ? "crosshair" : "pointer" }}>
-                    <polygon points={tilePts(x, y)} fill={tileFill} stroke={tileStroke} strokeWidth={isMyTile ? 1.5 : 0.7} />
-                    {isHov && !hasUser && !cellBot && !movingBotId && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
+                    style={{ cursor: isFloorPlacing ? "crosshair" : cellBot || hasUser ? "default" : movingBotId ? "crosshair" : "pointer" }}>
+                    <polygon points={tilePts(x, y)} fill={tileFill} stroke={tileStroke} strokeWidth={isMyTile || isPlaceTarget ? 1.5 : 0.7} />
+                    {isHov && !hasUser && !cellBot && !movingBotId && !isFloorPlacing && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
+                    {/* Ghost preview for place mode */}
+                    {isPlaceTarget && placingItem && (
+                      <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (placingItem.item.item_scale ?? 1)}) rotate(${placingItem.rotation * 90})`} opacity={0.65}>
+                        <ItemSVG type={placingItem.item.item_type} />
+                      </g>
+                    )}
 
                     {/* Shop counter (gy=0 row) */}
                     {activeRoomType === "shop" && gy === 0 && (
@@ -1184,7 +1348,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   | { kind: "bot";  bot: RoomBot;   gx: number; gy: number }
                   | { kind: "user"; user: PresenceUser; gx: number; gy: number };
                 const sprites: Sprite[] = [];
-                items.filter(i => i.gx !== null && i.gy !== null).forEach(i => sprites.push({ kind: "item", item: i, gx: i.gx!, gy: i.gy! }));
+                items.filter(i => i.gx !== null && i.gy !== null && !i.wall_side).forEach(i => sprites.push({ kind: "item", item: i, gx: i.gx!, gy: i.gy! }));
                 bots.forEach(b => sprites.push({ kind: "bot", bot: b, gx: b.gx, gy: b.gy }));
                 // Add current user from local state (excluded from presence users map)
                 sprites.push({ kind: "user", user: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPos.gx, gy: myPos.gy, mood: myMood, outfit: myOutfit }, gx: myPos.gx, gy: myPos.gy });
@@ -1198,9 +1362,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   const { x, y } = isoCenter(s.gx, s.gy, svgW);
                   const ax = x; const ay = y - AR_S;
                   if (s.kind === "item") {
+                    const rot = (s.item.rotation ?? 0) * 90;
                     return (
                       <g key={`item-${s.item.id}`} onContextMenu={e => handleRightClick(e, null, s.item, null)}>
-                        <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (s.item.item_scale ?? 1)})`}>
+                        <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (s.item.item_scale ?? 1)}) rotate(${rot})`}>
                           <ItemSVG type={s.item.item_type} />
                         </g>
                       </g>
@@ -1291,10 +1456,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           {/* Right panel */}
           <div className={`flex flex-col bg-[#030912]/98 border-white/[0.07] ${
             rightPanel === "chatlog"
-              ? "sm:w-60 sm:flex-shrink-0 sm:border-l border-t sm:border-t-0 h-52 sm:h-auto flex-shrink-0"
-              : rightPanel === "profile"
-              ? "sm:w-64 sm:flex-shrink-0 sm:border-l absolute inset-0 z-20 sm:relative sm:inset-auto"
-              : "absolute inset-0 z-20 sm:relative sm:inset-auto sm:w-60 sm:flex-shrink-0 border-l"
+              ? "sm:w-72 sm:flex-shrink-0 sm:border-l border-t sm:border-t-0 h-52 sm:h-auto flex-shrink-0"
+              : "absolute inset-0 z-20 sm:relative sm:inset-auto sm:w-72 sm:flex-shrink-0 border-l"
           }`}>
 
             {/* Online users */}
@@ -1553,10 +1716,16 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   {myInventory.map(item => {
                     const meta = ITEM_TYPES.find(t => t.type === item.item_type);
                     return (
-                      <div key={item.id} className="px-3 py-2 flex items-center gap-2 hover:bg-white/[0.03]">
+                      <div key={item.id} className={`px-3 py-2 flex items-center gap-2 hover:bg-white/[0.03] ${placingItem?.item.id === item.id ? "bg-violet-500/10" : ""}`}>
                         <div className="w-8 h-8 rounded bg-white/[0.05] flex items-center justify-center flex-shrink-0"><svg width="24" height="24" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg></div>
                         <div className="flex-1 min-w-0"><p className="text-[12px] text-slate-300 truncate">{item.name}</p><p className="text-[10px]" style={{ color: meta?.color ?? "#6b7280" }}>{meta?.label ?? item.item_type}</p></div>
-                        <button onClick={() => dropItem(item)} className="p-1 rounded text-slate-500 hover:text-emerald-400" title="Smid her"><Package className="w-3 h-3" /></button>
+                        {placingItem?.item.id === item.id
+                          ? <button onClick={() => setPlacingItem(null)} className="p-1 rounded text-violet-400 hover:text-rose-400" title="Annuller"><X className="w-3 h-3" /></button>
+                          : <>
+                              <button onClick={() => setPlacingItem({ item, rotation: 0 })} className="px-1.5 py-0.5 rounded text-[9px] font-semibold text-violet-300 bg-violet-500/15 hover:bg-violet-500/25 transition-colors" title={isWallItemType(item.item_type) ? "Klik på væggen" : "Klik på et felt"}>Placer</button>
+                              {!isWallItemType(item.item_type) && <button onClick={() => dropItem(item)} className="p-1 rounded text-slate-500 hover:text-emerald-400" title="Smid ved fødder"><Package className="w-3 h-3" /></button>}
+                            </>
+                        }
                       </div>
                     );
                   })}
@@ -1712,8 +1881,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05] space-y-2">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Aktivitet</p>
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400">Tid online</span>
-                      <span className="text-[11px] text-slate-200 font-medium tabular-nums">{(() => { const s = Math.floor((Date.now() - sessionStartRef.current) / 1000); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                      <span className="text-[11px] text-slate-400">Total tid online</span>
+                      <span className="text-[11px] text-slate-200 font-medium tabular-nums">{(() => { const h = Math.floor(totalSeconds / 3600); const m = Math.floor((totalSeconds % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400">Denne session</span>
+                      <span className="text-[11px] text-slate-400 font-medium tabular-nums">{(() => { const s = Math.floor((Date.now() - sessionStartRef.current) / 1000); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-slate-400">Bekræftede timer</span>
@@ -1899,7 +2072,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <svg width="16" height="16" viewBox="-16 -16 32 32"><ItemSVG type={ctxMenu.item.item_type} /></svg>
                 <span className="text-xs font-semibold text-slate-200 truncate">{ctxMenu.item.name}</span>
               </div>
-              <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06]" onClick={() => pickupItem(ctxMenu.item!)}>Tag genstand</button>
+              {!isWallItemType(ctxMenu.item.item_type) && (
+                <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06]" onClick={() => rotateItem(ctxMenu.item!)}>Roter (R)</button>
+              )}
+              <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06]" onClick={() => pickupItem(ctxMenu.item!)}>Tag op til inventar</button>
               {isAdmin && <button className="w-full text-left px-3 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10" onClick={() => deleteItem(ctxMenu.item!.id)}>Slet genstand</button>}
             </>
           )}
