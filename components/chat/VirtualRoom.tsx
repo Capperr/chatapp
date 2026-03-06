@@ -61,35 +61,11 @@ function getShopTheme(): RoomTheme {
 }
 
 // ─── Person Avatar ─────────────────────────────────────────────────────────────
-function PersonAvatar({ color, glow, mood = "happy" }: { color: string; glow?: boolean; mood?: string }) {
-  const skin = "#f5c5a3";
-  const face = (() => {
-    switch (mood) {
-      case "sad":
-        return (<g><circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" /><circle cx="3" cy="-13" r="1.3" fill="#2d1b0e" /><ellipse cx="-2.5" cy="-10" rx="0.7" ry="1.1" fill="#93c5fd" opacity="0.85" /><path d="M -2.5,-7.5 Q 0,-9.5 2.5,-7.5" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" /></g>);
-      case "angry":
-        return (<g><line x1="-5.5" y1="-17" x2="-1" y2="-14.5" stroke="#2d1b0e" strokeWidth="1.3" strokeLinecap="round" /><line x1="5.5" y1="-17" x2="1" y2="-14.5" stroke="#2d1b0e" strokeWidth="1.3" strokeLinecap="round" /><circle cx="-3" cy="-12.5" r="1.3" fill="#2d1b0e" /><circle cx="3" cy="-12.5" r="1.3" fill="#2d1b0e" /><path d="M -2.5,-8 Q 0,-6.5 2.5,-8" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" /></g>);
-      case "tired":
-        return (<g><circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" /><circle cx="3" cy="-13" r="1.3" fill="#2d1b0e" /><path d="M -4.8,-13 Q -3,-15 -1.2,-13" fill={skin} stroke="none" /><path d="M 1.2,-13 Q 3,-15 4.8,-13" fill={skin} stroke="none" /><text x="6" y="-16" fontSize="4.5" fill="#94a3b8" fontFamily="system-ui">zzz</text><path d="M -2,-8.5 L 2,-8.5" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" /></g>);
-      default:
-        return (<g><circle cx="-3" cy="-13" r="1.3" fill="#2d1b0e" /><circle cx="3" cy="-13" r="1.3" fill="#2d1b0e" /><path d="M -2.5,-9.5 Q 0,-7.5 2.5,-9.5" stroke="#b07848" strokeWidth="0.9" fill="none" strokeLinecap="round" /></g>);
-    }
-  })();
+function PersonAvatar({ color, glow }: { color: string; glow?: boolean; mood?: string }) {
   return (
     <g>
-      {glow && <circle cx="0" cy="0" r="22" fill="none" stroke={color} strokeWidth="1.5" opacity={0.3} strokeDasharray="5 3" />}
-      <ellipse cx="0" cy="-19" rx="7.5" ry="5" fill={color} stroke="white" strokeWidth="0.8" />
-      <circle cx="0" cy="-12" r="8" fill={skin} stroke="white" strokeWidth="0.9" />
-      {face}
-      <rect x="-8" y="-4" width="16" height="13" rx="3" fill={color} stroke="white" strokeWidth="0.8" />
-      <rect x="-13" y="-4" width="5" height="10" rx="2.5" fill={color} stroke="white" strokeWidth="0.7" />
-      <rect x="8" y="-4" width="5" height="10" rx="2.5" fill={color} stroke="white" strokeWidth="0.7" />
-      <circle cx="-10.5" cy="7" r="2.5" fill={skin} stroke="white" strokeWidth="0.6" />
-      <circle cx="10.5" cy="7" r="2.5" fill={skin} stroke="white" strokeWidth="0.6" />
-      <rect x="-7.5" y="9" width="6" height="10" rx="2" fill="#374151" stroke="white" strokeWidth="0.7" />
-      <rect x="1.5" y="9" width="6" height="10" rx="2" fill="#374151" stroke="white" strokeWidth="0.7" />
-      <ellipse cx="-4.5" cy="20" rx="5.5" ry="2.5" fill="#1f2937" stroke="white" strokeWidth="0.6" />
-      <ellipse cx="4.5" cy="20" rx="5.5" ry="2.5" fill="#1f2937" stroke="white" strokeWidth="0.6" />
+      {glow && <circle cx="0" cy="-4" r="24" fill="none" stroke={color} strokeWidth="1.5" opacity={0.35} strokeDasharray="5 3" />}
+      <image href="/alien.png" x="-22" y="-30" width="44" height="54" />
     </g>
   );
 }
