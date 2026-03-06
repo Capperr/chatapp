@@ -61,11 +61,10 @@ function getShopTheme(): RoomTheme {
 }
 
 // ─── Person Avatar ─────────────────────────────────────────────────────────────
-function PersonAvatar({ color, glow }: { color: string; glow?: boolean; mood?: string }) {
+function PersonAvatar({ }: { color: string; glow?: boolean; mood?: string }) {
   return (
     <g>
-      {glow && <circle cx="0" cy="-4" r="24" fill="none" stroke={color} strokeWidth="1.5" opacity={0.35} strokeDasharray="5 3" />}
-      <image href="/alien.png" x="-22" y="-30" width="44" height="54" />
+      <image href="/alien.png" x="-16" y="-24" width="32" height="40" />
     </g>
   );
 }
@@ -1444,13 +1443,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       <g style={{ transform: `translate(${x}px, ${y}px)`, transition: "transform 0.38s cubic-bezier(0.22,1,0.36,1)" }}>
                         <ellipse cx={0} cy={0} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
                         <g transform={`translate(0,${-AR_S}) scale(${AVG_SCALE})`}>
-                          <PersonAvatar color={user.color} glow={isMe} mood={user.mood} />
-                          {user.outfit && Object.keys(user.outfit).length > 0 && (
-                            <ClothingOverlay outfit={user.outfit} catalog={clothingCatalog} />
-                          )}
+                          <PersonAvatar color={user.color} glow={false} mood={user.mood} />
                         </g>
-                        <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{isMe ? "Du" : user.display_name}</text>
-                        <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{isMe ? "Du" : user.display_name}</text>
+                        <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{user.display_name}</text>
+                        <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
                         {isMe && draft && renderSvgBubble(0, -AR_S, draft + "…", "#475569", 0.85, 0, false)}
                         {isTyping && renderTypingBubble(0, -AR_S, 0)}
                         {userBubbles.length > 0 && (
