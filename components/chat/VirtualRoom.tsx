@@ -12,10 +12,10 @@ const TH = 40;
 const AR = 20;
 const AVG_SCALE = 1.4;
 const AR_S = Math.round(AR * AVG_SCALE);
-const OFFSET_Y = TH / 2 + 80;
+const WALL_H = 110;
+const OFFSET_Y = TH / 2 + WALL_H + 20; // = 150, so apex (OFFSET_Y - TH/2 - WALL_H = 20) is never clipped
 const DEFAULT_COLS = 10;
 const DEFAULT_ROWS = 8;
-const WALL_H = 110;
 
 // ─── Room design options ────────────────────────────────────────────────────────
 const ROOM_THEMES: { id: string; label: string; color: string; even: string; odd: string; highlight: string; wallA: string; wallB: string }[] = [
@@ -36,6 +36,23 @@ const FLOOR_PATTERNS: { id: string; label: string }[] = [
   { id: "diamond",      label: "Diamant"   },
   { id: "uniform",      label: "Ensfarvet" },
 ];
+
+// ─── Level system (based on cumulative hours online) ───────────────────────────
+// Cumulative hours required to reach each level (index = level - 1)
+const LEVEL_HOURS = [0, 1, 3, 8, 20, 50, 100, 140, 190, 250, 320, 400, 500, 650, 850];
+function levelFromSeconds(totalSeconds: number): number {
+  const h = totalSeconds / 3600;
+  let lv = 1;
+  for (let i = 1; i < LEVEL_HOURS.length; i++) {
+    if (h >= LEVEL_HOURS[i]) lv = i + 1; else break;
+  }
+  return lv;
+}
+function hoursToNextLevel(totalSeconds: number): number {
+  const h = totalSeconds / 3600;
+  const lv = levelFromSeconds(totalSeconds);
+  return lv < LEVEL_HOURS.length ? LEVEL_HOURS[lv] - h : 0;
+}
 
 // ─── Room themes ───────────────────────────────────────────────────────────────
 type RoomTheme = { id?: string; label?: string; color?: string; even: string; odd: string; highlight: string; wallA: string; wallB: string };
@@ -493,24 +510,25 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         setShowConfirmModal(true);
         setConfirmCountdown(120);
       }
-      // Time-based XP: +1 XP per minute (0.5 per 30s tick)
+      // Time-based XP: +1 XP per minute (0.5 per 30s tick) — separate from level
       minuteXpAccRef.current += 0.5;
       if (minuteXpAccRef.current >= 1) {
         const add = Math.floor(minuteXpAccRef.current);
         minuteXpAccRef.current -= add;
         const newXp = xpRef.current + add;
         xpRef.current = newXp;
-        const newLevel = Math.floor(newXp / 100) + 1;
-        setXp(newXp); setLevel(newLevel);
-        supabase.from("profiles").update({ xp: newXp, level: newLevel }).eq("id", currentProfile.id);
+        setXp(newXp);
+        supabase.from("profiles").update({ xp: newXp }).eq("id", currentProfile.id);
       }
       // Update time-to-next-hour countdown
       setTimeToNextHour(Math.max(0, 3600 - Math.floor((now - lastHourConfirmRef.current) / 1000)));
-      // Accumulate total online seconds (+30 per tick)
+      // Accumulate total online seconds — level is computed from this
       const newTotal = totalSecondsRef.current + 30;
       totalSecondsRef.current = newTotal;
       setTotalSeconds(newTotal);
-      supabase.from("profiles").update({ total_online_seconds: newTotal }).eq("id", currentProfile.id);
+      const newLevel = levelFromSeconds(newTotal);
+      setLevel(newLevel);
+      supabase.from("profiles").update({ total_online_seconds: newTotal, level: newLevel }).eq("id", currentProfile.id);
     }, 30_000);
     return () => clearInterval(check);
   }, [triggerDisconnect, supabase, currentProfile.id]);
@@ -534,6 +552,25 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   const svgW = useMemo(() => (Math.max(roomCols, roomRows) + 1) * TW, [roomCols, roomRows]);
   const svgH = useMemo(() => (roomCols + roomRows) * (TH / 2) + OFFSET_Y + TH * 2, [roomCols, roomRows]);
+
+  // Tight viewBox centered on the actual room geometry (accounts for wall height and asymmetric rooms)
+  const roomViewBox = useMemo(() => {
+    const pad = 14;
+    const tcx = svgW / 2;
+    const tcy = OFFSET_Y - TH / 2;
+    const apexY = tcy - WALL_H;
+    const left   = tcx - roomRows * TW / 2 - pad;
+    const right  = tcx + roomCols * TW / 2 + pad;
+    const top    = apexY - pad;
+    const bottom = tcy + (roomCols + roomRows - 1) * TH / 2 + TH / 2 + pad;
+    const rw = right - left;
+    const rh = bottom - top;
+    const cx = (left + right) / 2;
+    const cy = (top + bottom) / 2;
+    const vbW = rw / zoom;
+    const vbH = rh / zoom;
+    return `${cx - vbW / 2} ${cy - vbH / 2} ${vbW} ${vbH}`;
+  }, [roomCols, roomRows, svgW, zoom]);
 
   const setRoomDimensions = (cols: number, rows: number) => {
     roomColsRef.current = cols; roomRowsRef.current = rows;
@@ -600,8 +637,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
-        if (data.level != null) setLevel(data.level);
-        if (data.total_online_seconds != null) { totalSecondsRef.current = data.total_online_seconds; setTotalSeconds(data.total_online_seconds); }
+        if (data.total_online_seconds != null) {
+          totalSecondsRef.current = data.total_online_seconds;
+          setTotalSeconds(data.total_online_seconds);
+          // Level is derived from total online time, override whatever is in DB
+          setLevel(levelFromSeconds(data.total_online_seconds));
+        } else if (data.level != null) {
+          setLevel(data.level);
+        }
         const c = (data as { coins: number; last_coin_award: string }).coins ?? 1000;
         coinsRef.current = c; setCoins(c);
         const la = (data as { coins: number; last_coin_award: string }).last_coin_award;
@@ -1161,9 +1204,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
           {/* Isometric room */}
           <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden relative" style={{ background: theme.even }}>
-            <svg ref={svgRef} viewBox={`${svgW / 2 - svgW / (2 * zoom)} ${svgH / 2 - svgH / (2 * zoom)} ${svgW / zoom} ${svgH / zoom}`}
+            <svg ref={svgRef} viewBox={roomViewBox}
               preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
-              <rect width={svgW} height={svgH} fill={theme.even} />
+              {/* Background fills entire visible area regardless of viewBox */}
+              <rect x={-svgW * 2} y={-svgH * 2} width={svgW * 6} height={svgH * 6} fill={theme.even} />
 
               {/* ── Back walls ── */}
               {(() => {
