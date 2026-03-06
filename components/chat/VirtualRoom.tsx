@@ -515,9 +515,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       if (newLevel > levelRef.current) {
         setShowLevelUp(newLevel);
         setTimeout(() => setShowLevelUp(null), 3000);
+        levelRef.current = newLevel;
+        setLevel(newLevel);
       }
-      levelRef.current = newLevel;
-      setLevel(newLevel);
       supabase.from("profiles").update({ total_online_seconds: newTotal, level: newLevel }).eq("id", currentProfile.id);
     }, 30_000);
     return () => clearInterval(check);
@@ -638,11 +638,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         if (data.total_online_seconds != null) {
           totalSecondsRef.current = data.total_online_seconds;
           setTotalSeconds(data.total_online_seconds);
-          // Level is derived from total online time, override whatever is in DB
-          const lv = levelFromSeconds(data.total_online_seconds);
+          const lvTime = levelFromSeconds(data.total_online_seconds);
+          const lvXp = Math.floor((data.xp ?? 0) / 100) + 1;
+          const lv = Math.max(lvTime, lvXp);
           levelRef.current = lv;
           setLevel(lv);
         } else if (data.level != null) {
+          levelRef.current = data.level;
           setLevel(data.level);
         }
         const c = (data as { coins: number; last_coin_award: string }).coins ?? 1000;
