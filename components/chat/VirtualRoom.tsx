@@ -432,6 +432,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const xpRef = useRef(0);
   const [wardrobeActiveSlot, setWardrobeActiveSlot] = useState<string | null>(null);
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
+  const [reconnectKey, setReconnectKey] = useState(0);
   const [disconnected, setDisconnected] = useState(false);
   const [disconnectMsg, setDisconnectMsg] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -835,7 +836,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       .subscribe(() => { ch.track(myData); broadcastMove(myData.gx, myData.gy); });
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRoomId]);
+  }, [activeRoomId, reconnectKey]);
 
   // Keyboard → draft
   useEffect(() => {
@@ -851,7 +852,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       if ((e.key === "r" || e.key === "R") && placingItem) { e.preventDefault(); setPlacingItem(p => p ? { ...p, rotation: (p.rotation + 1) % 2 } : null); return; }
       if (e.key === "Backspace") { e.preventDefault(); setDraft(prev => { const n = prev.slice(0, -1); draftRef.current = n; return n; }); return; }
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (draftRef.current.length >= 80) return;
+        if (draftRef.current.length >= 40) return;
         e.preventDefault();
         setDraft(prev => { const n = prev + e.key; draftRef.current = n; return n; });
         if (Date.now() - lastTypingBroadcastRef.current > 1500) {
@@ -972,6 +973,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     // Award +10 XP per message
     const newXp = xpRef.current + 10;
     const newLevel = Math.floor(newXp / 100) + 1;
+    if (newLevel > levelRef.current) {
+      setShowLevelUp(newLevel);
+      setTimeout(() => setShowLevelUp(null), 3000);
+    }
+    levelRef.current = newLevel;
     xpRef.current = newXp; setXp(newXp); setLevel(newLevel);
     await supabase.from("profiles").update({ xp: newXp, level: newLevel }).eq("id", currentProfile.id);
   };
@@ -1161,7 +1167,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   };
 
   const renderSvgBubble = (ax: number, ay: number, text: string, _color: string, _opacity: number, yOffset: number = 0, showTail: boolean = true) => {
-    const truncated = text.length > 80 ? text.slice(0, 80) + "…" : text;
+    const truncated = text.length > 40 ? text.slice(0, 40) + "…" : text;
     // Break long words at 18 chars to prevent horizontal overflow
     const allWords: string[] = [];
     truncated.split(" ").forEach(w => { for (let i = 0; i < w.length; i += 18) allWords.push(w.slice(i, i + 18)); });
@@ -1553,7 +1559,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
                         {isMe && draft && renderSvgBubble(0, -80, draft + "…", "#475569", 0.85, 0, false)}
                         {isTyping && renderTypingBubble(0, -80, 0)}
-                        {userBubbles.length > 0 && (
+                        {userBubbles.length > 0 && (!isMe || !draft) && (
                           <g>{renderSvgBubble(0, -80, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
                         )}
                         {/* Level-up ring animation */}
@@ -1600,7 +1606,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {draft && cooldownSec === 0 && (
               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2.5 bg-[#040c19]/98 backdrop-blur-xl rounded-2xl border border-white/[0.12] shadow-[0_12px_40px_rgba(0,0,0,0.7)] max-w-[340px]">
                 <span className="text-[13px] text-slate-200 flex-1 truncate font-medium">{draft}</span>
-                <span className="text-[10px] text-slate-600 tabular-nums flex-shrink-0">{draft.length}/80</span>
+                <span className="text-[10px] text-slate-600 tabular-nums flex-shrink-0">{draft.length}/40</span>
                 <kbd className="text-[9px] text-slate-500 flex-shrink-0 bg-white/[0.07] border border-white/[0.08] px-1.5 py-0.5 rounded-md font-mono">↵</kbd>
                 <button onClick={() => { draftRef.current = ""; setDraft(""); }} className="text-slate-600 hover:text-rose-400 flex-shrink-0 transition-colors ml-0.5"><X className="w-3.5 h-3.5" /></button>
               </div>
@@ -1608,7 +1614,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
             {/* Floating toolbar dock */}
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-2.5 py-2 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
-              <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); reloadChat(); }} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs / Genopret forbindelse"><RefreshCw className="w-[18px] h-[18px]" /></button>
+              <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); setReconnectKey(k => k + 1); reloadChat(); }} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs / Genopret forbindelse"><RefreshCw className="w-[18px] h-[18px]" /></button>
               <div className="w-px h-5 bg-white/[0.08] mx-1" />
               <button onClick={() => setRightPanel(p => p === "chatlog" ? "hidden" : "chatlog")} className={`p-2 rounded-xl transition-all ${rightPanel === "chatlog" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Chatlog"><MessageSquare className="w-[18px] h-[18px]" /></button>
               <button onClick={() => setRightPanel(p => p === "online" ? "hidden" : "online")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
