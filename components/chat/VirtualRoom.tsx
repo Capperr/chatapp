@@ -19,22 +19,23 @@ const DEFAULT_ROWS = 8;
 
 // ─── Room design options ────────────────────────────────────────────────────────
 const ROOM_THEMES: { id: string; label: string; color: string; even: string; odd: string; highlight: string; wallA: string; wallB: string }[] = [
-  { id: "blue",      label: "Nat",     color: "#3b82f6", even: "#0f1a2e", odd: "#0c1525", highlight: "#231850", wallA: "#132038", wallB: "#0a1222" },
-  { id: "green",     label: "Natur",   color: "#22c55e", even: "#0f1e10", odd: "#0c1a0d", highlight: "#1a3520", wallA: "#142814", wallB: "#0c1c0c" },
-  { id: "purple",    label: "Lilla",   color: "#a855f7", even: "#1a1020", odd: "#15091a", highlight: "#2e1045", wallA: "#22142e", wallB: "#160d1e" },
-  { id: "red",       label: "Rød",     color: "#ef4444", even: "#1e100f", odd: "#180d0c", highlight: "#351510", wallA: "#241412", wallB: "#160e0b" },
-  { id: "orange",    label: "Varmt",   color: "#f97316", even: "#1e1508", odd: "#180f05", highlight: "#2e2210", wallA: "#241c0a", wallB: "#16110a" },
-  { id: "cyan",      label: "Hav",     color: "#06b6d4", even: "#0e1e22", odd: "#0b181c", highlight: "#0e2e38", wallA: "#122630", wallB: "#0b1c24" },
-  { id: "brown",     label: "Parket",  color: "#92400e", even: "#1c1208", odd: "#180f05", highlight: "#2e1f0a", wallA: "#201608", wallB: "#160f06" },
-  { id: "pink",      label: "Rosa",    color: "#ec4899", even: "#1e0f18", odd: "#180c13", highlight: "#301528", wallA: "#22141e", wallB: "#160d16" },
-  { id: "teal",      label: "Skov",    color: "#14b8a6", even: "#0e1c1a", odd: "#0b1615", highlight: "#102e2a", wallA: "#112422", wallB: "#0b1c1a" },
-  { id: "dark",      label: "Mørk",    color: "#475569", even: "#080a0e", odd: "#060809", highlight: "#12151e", wallA: "#0b0d14", wallB: "#060810" },
+  { id: "blue",      label: "Void",    color: "#818cf8", even: "#06060f", odd: "#050510", highlight: "#1a1640", wallA: "#0c0c22", wallB: "#080815" },
+  { id: "cyan",      label: "Plasma",  color: "#22d3ee", even: "#040e14", odd: "#030b10", highlight: "#062830", wallA: "#061c28", wallB: "#040f18" },
+  { id: "purple",    label: "Nebula",  color: "#c084fc", even: "#0c0814", odd: "#09060f", highlight: "#1e1038", wallA: "#140c28", wallB: "#0c0818" },
+  { id: "green",     label: "Matrix",  color: "#4ade80", even: "#040f06", odd: "#030c04", highlight: "#082210", wallA: "#061a0a", wallB: "#031006" },
+  { id: "orange",    label: "Inferno", color: "#fb923c", even: "#120600", odd: "#0d0400", highlight: "#281004", wallA: "#1c0a02", wallB: "#100602" },
+  { id: "red",       label: "Abyss",   color: "#f43f5e", even: "#100408", odd: "#0c0306", highlight: "#280a14", wallA: "#1c0610", wallB: "#10040a" },
+  { id: "teal",      label: "Arktis",  color: "#2dd4bf", even: "#040e0c", odd: "#030b09", highlight: "#082220", wallA: "#061c18", wallB: "#040f0c" },
+  { id: "pink",      label: "Aurora",  color: "#f472b6", even: "#100610", odd: "#0c040c", highlight: "#28082a", wallA: "#1c0820", wallB: "#100610" },
+  { id: "brown",     label: "Guld",    color: "#fbbf24", even: "#0f0902", odd: "#0b0701", highlight: "#241802", wallA: "#181002", wallB: "#0e0a01" },
+  { id: "dark",      label: "Stealth", color: "#94a3b8", even: "#050507", odd: "#040406", highlight: "#0e1018", wallA: "#09090f", wallB: "#05060c" },
 ];
 const FLOOR_PATTERNS: { id: string; label: string }[] = [
   { id: "standard",     label: "Standard"  },
   { id: "checkerboard", label: "Skakbræt"  },
   { id: "diamond",      label: "Diamant"   },
   { id: "uniform",      label: "Ensfarvet" },
+  { id: "grid",         label: "Grid"      },
 ];
 
 // ─── Level system (based on cumulative hours online) ───────────────────────────
@@ -57,7 +58,7 @@ function hoursToNextLevel(totalSeconds: number): number {
 // ─── Room themes ───────────────────────────────────────────────────────────────
 type RoomTheme = { id?: string; label?: string; color?: string; even: string; odd: string; highlight: string; wallA: string; wallB: string };
 function getShopTheme(): RoomTheme {
-  return { even: "#180f05", odd: "#130c04", highlight: "#2a1a06", wallA: "#201408", wallB: "#140d04" };
+  return { color: "#fbbf24", even: "#0f0802", odd: "#0c0601", highlight: "#241402", wallA: "#180e02", wallB: "#0c0901" };
 }
 
 // ─── Person Avatar ─────────────────────────────────────────────────────────────
@@ -1393,15 +1394,16 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
                     {isWallPlacing && <polygon points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`} fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.5)" strokeWidth={2} style={{ pointerEvents: "none" }} />}
-                    {/* Right wall baseboard */}
+                    {/* Right wall baseboard neon glow */}
                     <polygon
-                      points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 12} ${tcx},${tcy - 12}`}
-                      fill="rgba(0,0,0,0.25)"
+                      points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 10} ${tcx},${tcy - 10}`}
+                      fill={theme.color + "18"}
                     />
+                    <line x1={tcx} y1={tcy} x2={rBR.x} y2={rBR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.45} />
                     {/* Right wall top stripe */}
                     <polygon
-                      points={`${tcx},${tcy - WALL_H + 14} ${rBR.x},${rBR.y - WALL_H + 14} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
-                      fill="rgba(255,255,255,0.025)"
+                      points={`${tcx},${tcy - WALL_H + 12} ${rBR.x},${rBR.y - WALL_H + 12} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
+                      fill={theme.color + "0c"}
                     />
                     {/* Left wall (gx=0 edge) */}
                     <polygon
@@ -1411,33 +1413,22 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
                     {isWallPlacing && <polygon points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`} fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.5)" strokeWidth={2} style={{ pointerEvents: "none" }} />}
-                    {/* Left wall baseboard */}
+                    {/* Left wall baseboard neon glow */}
                     <polygon
-                      points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 12} ${tcx},${tcy - 12}`}
-                      fill="rgba(0,0,0,0.3)"
+                      points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 10} ${tcx},${tcy - 10}`}
+                      fill={theme.color + "14"}
                     />
+                    <line x1={tcx} y1={tcy} x2={lBL.x} y2={lBL.y} stroke={theme.color} strokeWidth={1.2} opacity={0.35} />
                     {/* Left wall top stripe */}
                     <polygon
-                      points={`${tcx},${tcy - WALL_H + 14} ${lBL.x},${lBL.y - WALL_H + 14} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
-                      fill="rgba(255,255,255,0.015)"
+                      points={`${tcx},${tcy - WALL_H + 12} ${lBL.x},${lBL.y - WALL_H + 12} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
+                      fill={theme.color + "08"}
                     />
-                    {/* Floor-wall shadow */}
-                    <polygon
-                      points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 6} ${tcx},${tcy - 6}`}
-                      fill="rgba(0,0,0,0.35)"
-                    />
-                    <polygon
-                      points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 6} ${tcx},${tcy - 6}`}
-                      fill="rgba(0,0,0,0.4)"
-                    />
-                    {/* Wall border lines */}
-                    <line x1={tcx} y1={tcy} x2={rBR.x} y2={rBR.y} stroke="rgba(0,0,0,0.5)" strokeWidth={1} />
-                    <line x1={tcx} y1={tcy} x2={lBL.x} y2={lBL.y} stroke="rgba(0,0,0,0.5)" strokeWidth={1} />
-                    {/* Ridge lines at top of walls */}
-                    <line x1={apex.x} y1={apex.y} x2={rBR.x} y2={rBR.y - WALL_H} stroke="rgba(255,255,255,0.07)" strokeWidth={0.8} />
-                    <line x1={apex.x} y1={apex.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke="rgba(255,255,255,0.05)" strokeWidth={0.8} />
-                    {/* Corner ridge */}
-                    <line x1={tcx} y1={tcy} x2={apex.x} y2={apex.y} stroke="rgba(255,255,255,0.1)" strokeWidth={0.8} />
+                    {/* Wall top ridge glow lines */}
+                    <line x1={apex.x} y1={apex.y} x2={rBR.x} y2={rBR.y - WALL_H} stroke={theme.color} strokeWidth={1.2} opacity={0.3} />
+                    <line x1={apex.x} y1={apex.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke={theme.color} strokeWidth={1.2} opacity={0.22} />
+                    {/* Corner glow */}
+                    <line x1={tcx} y1={tcy} x2={apex.x} y2={apex.y} stroke={theme.color} strokeWidth={1.5} opacity={0.35} />
                     {/* Wall-mounted items */}
                     {wallItems.map(renderWallItemSvg)}
                   </g>
@@ -1461,11 +1452,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     case "checkerboard": return (Math.floor(gx / 2) + Math.floor(gy / 2)) % 2 === 0 ? theme.even : theme.odd;
                     case "diamond":      return (gx % 4 === 0 && gy % 4 === 0) || (gx % 4 === 2 && gy % 4 === 2) ? theme.highlight : (gx + gy) % 2 === 0 ? theme.even : theme.odd;
                     case "uniform":      return theme.even;
+                    case "grid":         return theme.even;
                     default:             return (gx + gy) % 2 === 0 ? theme.even : theme.odd;
                   }
                 })();
-                const tileFill = isMyTile ? theme.highlight : isPlaceTarget ? "#1a2e48" : isBotTarget && isHov ? "#1a3020" : isHov ? "#192e4a" : baseFill;
-                const tileStroke = isMyTile ? myColor : isPlaceTarget ? "#6366f1" : isBotTarget && isHov ? "#22c55e" : "#16243a";
+                const gridStroke = activeFloorPattern === "grid" ? theme.color + "40" : theme.color + "1a";
+                const tileFill = isMyTile ? theme.highlight : isPlaceTarget ? "#1a2e48" : isBotTarget && isHov ? "#1a3020" : isHov ? theme.highlight + "80" : baseFill;
+                const tileStroke = isMyTile ? myColor : isPlaceTarget ? "#6366f1" : isBotTarget && isHov ? "#22c55e" : isHov ? theme.color + "90" : gridStroke;
 
                 return (
                   <g key={cellKey}
