@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare } from "lucide-react";
+import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck } from "lucide-react";
 import type { Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -365,7 +365,7 @@ interface VirtualRoomProps {
   currentProfile: Profile;
   onClose: () => void;
 }
-type RightPanel = "chatlog" | "hidden" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile";
+type RightPanel = "chatlog" | "hidden" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile" | "userprofile";
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: VirtualRoomProps) {
@@ -410,6 +410,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [rightPanel, setRightPanel] = useState<RightPanel>("hidden");
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
   const [otherLevelUps, setOtherLevelUps] = useState<Map<string, number>>(new Map());
+  const [mutedUsers, setMutedUsers] = useState<Set<string>>(new Set());
   const levelRef = useRef(1);
   const lastMsgTimesRef = useRef<number[]>([]);
   const cooldownEndRef = useRef(0);
@@ -465,6 +466,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   // Keep refs in sync
   useEffect(() => { botsRef.current = bots; }, [bots]);
   useEffect(() => { usersRef.current = users; }, [users]);
+  useEffect(() => {
+    const ids = Array.from(users.keys());
+    if (ids.length === 0) { setMutedUsers(new Set()); return; }
+    supabase.from("profiles").select("id, muted_until").in("id", ids).then(({ data }) => {
+      if (!data) return;
+      const now = new Date().toISOString();
+      setMutedUsers(new Set(data.filter(p => p.muted_until && p.muted_until > now).map(p => p.id)));
+    });
+  }, [users]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Activity / session timer ───────────────────────────────────────────────
   const triggerDisconnect = useCallback((msg: string) => {
@@ -938,8 +948,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   const openProfile = async (userId: string) => {
     setCtxMenu(null);
+    if (userId === currentProfile.id) { setRightPanel("profile"); return; }
     const { data } = await supabase.from("profiles").select("*").eq("id", userId).single();
-    if (data) setProfileView(data as Profile);
+    if (data) { setProfileView(data as Profile); setRightPanel("userprofile"); }
   };
 
   const kickUser = (user: PresenceUser) => {
@@ -1607,6 +1618,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         </g>
                         <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{user.display_name}</text>
                         <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
+                        {/* Muted indicator */}
+                        {mutedUsers.has(user.user_id) && (
+                          <g>
+                            <circle cx={18} cy={-AR_S + 4} r={8} fill="#ef4444" opacity={0.93} />
+                            <text x={18} y={-AR_S + 8.5} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif">🔇</text>
+                          </g>
+                        )}
                         {isMe && draft && renderSvgBubble(0, -80, draft + "…", "#475569", 0.85, 0, false)}
                         {isTyping && renderTypingBubble(0, -80, 0)}
                         {userBubbles.length > 0 && (!isMe || !draft) && (
@@ -2079,6 +2097,82 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             )}
 
             {/* Profile panel */}
+            {/* Other user profile panel */}
+            {rightPanel === "userprofile" && profileView && (() => {
+              const isMutedNow = !!(profileView.muted_until && new Date(profileView.muted_until) > new Date());
+              const updatePV = async (patch: Partial<Profile>) => {
+                const { data } = await supabase.from("profiles").update(patch).eq("id", profileView.id).select().single();
+                if (data) setProfileView(data as Profile);
+              };
+              return (
+                <>
+                  <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
+                    <span className="text-[11px] font-bold text-slate-300 tracking-wide truncate">{profileView.display_name}</span>
+                    <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                  <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-3 border-b border-white/[0.06] bg-gradient-to-b from-violet-500/[0.04] to-transparent">
+                    <svg width="96" height="100" viewBox="-28 -60 56 100">
+                      <ellipse cx="0" cy="38" rx="13" ry="3.5" fill="rgba(0,0,0,0.4)" />
+                      <g transform="scale(1.8)"><PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} /></g>
+                    </svg>
+                    <p className="text-[13px] font-bold text-white mt-1">{profileView.display_name}</p>
+                    <p className="text-[10px] text-slate-500">@{profileView.username}</p>
+                    <div className="flex gap-1 mt-1.5 flex-wrap justify-center">
+                      {profileView.role === "admin" && <span className="text-[9px] font-bold uppercase tracking-wide text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded-full border border-violet-500/20">🛡 MOD</span>}
+                      {profileView.is_banned && <span className="text-[9px] font-bold uppercase tracking-wide text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded-full border border-rose-500/20">Udelukket</span>}
+                      {isMutedNow && <span className="text-[9px] font-bold uppercase tracking-wide text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20">🔇 Muttet</span>}
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+                    <div className="grid grid-cols-3 gap-2">
+                      {profileView.level != null && <div className="flex flex-col items-center bg-violet-500/10 border border-violet-500/20 rounded-xl py-2"><span className="text-[13px] font-bold text-violet-300">Lv.{profileView.level}</span><span className="text-[9px] text-slate-500 mt-0.5">Niveau</span></div>}
+                      {profileView.xp != null && <div className="flex flex-col items-center bg-white/[0.04] border border-white/[0.06] rounded-xl py-2"><span className="text-[13px] font-bold text-slate-200">{profileView.xp}</span><span className="text-[9px] text-slate-500 mt-0.5">XP</span></div>}
+                      {profileView.coins != null && <div className="flex flex-col items-center bg-amber-500/10 border border-amber-500/20 rounded-xl py-2"><span className="text-[13px] font-bold text-amber-400">{profileView.coins}</span><span className="text-[9px] text-slate-500 mt-0.5">Mønter</span></div>}
+                    </div>
+                    {profileView.xp != null && (
+                      <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
+                        <div className="flex justify-between text-[9px] text-slate-500 mb-1"><span>{profileView.xp % 100} / 100 XP</span><span>{100 - (profileView.xp % 100)} XP til Lv.{(profileView.level ?? 1) + 1}</span></div>
+                        <div className="w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden"><div className="h-full bg-gradient-to-r from-violet-600 to-violet-400" style={{ width: `${profileView.xp % 100}%` }} /></div>
+                      </div>
+                    )}
+                    {profileView.total_online_seconds != null && profileView.total_online_seconds > 0 && (
+                      <div className="flex items-center justify-between bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
+                        <span className="text-[11px] text-slate-400">Total tid online</span>
+                        <span className="text-[11px] text-slate-200 font-medium">{(() => { const h = Math.floor(profileView.total_online_seconds! / 3600); const m = Math.floor((profileView.total_online_seconds! % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                      </div>
+                    )}
+                    {profileView.bio && <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]"><p className="text-[11px] text-slate-400 leading-relaxed">{profileView.bio}</p></div>}
+                    {isAdmin && (
+                      <div className="space-y-2 pt-1 border-t border-white/[0.06]">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide pt-2">Moderator</p>
+                        {isMutedNow ? (
+                          <button onClick={() => updatePV({ muted_until: null }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.delete(profileView.id); return s; }))} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">
+                            <Volume2 className="w-3.5 h-3.5" /> Fjern mute
+                          </button>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {([["15 min", 15], ["1 time", 60], ["24 timer", 1440], ["Permanent", 5256000]] as [string, number][]).map(([l, m]) => (
+                              <button key={l} onClick={() => { const until = new Date(Date.now() + m * 60000).toISOString(); updatePV({ muted_until: until }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.add(profileView.id); return s; })); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"><VolumeX className="w-3 h-3 flex-shrink-0" />{l}</button>
+                            ))}
+                          </div>
+                        )}
+                        {profileView.is_banned ? (
+                          <button onClick={() => updatePV({ is_banned: false })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"><UserCheck className="w-3.5 h-3.5" /> Fjern udelukkelse</button>
+                        ) : (
+                          <button onClick={() => { if (confirm(`Udeluk ${profileView.display_name}?`)) updatePV({ is_banned: true }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors"><Ban className="w-3.5 h-3.5" /> Udeluk bruger</button>
+                        )}
+                        {profileView.role === "admin" ? (
+                          <button onClick={() => { if (confirm(`Fjern admin fra ${profileView.display_name}?`)) updatePV({ role: "user" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"><ShieldOff className="w-3.5 h-3.5" /> Fjern moderator</button>
+                        ) : (
+                          <button onClick={() => { if (confirm(`Gør ${profileView.display_name} til moderator?`)) updatePV({ role: "admin" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-colors"><Shield className="w-3.5 h-3.5" /> Gør til moderator</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+
             {rightPanel === "profile" && (
               <>
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
@@ -2358,7 +2452,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         </div>
       )}
 
-      {profileView && <UserProfileModal profile={profileView} currentProfile={currentProfile} onClose={() => setProfileView(null)} />}
+      {/* UserProfileModal replaced by inline side panel */}
     </div>
   );
 }
