@@ -1192,7 +1192,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   };
 
   // ─── Render ────────────────────────────────────────────────────────────────
-  const extensionOpen = rightPanel !== "hidden" && rightPanel !== "chatlog" && !fullscreen;
+  const extensionOpen = rightPanel !== "hidden" && !fullscreen;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setCtxMenu(null)}>
@@ -1556,6 +1556,20 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         {userBubbles.length > 0 && (
                           <g>{renderSvgBubble(0, -80, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
                         )}
+                        {/* Level-up ring animation */}
+                        {isMe && showLevelUp !== null && (
+                          <g>
+                            {([["#8b5cf6", 0], ["#c4b5fd", 0.35], ["#fbbf24", 0.7]] as [string, number][]).map(([color, delay], i) => (
+                              <circle key={i} cx={0} cy={0} fill="none" stroke={color} strokeWidth={2 - i * 0.4}>
+                                <animate attributeName="r" from="8" to="65" dur="1.3s" begin={`${delay}s`} repeatCount="indefinite" />
+                                <animate attributeName="opacity" from="0.85" to="0" dur="1.3s" begin={`${delay}s`} repeatCount="indefinite" />
+                              </circle>
+                            ))}
+                            <text x={0} y={-AR_S - 18} textAnchor="middle" fontSize={11} fontFamily="system-ui,sans-serif" fontWeight="900" fill="#fbbf24" stroke="rgba(0,0,0,0.9)" strokeWidth={2.5} paintOrder="stroke" style={{ animation: "svgLevelUpText 2.8s ease-out forwards" }}>
+                              ★ LEVEL {showLevelUp} ★
+                            </text>
+                          </g>
+                        )}
                       </g>
                     </g>
                   );
@@ -1617,31 +1631,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             </div>
           </div>
 
-          {/* Chat log panel - inside window, only shows when chatlog is open */}
-          <div className={`flex flex-col bg-[#030912]/98 border-white/[0.07] ${rightPanel === "chatlog" ? "sm:w-72 sm:flex-shrink-0 sm:border-l border-t sm:border-t-0 h-52 sm:h-auto flex-shrink-0" : "hidden"}`}>
-
-            {/* Chat log */}
-            {rightPanel === "chatlog" && (
-              <>
-                <div className="px-3 py-2 border-b border-white/[0.06]">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Chatlog</span>
-                </div>
-                <div ref={chatLogRef} className="flex-1 overflow-y-auto px-2.5 py-2 space-y-1.5">
-                  {logMessages.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>}
-                  {logMessages.map(msg => {
-                    const p = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
-                    const isMe = msg.user_id === currentProfile.id;
-                    return (
-                      <div key={msg.id} className="text-[11px] leading-snug">
-                        <span className="font-semibold" style={{ color: p?.avatar_color ?? "#8b5cf6" }}>{isMe ? "Du" : (p?.display_name ?? "?")}: </span>
-                        <span className="text-slate-300 break-words">{msg.content}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
         </div>
         {/* Extension panel - appears to the right of window */}
         {extensionOpen && !fullscreen && (
@@ -2087,6 +2076,29 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <span className="text-[11px] text-slate-400">Mønter</span>
                     <span className="text-[12px] text-amber-400 font-bold">🪙 {coins}</span>
                   </div>
+                </div>
+              </>
+            )}
+
+            {/* Chat log */}
+            {rightPanel === "chatlog" && (
+              <>
+                <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60">
+                  <span className="text-[11px] font-bold text-slate-300 tracking-wide">Chatlog</span>
+                  <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                </div>
+                <div ref={chatLogRef} className="flex-1 overflow-y-auto px-2.5 py-2 space-y-1.5">
+                  {logMessages.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>}
+                  {logMessages.map(msg => {
+                    const p = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
+                    const isMe = msg.user_id === currentProfile.id;
+                    return (
+                      <div key={msg.id} className="text-[11px] leading-snug">
+                        <span className="font-semibold" style={{ color: p?.avatar_color ?? "#8b5cf6" }}>{isMe ? "Du" : (p?.display_name ?? "?")}: </span>
+                        <span className="text-slate-300 break-words">{msg.content}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </>
             )}
