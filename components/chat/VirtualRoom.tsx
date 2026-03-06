@@ -551,6 +551,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const setRoomDimensions = (cols: number, rows: number) => {
     roomColsRef.current = cols; roomRowsRef.current = rows;
     setRoomCols(cols); setRoomRows(rows);
+    // Clamp spawn position to within actual room bounds
+    const cur = myPosRef.current;
+    const cgx = Math.max(0, Math.min(cols - 1, cur.gx));
+    const cgy = Math.max(0, Math.min(rows - 1, cur.gy));
+    if (cgx !== cur.gx || cgy !== cur.gy) {
+      myPosRef.current = { gx: cgx, gy: cgy };
+      setMyPos({ gx: cgx, gy: cgy });
+    }
   };
 
   const moveMyPos = useCallback((gx: number, gy: number) => {
@@ -1126,25 +1134,25 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     const words = truncated.split(" ");
     const lines: string[] = [];
     let cur = "";
-    words.forEach(w => { const n = cur ? `${cur} ${w}` : w; if (n.length > 16 && cur) { lines.push(cur); cur = w; } else { cur = n; } });
+    words.forEach(w => { const n = cur ? `${cur} ${w}` : w; if (n.length > 18 && cur) { lines.push(cur); cur = w; } else { cur = n; } });
     if (cur) lines.push(cur);
-    const capped = lines.slice(0, 2);
+    const capped = lines.slice(0, 3);
     const lineH = 15;
-    const padH = 10;
-    const padV = 7;
-    const bw = Math.min(160, Math.max(60, capped.reduce((m, l) => Math.max(m, l.length), 0) * 7 + padH * 2));
+    const padH = 12;
+    const padV = 8;
+    const bw = Math.min(180, Math.max(64, capped.reduce((m, l) => Math.max(m, l.length), 0) * 6.5 + padH * 2));
     const bh = capped.length * lineH + padV * 2;
     const bTop = ay - AR_S - 22 - bh - yOffset;
     return (
       <g>
         {/* Drop shadow */}
-        <rect x={ax - bw / 2 + 1} y={bTop + 1} width={bw} height={bh} rx={8} fill="rgba(0,0,0,0.3)" />
-        {/* White bubble */}
-        <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={8} fill="white" />
-        {/* Tail - only on newest (lowest) bubble */}
-        {showTail && <polygon points={`${ax - 5},${bTop + bh} ${ax + 5},${bTop + bh} ${ax},${bTop + bh + 8}`} fill="white" />}
+        <rect x={ax - bw / 2 + 2} y={bTop + 2} width={bw} height={bh} rx={12} fill="rgba(0,0,0,0.22)" />
+        {/* Bubble */}
+        <rect x={ax - bw / 2} y={bTop} width={bw} height={bh} rx={12} fill="white" stroke="rgba(0,0,0,0.06)" strokeWidth={0.8} />
+        {/* Tail */}
+        {showTail && <polygon points={`${ax - 6},${bTop + bh} ${ax + 6},${bTop + bh} ${ax},${bTop + bh + 9}`} fill="white" />}
         {capped.map((line, i) => (
-          <text key={i} x={ax} y={bTop + padV + 11 + i * lineH} textAnchor="middle" fontSize={11} fontFamily="system-ui,sans-serif" fontWeight="600" fill="#0f172a">{line}</text>
+          <text key={i} x={ax} y={bTop + padV + 11 + i * lineH} textAnchor="middle" fontSize={11} fontFamily="system-ui,sans-serif" fontWeight="600" fill="#111827">{line}</text>
         ))}
       </g>
     );
@@ -1415,8 +1423,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={cellBot.color} glow={false} mood="happy" />
                         </g>
-                        <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">{cellBot.name}</text>
-                        <text x={ax} y={ay - AR_S - 6} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" fill="#94a3b8">{cellBot.name}</text>
+                        <text x={ax} y={y + 18} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{cellBot.name}</text>
+                        <text x={ax} y={y + 18} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" fill="#94a3b8">{cellBot.name}</text>
                         <circle cx={ax + 15} cy={ay - AR_S - 8} r={5} fill="#1e293b" stroke="#475569" strokeWidth={0.8} />
                         <text x={ax + 15} y={ay - AR_S - 5.5} textAnchor="middle" fontSize={6} fill="#94a3b8">⚙</text>
                         {cellBot.gives_clothing_id && <text x={ax} y={y + TH / 4 + 8} textAnchor="middle" fontSize={8}>🎁</text>}
@@ -1441,8 +1449,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                             <ClothingOverlay outfit={user.outfit} catalog={clothingCatalog} />
                           )}
                         </g>
-                        <text x={0} y={-AR_S * 2 - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.95)" strokeWidth={3} fill="rgba(0,0,0,0.95)">{isMe ? "Du" : user.display_name}</text>
-                        <text x={0} y={-AR_S * 2 - 6} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{isMe ? "Du" : user.display_name}</text>
+                        <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{isMe ? "Du" : user.display_name}</text>
+                        <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{isMe ? "Du" : user.display_name}</text>
                         {isMe && draft && renderSvgBubble(0, -AR_S, draft + "…", "#475569", 0.85, 0, false)}
                         {isTyping && renderTypingBubble(0, -AR_S, 0)}
                         {userBubbles.length > 0 && (
