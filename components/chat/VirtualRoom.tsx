@@ -848,7 +848,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         if (movingBotId) { setMovingBotId(null); return; }
         draftRef.current = ""; setDraft(""); return;
       }
-      if ((e.key === "r" || e.key === "R") && placingItem) { e.preventDefault(); setPlacingItem(p => p ? { ...p, rotation: (p.rotation + 1) % 4 } : null); return; }
+      if ((e.key === "r" || e.key === "R") && placingItem) { e.preventDefault(); setPlacingItem(p => p ? { ...p, rotation: (p.rotation + 1) % 2 } : null); return; }
       if (e.key === "Backspace") { e.preventDefault(); setDraft(prev => { const n = prev.slice(0, -1); draftRef.current = n; return n; }); return; }
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         if (draftRef.current.length >= 80) return;
@@ -978,7 +978,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   // ─── Item actions ──────────────────────────────────────────────────────────
   const pickupItem = async (item: RoomItem) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: currentProfile.id, gx: null, gy: null, wall_side: null }).eq("id", item.id); };
-  const dropItem   = async (item: RoomItem) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: null, gx: myPosRef.current.gx, gy: myPosRef.current.gy }).eq("id", item.id); };
 
   const placeFloorItem = async (gx: number, gy: number, rotation: number) => {
     if (!placingItem) return;
@@ -993,7 +992,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   };
 
   const rotateItem = async (item: RoomItem) => {
-    const next = (item.rotation + 1) % 4;
+    const next = (item.rotation + 1) % 2;
     await supabase.from("virtual_room_items").update({ rotation: next }).eq("id", item.id);
   };
   const giveItem   = async (item: RoomItem, uid: string) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: uid, gx: null, gy: null }).eq("id", item.id); };
@@ -1209,7 +1208,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         })}
       </div>
       <div className="flex items-stretch max-sm:w-screen max-sm:h-[100dvh]" onClick={e => e.stopPropagation()}>
-      <div className={`flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] overflow-hidden bg-gradient-to-b from-[#060d1a] to-[#04090f] max-sm:!rounded-none max-sm:border-0 ${extensionOpen ? "sm:rounded-l-2xl sm:rounded-r-none" : "sm:rounded-2xl"}`} style={windowStyle}>
+      <div className={`relative flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] bg-gradient-to-b from-[#060d1a] to-[#04090f] max-sm:!rounded-none max-sm:border-0 ${extensionOpen ? "sm:rounded-l-2xl sm:rounded-r-none" : "sm:rounded-2xl"}`} style={windowStyle}>
 
         {/* Header */}
         <div className="flex-shrink-0 flex flex-col" style={{ background: "linear-gradient(180deg,#070f1e 0%,#040c19 100%)" }}>
@@ -1527,8 +1526,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={cellBot.color} glow={false} mood="happy" />
                         </g>
-                        <text x={ax} y={y + 18} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{cellBot.name}</text>
-                        <text x={ax} y={y + 18} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" fill="#94a3b8">{cellBot.name}</text>
+                        <text x={ax} y={y + 9} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{cellBot.name}</text>
+                        <text x={ax} y={y + 9} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" fill="#94a3b8">{cellBot.name}</text>
                         <circle cx={ax + 15} cy={ay - AR_S - 8} r={5} fill="#1e293b" stroke="#475569" strokeWidth={0.8} />
                         <text x={ax + 15} y={ay - AR_S - 5.5} textAnchor="middle" fontSize={6} fill="#94a3b8">⚙</text>
                         {cellBot.gives_clothing_id && <text x={ax} y={y + TH / 4 + 8} textAnchor="middle" fontSize={8}>🎁</text>}
@@ -1550,8 +1549,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <g transform={`translate(0,${-AR_S}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={user.color} glow={false} mood={user.mood} />
                         </g>
-                        <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{user.display_name}</text>
-                        <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
+                        <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{user.display_name}</text>
+                        <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
                         {isMe && draft && renderSvgBubble(0, -80, draft + "…", "#475569", 0.85, 0, false)}
                         {isTyping && renderTypingBubble(0, -80, 0)}
                         {userBubbles.length > 0 && (
@@ -1618,15 +1617,35 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             </div>
           </div>
 
-          {/* Right panel */}
-          <div className={`flex flex-col bg-[#030912]/98 border-white/[0.07] ${
-            rightPanel === "hidden"
-              ? "hidden"
-              : rightPanel === "chatlog"
-                ? "sm:w-72 sm:flex-shrink-0 sm:border-l border-t sm:border-t-0 h-52 sm:h-auto flex-shrink-0"
-                : "absolute inset-0 z-20 sm:relative sm:inset-auto sm:w-72 sm:flex-shrink-0 border-l"
-          }`}>
+          {/* Chat log panel - inside window, only shows when chatlog is open */}
+          <div className={`flex flex-col bg-[#030912]/98 border-white/[0.07] ${rightPanel === "chatlog" ? "sm:w-72 sm:flex-shrink-0 sm:border-l border-t sm:border-t-0 h-52 sm:h-auto flex-shrink-0" : "hidden"}`}>
 
+            {/* Chat log */}
+            {rightPanel === "chatlog" && (
+              <>
+                <div className="px-3 py-2 border-b border-white/[0.06]">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Chatlog</span>
+                </div>
+                <div ref={chatLogRef} className="flex-1 overflow-y-auto px-2.5 py-2 space-y-1.5">
+                  {logMessages.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>}
+                  {logMessages.map(msg => {
+                    const p = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
+                    const isMe = msg.user_id === currentProfile.id;
+                    return (
+                      <div key={msg.id} className="text-[11px] leading-snug">
+                        <span className="font-semibold" style={{ color: p?.avatar_color ?? "#8b5cf6" }}>{isMe ? "Du" : (p?.display_name ?? "?")}: </span>
+                        <span className="text-slate-300 break-words">{msg.content}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        {/* Extension panel - appears to the right of window */}
+        {extensionOpen && !fullscreen && (
+          <div className="absolute right-0 top-0 translate-x-full h-full w-72 flex flex-col bg-[#030912]/98 border border-l-0 border-white/[0.1] rounded-r-2xl overflow-hidden shadow-[16px_0_40px_rgba(0,0,0,0.6)] max-sm:hidden">
             {/* Online users */}
             {rightPanel === "online" && (
               <>
@@ -1890,7 +1909,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           ? <button onClick={() => setPlacingItem(null)} className="p-1 rounded text-violet-400 hover:text-rose-400" title="Annuller"><X className="w-3 h-3" /></button>
                           : <>
                               <button onClick={() => setPlacingItem({ item, rotation: 0 })} className="px-1.5 py-0.5 rounded text-[9px] font-semibold text-violet-300 bg-violet-500/15 hover:bg-violet-500/25 transition-colors" title={isWallItemType(item.item_type) ? "Klik på væggen" : "Klik på et felt"}>Placer</button>
-                              {!isWallItemType(item.item_type) && <button onClick={() => dropItem(item)} className="p-1 rounded text-slate-500 hover:text-emerald-400" title="Smid ved fødder"><Package className="w-3 h-3" /></button>}
                             </>
                         }
                       </div>
@@ -2073,29 +2091,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </>
             )}
 
-            {/* Chat log */}
-            {(rightPanel === "chatlog" || (rightPanel === "admin" && !isAdmin)) && (
-              <>
-                <div className="px-3 py-2 border-b border-white/[0.06]">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Chatlog</span>
-                </div>
-                <div ref={chatLogRef} className="flex-1 overflow-y-auto px-2.5 py-2 space-y-1.5">
-                  {logMessages.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>}
-                  {logMessages.map(msg => {
-                    const p = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
-                    const isMe = msg.user_id === currentProfile.id;
-                    return (
-                      <div key={msg.id} className="text-[11px] leading-snug">
-                        <span className="font-semibold" style={{ color: p?.avatar_color ?? "#8b5cf6" }}>{isMe ? "Du" : (p?.display_name ?? "?")}: </span>
-                        <span className="text-slate-300 break-words">{msg.content}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
           </div>
-        </div>
+        )}
 
         {/* ── Disconnect overlay ── */}
         {disconnected && (
@@ -2156,11 +2153,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <div className="px-3 py-2 border-b border-white/[0.06]"><span className="text-xs font-semibold text-slate-300">Rygsæk ({myInventory.length})</span></div>
               {myInventory.length === 0 && <p className="px-3 py-2 text-xs text-slate-500">Ingen genstande</p>}
               {myInventory.map(item => (
-                <button key={item.id} onClick={() => dropItem(item)} className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-white/[0.06] flex items-center gap-2">
-                  <svg width="16" height="16" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
-                  <span className="flex-1 truncate">{item.name}</span>
-                  <span className="text-[10px] text-slate-500">Smid</span>
-                </button>
+                <div key={item.id} className="px-3 py-1.5 flex items-center gap-2 text-sm text-slate-400">
+                  <svg width="14" height="14" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
+                  <span className="truncate">{item.name}</span>
+                </div>
               ))}
             </>
           )}
