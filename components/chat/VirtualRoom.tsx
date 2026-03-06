@@ -64,7 +64,7 @@ function getShopTheme(): RoomTheme {
 function PersonAvatar({ }: { color: string; glow?: boolean; mood?: string }) {
   return (
     <g>
-      <image href="/alien.png" x="-56" y="-120" width="112" height="140" />
+      <image href="/alien.png" x="-20" y="-30" width="40" height="50" />
     </g>
   );
 }
@@ -1224,7 +1224,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             style={{ background: theme.even }}
             onPointerDown={e => {
               if (e.button !== 0) return;
-              (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
               dragStartRef.current = { cx: e.clientX, cy: e.clientY, px: panRef.current.x, py: panRef.current.y };
               isDraggingRef.current = false;
             }}
@@ -1232,7 +1231,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               if (!dragStartRef.current) return;
               const dx = e.clientX - dragStartRef.current.cx;
               const dy = e.clientY - dragStartRef.current.cy;
-              if (!isDraggingRef.current && Math.abs(dx) + Math.abs(dy) > 4) isDraggingRef.current = true;
+              if (!isDraggingRef.current && Math.abs(dx) + Math.abs(dy) > 5) {
+                isDraggingRef.current = true;
+                (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+              }
               if (!isDraggingRef.current) return;
               const svg = svgRef.current;
               if (!svg) return;
@@ -1244,7 +1246,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               setPan({ x: nx, y: ny });
             }}
             onPointerUp={() => { dragStartRef.current = null; setTimeout(() => { isDraggingRef.current = false; }, 0); }}
-            onPointerLeave={() => { dragStartRef.current = null; isDraggingRef.current = false; }}
+            onPointerLeave={() => { if (!isDraggingRef.current) dragStartRef.current = null; }}
           >
             <svg ref={svgRef} viewBox={roomViewBox}
               preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
@@ -1486,7 +1488,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <circle cx={ax + 15} cy={ay - AR_S - 8} r={5} fill="#1e293b" stroke="#475569" strokeWidth={0.8} />
                         <text x={ax + 15} y={ay - AR_S - 5.5} textAnchor="middle" fontSize={6} fill="#94a3b8">⚙</text>
                         {cellBot.gives_clothing_id && <text x={ax} y={y + TH / 4 + 8} textAnchor="middle" fontSize={8}>🎁</text>}
-                        {cellBot.message && renderSvgBubble(ax, y - 168, cellBot.message, cellBot.color, 0.7)}
+                        {cellBot.message && renderSvgBubble(ax, y - 60, cellBot.message, cellBot.color, 0.7)}
                       </g>
                     );
                   }
@@ -1506,10 +1508,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         </g>
                         <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{user.display_name}</text>
                         <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
-                        {isMe && draft && renderSvgBubble(0, -168, draft + "…", "#475569", 0.85, 0, false)}
-                        {isTyping && renderTypingBubble(0, -168, 0)}
+                        {isMe && draft && renderSvgBubble(0, -60, draft + "…", "#475569", 0.85, 0, false)}
+                        {isTyping && renderTypingBubble(0, -60, 0)}
                         {userBubbles.length > 0 && (
-                          <g>{renderSvgBubble(0, -168, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
+                          <g>{renderSvgBubble(0, -60, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
                         )}
                       </g>
                     </g>
