@@ -64,7 +64,7 @@ function getShopTheme(): RoomTheme {
 function PersonAvatar({ }: { color: string; glow?: boolean; mood?: string }) {
   return (
     <g>
-      <image href="/alien.png" x="-28" y="-46" width="56" height="70" />
+      <image href="/alien.png" x="-56" y="-120" width="112" height="140" />
     </g>
   );
 }
@@ -362,7 +362,7 @@ interface VirtualRoomProps {
   currentProfile: Profile;
   onClose: () => void;
 }
-type RightPanel = "chatlog" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile";
+type RightPanel = "chatlog" | "hidden" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile";
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: VirtualRoomProps) {
@@ -447,6 +447,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [totalSeconds, setTotalSeconds] = useState(0);
   const [placingItem, setPlacingItem] = useState<{ item: RoomItem; rotation: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const panRef = useRef({ x: 0, y: 0 });
+  const dragStartRef = useRef<{ cx: number; cy: number; px: number; py: number } | null>(null);
+  const isDraggingRef = useRef(false);
 
   // Keep refs in sync
   useEffect(() => { botsRef.current = bots; }, [bots]);
@@ -544,8 +548,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     const cy = (top + bottom) / 2;
     const vbW = rw / zoom;
     const vbH = rh / zoom;
-    return `${cx - vbW / 2} ${cy - vbH / 2} ${vbW} ${vbH}`;
-  }, [roomCols, roomRows, svgW, zoom]);
+    return `${cx - vbW / 2 + pan.x} ${cy - vbH / 2 + pan.y} ${vbW} ${vbH}`;
+  }, [roomCols, roomRows, svgW, zoom, pan.x, pan.y]);
 
   const setRoomDimensions = (cols: number, rows: number) => {
     roomColsRef.current = cols; roomRowsRef.current = rows;
@@ -869,6 +873,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   }, []);
 
   const handleTileClick = (gx: number, gy: number) => {
+    if (isDraggingRef.current) return;
     setCtxMenu(null);
     if (movingBotId) {
       supabase.from("virtual_room_bots").update({ gx, gy }).eq("id", movingBotId);
@@ -911,6 +916,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     setActiveThemeKey(themeKey ?? "blue");
     setActiveFloorPattern(floorPattern ?? "standard");
     lastActivityRef.current = Date.now();
+    panRef.current = { x: 0, y: 0 }; setPan({ x: 0, y: 0 });
     myPosRef.current = { gx: Math.floor(Math.random() * nc), gy: Math.floor(Math.random() * nr) };
     setMyPos(myPosRef.current);
     // Move all carried items (in inventory) to the new room so they follow the user
@@ -1163,30 +1169,83 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       <div className="flex flex-col rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] overflow-hidden bg-gradient-to-b from-[#060d1a] to-[#04090f] max-sm:!w-screen max-sm:!h-[100dvh] max-sm:!rounded-none max-sm:border-0" style={windowStyle} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 bg-[#040c19]/95 border-b border-violet-500/20 shadow-[0_1px_0_rgba(99,102,241,0.06),0_4px_24px_rgba(0,0,0,0.4)]">
-          <div className="flex items-center gap-1.5 flex-wrap min-w-0 overflow-hidden">
-            <span className="text-[15px] font-extrabold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent tracking-tight truncate max-w-[120px] sm:max-w-none">#{activeRoomName}</span>
-            {activeRoomType === "shop" && <span className="hidden sm:inline-flex text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🛍 Butik</span>}
-            <span className="hidden sm:inline-flex text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">{totalUsers} online</span>
-            <button onClick={() => setRightPanel(p => p === "profile" ? "chatlog" : "profile")} className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold transition-colors ${rightPanel === "profile" ? "text-violet-200 bg-violet-500/25 border border-violet-400/40" : "text-violet-300 bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/20"}`}>Lv.{level}</button>
-            <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🪙 {coins}</span>
-            {movingBotId && <span className="hidden sm:inline-flex text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold animate-pulse">Klik → placér bot</span>}
-            {placingItem && <span className="text-[11px] text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2.5 py-0.5 rounded-full font-semibold animate-pulse">{isWallItemType(placingItem.item.item_type) ? "Klik på væggen" : `Placer · R=roter (${placingItem.rotation * 90}°)`}</span>}
+        <div className="flex-shrink-0 flex flex-col" style={{ background: "linear-gradient(180deg,#070f1e 0%,#040c19 100%)" }}>
+          <div className="flex items-center justify-between px-3 sm:px-4 h-12 gap-2">
+            {/* Left: room */}
+            <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse" />
+              <span className="text-[13px] font-extrabold text-white tracking-tight truncate max-w-[90px] sm:max-w-[160px]">#{activeRoomName}</span>
+              {activeRoomType === "shop" && <span className="hidden sm:flex text-[9px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Shop</span>}
+            </div>
+            {/* Center: stats */}
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+              <button onClick={() => setRightPanel(p => p === "profile" ? "chatlog" : "profile")} className={`flex items-center gap-1 px-2 py-1 rounded-lg border transition-all text-[11px] font-bold ${rightPanel === "profile" ? "text-violet-200 bg-violet-500/20 border-violet-400/30 shadow-[0_0_10px_rgba(139,92,246,0.3)]" : "text-violet-300 bg-violet-500/10 border-violet-500/15 hover:bg-violet-500/20"}`}>
+                <span className="text-[9px] text-violet-400 font-black">LV</span>
+                <span className="tabular-nums">{level}</span>
+              </button>
+              <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.05] text-[11px] text-slate-400 font-semibold tabular-nums">
+                {xp} <span className="text-[9px] text-slate-600 ml-0.5">XP</span>
+              </div>
+              <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/15 text-[11px] font-bold text-amber-400 tabular-nums">
+                🪙 {coins}
+              </div>
+              <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/15 text-[11px] font-semibold text-emerald-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                {totalUsers}
+              </div>
+            </div>
+            {/* Right: actions */}
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
+              <button onClick={handleLogout} className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-3.5 h-3.5" /></button>
+              <button onClick={onClose} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
+            </div>
           </div>
-          <div className="flex items-center gap-0.5">
-            <button onClick={() => setFullscreen(f => !f)} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all">
-              {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
-            <button onClick={handleLogout} className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-4 h-4" /></button>
-            <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all" title="Luk"><X className="w-4 h-4" /></button>
+          {/* XP progress bar */}
+          <div className="h-px bg-white/[0.04]">
+            <div className="h-full bg-gradient-to-r from-violet-700 to-violet-400 transition-[width] duration-700" style={{ width: `${xp % 100}%` }} />
           </div>
+          {/* Placing hint */}
+          {(movingBotId || placingItem) && (
+            <div className="px-4 py-1 bg-violet-600/10 border-t border-violet-500/15 text-center">
+              <span className="text-[10px] text-violet-300 font-semibold animate-pulse">
+                {movingBotId ? "Klik på et felt for at placere bot" : isWallItemType(placingItem!.item.item_type) ? "Klik på væggen for at hænge op" : `Klik på et felt · R = roter (${placingItem!.rotation * 90}°)`}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Body */}
         <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
 
           {/* Isometric room */}
-          <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden relative" style={{ background: theme.even }}>
+          <div
+            className="flex-1 min-h-0 flex items-center justify-center overflow-hidden relative cursor-grab active:cursor-grabbing select-none"
+            style={{ background: theme.even }}
+            onPointerDown={e => {
+              if (e.button !== 0) return;
+              (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+              dragStartRef.current = { cx: e.clientX, cy: e.clientY, px: panRef.current.x, py: panRef.current.y };
+              isDraggingRef.current = false;
+            }}
+            onPointerMove={e => {
+              if (!dragStartRef.current) return;
+              const dx = e.clientX - dragStartRef.current.cx;
+              const dy = e.clientY - dragStartRef.current.cy;
+              if (!isDraggingRef.current && Math.abs(dx) + Math.abs(dy) > 4) isDraggingRef.current = true;
+              if (!isDraggingRef.current) return;
+              const svg = svgRef.current;
+              if (!svg) return;
+              const ctm = svg.getScreenCTM();
+              if (!ctm) return;
+              const nx = dragStartRef.current.px - dx / ctm.a;
+              const ny = dragStartRef.current.py - dy / ctm.d;
+              panRef.current = { x: nx, y: ny };
+              setPan({ x: nx, y: ny });
+            }}
+            onPointerUp={() => { dragStartRef.current = null; setTimeout(() => { isDraggingRef.current = false; }, 0); }}
+            onPointerLeave={() => { dragStartRef.current = null; isDraggingRef.current = false; }}
+          >
             <svg ref={svgRef} viewBox={roomViewBox}
               preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
               {/* Background fills entire visible area regardless of viewBox */}
@@ -1427,7 +1486,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <circle cx={ax + 15} cy={ay - AR_S - 8} r={5} fill="#1e293b" stroke="#475569" strokeWidth={0.8} />
                         <text x={ax + 15} y={ay - AR_S - 5.5} textAnchor="middle" fontSize={6} fill="#94a3b8">⚙</text>
                         {cellBot.gives_clothing_id && <text x={ax} y={y + TH / 4 + 8} textAnchor="middle" fontSize={8}>🎁</text>}
-                        {cellBot.message && renderSvgBubble(ax, ay, cellBot.message, cellBot.color, 0.7)}
+                        {cellBot.message && renderSvgBubble(ax, y - 168, cellBot.message, cellBot.color, 0.7)}
                       </g>
                     );
                   }
@@ -1447,10 +1506,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         </g>
                         <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{user.display_name}</text>
                         <text x={0} y={18} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
-                        {isMe && draft && renderSvgBubble(0, -AR_S, draft + "…", "#475569", 0.85, 0, false)}
-                        {isTyping && renderTypingBubble(0, -AR_S, 0)}
+                        {isMe && draft && renderSvgBubble(0, -168, draft + "…", "#475569", 0.85, 0, false)}
+                        {isTyping && renderTypingBubble(0, -168, 0)}
                         {userBubbles.length > 0 && (
-                          <g>{renderSvgBubble(0, -AR_S, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
+                          <g>{renderSvgBubble(0, -168, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
                         )}
                       </g>
                     </g>
@@ -1472,7 +1531,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-2.5 py-2 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
               <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); reloadChat(); }} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs / Genopret forbindelse"><RefreshCw className="w-[18px] h-[18px]" /></button>
               <div className="w-px h-5 bg-white/[0.08] mx-1" />
-              <button onClick={() => setRightPanel("chatlog")} className={`sm:hidden p-2 rounded-xl transition-all ${rightPanel === "chatlog" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Chat"><MessageSquare className="w-[18px] h-[18px]" /></button>
+              <button onClick={() => setRightPanel(p => p === "chatlog" ? "hidden" : "chatlog")} className={`p-2 rounded-xl transition-all ${rightPanel === "chatlog" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Chatlog"><MessageSquare className="w-[18px] h-[18px]" /></button>
               <button onClick={() => setRightPanel(p => p === "online" ? "chatlog" : "online")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
                 <Users className="w-[18px] h-[18px]" />
                 {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
@@ -1495,9 +1554,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
           {/* Right panel */}
           <div className={`flex flex-col bg-[#030912]/98 border-white/[0.07] ${
-            rightPanel === "chatlog"
-              ? "sm:w-72 sm:flex-shrink-0 sm:border-l border-t sm:border-t-0 h-52 sm:h-auto flex-shrink-0"
-              : "absolute inset-0 z-20 sm:relative sm:inset-auto sm:w-72 sm:flex-shrink-0 border-l"
+            rightPanel === "hidden"
+              ? "hidden"
+              : rightPanel === "chatlog"
+                ? "sm:w-72 sm:flex-shrink-0 sm:border-l border-t sm:border-t-0 h-52 sm:h-auto flex-shrink-0"
+                : "absolute inset-0 z-20 sm:relative sm:inset-auto sm:w-72 sm:flex-shrink-0 border-l"
           }`}>
 
             {/* Online users */}
