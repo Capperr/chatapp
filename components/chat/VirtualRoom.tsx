@@ -250,14 +250,14 @@ function PosterSVG() {
 }
 
 const ITEM_TYPES = [
-  { type: "flower",   label: "Blomst",     color: "#fb7185", wall: false },
-  { type: "tv",       label: "TV",         color: "#1d4ed8", wall: false },
-  { type: "desk",     label: "Skrivebord", color: "#92400e", wall: false },
-  { type: "mailbox",  label: "Postkasse",  color: "#dc2626", wall: false },
-  { type: "coffee",   label: "Kaffe",      color: "#f97316", wall: false },
-  { type: "sofa",     label: "Sofa",       color: "#4f46e5", wall: false },
-  { type: "painting", label: "Maleri",     color: "#d4a017", wall: true  },
-  { type: "poster",   label: "Plakat",     color: "#3b82f6", wall: true  },
+  { type: "flower",   label: "Blomst",     color: "#fb7185", wall: false, value: 50  },
+  { type: "tv",       label: "TV",         color: "#1d4ed8", wall: false, value: 200 },
+  { type: "desk",     label: "Skrivebord", color: "#92400e", wall: false, value: 150 },
+  { type: "mailbox",  label: "Postkasse",  color: "#dc2626", wall: false, value: 75  },
+  { type: "coffee",   label: "Kaffe",      color: "#f97316", wall: false, value: 100 },
+  { type: "sofa",     label: "Sofa",       color: "#4f46e5", wall: false, value: 300 },
+  { type: "painting", label: "Maleri",     color: "#d4a017", wall: true,  value: 250 },
+  { type: "poster",   label: "Plakat",     color: "#3b82f6", wall: true,  value: 120 },
 ];
 
 function ItemSVG({ type }: { type: string }) {
@@ -2066,19 +2066,60 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             );
           })()}
 
-          {ctxMenu.kind === "tile_item" && ctxMenu.item && (
-            <>
-              <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center gap-2">
-                <svg width="16" height="16" viewBox="-16 -16 32 32"><ItemSVG type={ctxMenu.item.item_type} /></svg>
-                <span className="text-xs font-semibold text-slate-200 truncate">{ctxMenu.item.name}</span>
-              </div>
-              {!isWallItemType(ctxMenu.item.item_type) && (
-                <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06]" onClick={() => rotateItem(ctxMenu.item!)}>Roter (R)</button>
-              )}
-              <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06]" onClick={() => pickupItem(ctxMenu.item!)}>Tag op til inventar</button>
-              {isAdmin && <button className="w-full text-left px-3 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10" onClick={() => deleteItem(ctxMenu.item!.id)}>Slet genstand</button>}
-            </>
-          )}
+          {ctxMenu.kind === "tile_item" && ctxMenu.item && (() => {
+            const ci = ctxMenu.item!;
+            const meta = ITEM_TYPES.find(t => t.type === ci.item_type);
+            const myCountOfType = items.filter(i => i.item_type === ci.item_type && i.owner_id === currentProfile.id).length;
+            const roomCountOfType = items.filter(i => i.item_type === ci.item_type && !i.owner_id).length;
+            const isWall = !!ci.wall_side;
+            return (
+              <>
+                {/* Preview + name */}
+                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-3 bg-white/[0.02]">
+                  <div className="w-14 h-14 rounded-xl bg-white/[0.06] border border-white/[0.05] flex items-center justify-center flex-shrink-0">
+                    <svg width="44" height="44" viewBox="-18 -18 36 36"><ItemSVG type={ci.item_type} /></svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-bold text-white truncate">{ci.name}</p>
+                    <span className="inline-flex mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ color: meta?.color ?? "#6b7280", backgroundColor: `${meta?.color ?? "#6b7280"}22` }}>
+                      {meta?.label ?? ci.item_type}{isWall ? " · Væg" : ""}
+                    </span>
+                  </div>
+                </div>
+                {/* Stats */}
+                <div className="px-3 py-2.5 border-b border-white/[0.06] space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">Værdi</span>
+                    <span className="text-amber-400 font-semibold">🪙 {meta?.value ?? "—"}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">Størrelse</span>
+                    <span className="text-slate-200 font-medium">{Math.round((ci.item_scale ?? 1) * 100)}%</span>
+                  </div>
+                  {!isWall && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">Rotation</span>
+                      <span className="text-slate-200 font-medium">{(ci.rotation ?? 0) * 90}°</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">Antal i rummet</span>
+                    <span className="text-slate-200 font-medium">{roomCountOfType}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">Du ejer</span>
+                    <span className="text-slate-200 font-medium">{myCountOfType}</span>
+                  </div>
+                </div>
+                {/* Actions */}
+                {!isWall && (
+                  <button className="w-full text-left px-3 py-2 text-[12px] text-slate-300 hover:bg-white/[0.06]" onClick={() => rotateItem(ci)}>Roter (R)</button>
+                )}
+                <button className="w-full text-left px-3 py-2 text-[12px] text-slate-300 hover:bg-white/[0.06]" onClick={() => pickupItem(ci)}>Tag op til inventar</button>
+                {isAdmin && <button className="w-full text-left px-3 py-2 text-[12px] text-rose-400 hover:bg-rose-500/10" onClick={() => deleteItem(ci.id)}>Slet genstand</button>}
+              </>
+            );
+          })()}
         </div>
       )}
 
