@@ -335,7 +335,7 @@ interface VirtualRoomProps {
   currentProfile: Profile;
   onClose: () => void;
 }
-type RightPanel = "chatlog" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop";
+type RightPanel = "chatlog" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile";
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: VirtualRoomProps) {
@@ -408,6 +408,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const showConfirmModalRef = useRef(false);
   const disconnectedRef = useRef(false);
   const minuteXpAccRef = useRef(0);
+  const sessionStartRef = useRef(Date.now());
+  const confirmedHoursRef = useRef(0);
+  const [confirmedHours, setConfirmedHours] = useState(0);
+  const [timeToNextHour, setTimeToNextHour] = useState(3600);
 
   // Keep refs in sync
   useEffect(() => { botsRef.current = bots; }, [bots]);
@@ -425,6 +429,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     showConfirmModalRef.current = false;
     setShowConfirmModal(false);
     lastHourConfirmRef.current = Date.now();
+    confirmedHoursRef.current += 1;
+    setConfirmedHours(confirmedHoursRef.current);
     const newCoins = coinsRef.current + 100;
     coinsRef.current = newCoins; setCoins(newCoins);
     await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
@@ -455,6 +461,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         setXp(newXp); setLevel(newLevel);
         supabase.from("profiles").update({ xp: newXp, level: newLevel }).eq("id", currentProfile.id);
       }
+      // Update time-to-next-hour countdown
+      setTimeToNextHour(Math.max(0, 3600 - Math.floor((now - lastHourConfirmRef.current) / 1000)));
     }, 30_000);
     return () => clearInterval(check);
   }, [triggerDisconnect, supabase, currentProfile.id]);
@@ -1043,7 +1051,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <span className="text-[15px] font-extrabold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent tracking-tight truncate max-w-[120px] sm:max-w-none">#{activeRoomName}</span>
             {activeRoomType === "shop" && <span className="hidden sm:inline-flex text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🛍 Butik</span>}
             <span className="hidden sm:inline-flex text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">{totalUsers} online</span>
-            <span className="text-[11px] text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2.5 py-0.5 rounded-full font-semibold">Lv.{level}</span>
+            <button onClick={() => setRightPanel(p => p === "profile" ? "chatlog" : "profile")} className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold transition-colors ${rightPanel === "profile" ? "text-violet-200 bg-violet-500/25 border border-violet-400/40" : "text-violet-300 bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/20"}`}>Lv.{level}</button>
             <span className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">🪙 {coins}</span>
             {movingBotId && <span className="hidden sm:inline-flex text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold animate-pulse">Klik → placér bot</span>}
           </div>
@@ -1178,6 +1186,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 const sprites: Sprite[] = [];
                 items.filter(i => i.gx !== null && i.gy !== null).forEach(i => sprites.push({ kind: "item", item: i, gx: i.gx!, gy: i.gy! }));
                 bots.forEach(b => sprites.push({ kind: "bot", bot: b, gx: b.gx, gy: b.gy }));
+                // Add current user from local state (excluded from presence users map)
+                sprites.push({ kind: "user", user: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPos.gx, gy: myPos.gy, mood: myMood, outfit: myOutfit }, gx: myPos.gx, gy: myPos.gy });
                 Array.from(users.values()).forEach(u => sprites.push({ kind: "user", user: u, gx: u.gx, gy: u.gy }));
                 sprites.sort((a, b) => {
                   const da = a.gx + a.gy + (a.kind === "user" ? 0.6 : a.kind === "bot" ? 0.4 : 0.2 * Math.min((a as { item: RoomItem }).item?.item_scale ?? 1, 1));
@@ -1282,6 +1292,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           <div className={`flex flex-col bg-[#030912]/98 border-white/[0.07] ${
             rightPanel === "chatlog"
               ? "sm:w-60 sm:flex-shrink-0 sm:border-l border-t sm:border-t-0 h-52 sm:h-auto flex-shrink-0"
+              : rightPanel === "profile"
+              ? "sm:w-64 sm:flex-shrink-0 sm:border-l absolute inset-0 z-20 sm:relative sm:inset-auto"
               : "absolute inset-0 z-20 sm:relative sm:inset-auto sm:w-60 sm:flex-shrink-0 border-l"
           }`}>
 
@@ -1664,6 +1676,63 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </>
             )}
 
+            {/* Profile panel */}
+            {rightPanel === "profile" && (
+              <>
+                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
+                  <span className="text-[11px] font-bold text-slate-300 tracking-wide">Min profil</span>
+                  <button onClick={() => setRightPanel("chatlog")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                </div>
+                {/* Avatar preview */}
+                <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-3 border-b border-white/[0.06] bg-gradient-to-b from-violet-500/[0.04] to-transparent">
+                  <svg width="96" height="100" viewBox="-28 -60 56 100">
+                    <ellipse cx="0" cy="38" rx="13" ry="3.5" fill="rgba(0,0,0,0.4)" />
+                    <g transform="scale(1.8)">
+                      <PersonAvatar color={myColor} glow={true} mood={myMood} />
+                      {Object.keys(myOutfit).length > 0 && <ClothingOverlay outfit={myOutfit} catalog={clothingCatalog} />}
+                    </g>
+                  </svg>
+                  <p className="text-[13px] font-bold text-white mt-1">{currentProfile.display_name}</p>
+                  <p className="text-[10px] text-slate-500">@{currentProfile.username}</p>
+                </div>
+                {/* Stats */}
+                <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+                  {/* Level + XP */}
+                  <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-bold text-violet-300 uppercase tracking-wide">Niveau {level}</span>
+                      <span className="text-[10px] text-slate-500">{xp % 100} / 100 XP</span>
+                    </div>
+                    <div className="w-full bg-white/[0.06] rounded-full h-2 overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all duration-500" style={{ width: `${xp % 100}%` }} />
+                    </div>
+                    <p className="text-[9px] text-slate-600 mt-1.5">{100 - (xp % 100)} XP til niveau {level + 1} · {xp} XP i alt</p>
+                  </div>
+                  {/* Activity stats */}
+                  <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05] space-y-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Aktivitet</p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400">Tid online</span>
+                      <span className="text-[11px] text-slate-200 font-medium tabular-nums">{(() => { const s = Math.floor((Date.now() - sessionStartRef.current) / 1000); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400">Bekræftede timer</span>
+                      <span className="text-[11px] text-amber-400 font-medium">{confirmedHours}t</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400">Næste belønning om</span>
+                      <span className="text-[11px] text-emerald-400 font-medium tabular-nums">{(() => { const m = Math.floor(timeToNextHour / 60); const s = timeToNextHour % 60; return `${m}:${String(s).padStart(2, "0")}`; })()}</span>
+                    </div>
+                  </div>
+                  {/* Coins */}
+                  <div className="flex items-center justify-between bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
+                    <span className="text-[11px] text-slate-400">Mønter</span>
+                    <span className="text-[12px] text-amber-400 font-bold">🪙 {coins}</span>
+                  </div>
+                </div>
+              </>
+            )}
+
             {/* Chat log */}
             {(rightPanel === "chatlog" || (rightPanel === "admin" && !isAdmin)) && (
               <>
@@ -1732,6 +1801,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
           {ctxMenu.kind === "self" && (
             <>
+              <button className="w-full text-left px-3 py-2.5 text-sm text-violet-300 hover:bg-violet-500/10 border-b border-white/[0.06]" onClick={() => { setCtxMenu(null); setRightPanel("profile"); }}>Se min profil</button>
               <div className="px-3 py-2 border-b border-white/[0.06]">
                 <p className="text-[10px] font-semibold text-slate-500 mb-2">Ansigtsudtryk</p>
                 <div className="flex gap-1">

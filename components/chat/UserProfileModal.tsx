@@ -104,6 +104,41 @@ export function UserProfileModal({ profile, currentProfile, onClose, onStartDM }
             </p>
           )}
 
+          {/* Stats (shown for all, highlighted for self) */}
+          {(localProfile.level != null || localProfile.xp != null || localProfile.coins != null) && (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {localProfile.level != null && (
+                <div className="flex flex-col items-center bg-violet-500/10 border border-violet-500/20 rounded-xl py-2">
+                  <span className="text-[13px] font-bold text-violet-300">Lv.{localProfile.level}</span>
+                  <span className="text-[9px] text-slate-500 mt-0.5">Niveau</span>
+                </div>
+              )}
+              {localProfile.xp != null && (
+                <div className="flex flex-col items-center bg-white/[0.04] border border-white/[0.06] rounded-xl py-2">
+                  <span className="text-[13px] font-bold text-slate-200">{localProfile.xp}</span>
+                  <span className="text-[9px] text-slate-500 mt-0.5">XP i alt</span>
+                </div>
+              )}
+              {localProfile.coins != null && (
+                <div className="flex flex-col items-center bg-amber-500/10 border border-amber-500/20 rounded-xl py-2">
+                  <span className="text-[13px] font-bold text-amber-400">{localProfile.coins}</span>
+                  <span className="text-[9px] text-slate-500 mt-0.5">Mønter</span>
+                </div>
+              )}
+            </div>
+          )}
+          {isSelf && localProfile.xp != null && localProfile.level != null && (
+            <div className="mt-2">
+              <div className="flex justify-between text-[9px] text-slate-500 mb-1">
+                <span>{localProfile.xp % 100} / 100 XP</span>
+                <span>{100 - (localProfile.xp % 100)} XP til Lv.{localProfile.level + 1}</span>
+              </div>
+              <div className="w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-violet-600 to-violet-400" style={{ width: `${localProfile.xp % 100}%` }} />
+              </div>
+            </div>
+          )}
+
           {/* Send DM button */}
           {onStartDM && !isSelf && (
             <button
