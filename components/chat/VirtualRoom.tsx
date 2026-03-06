@@ -17,22 +17,28 @@ const DEFAULT_COLS = 10;
 const DEFAULT_ROWS = 8;
 const WALL_H = 110;
 
+// ─── Room design options ────────────────────────────────────────────────────────
+const ROOM_THEMES: { id: string; label: string; color: string; even: string; odd: string; highlight: string; wallA: string; wallB: string }[] = [
+  { id: "blue",      label: "Nat",     color: "#3b82f6", even: "#0f1a2e", odd: "#0c1525", highlight: "#231850", wallA: "#132038", wallB: "#0a1222" },
+  { id: "green",     label: "Natur",   color: "#22c55e", even: "#0f1e10", odd: "#0c1a0d", highlight: "#1a3520", wallA: "#142814", wallB: "#0c1c0c" },
+  { id: "purple",    label: "Lilla",   color: "#a855f7", even: "#1a1020", odd: "#15091a", highlight: "#2e1045", wallA: "#22142e", wallB: "#160d1e" },
+  { id: "red",       label: "Rød",     color: "#ef4444", even: "#1e100f", odd: "#180d0c", highlight: "#351510", wallA: "#241412", wallB: "#160e0b" },
+  { id: "orange",    label: "Varmt",   color: "#f97316", even: "#1e1508", odd: "#180f05", highlight: "#2e2210", wallA: "#241c0a", wallB: "#16110a" },
+  { id: "cyan",      label: "Hav",     color: "#06b6d4", even: "#0e1e22", odd: "#0b181c", highlight: "#0e2e38", wallA: "#122630", wallB: "#0b1c24" },
+  { id: "brown",     label: "Parket",  color: "#92400e", even: "#1c1208", odd: "#180f05", highlight: "#2e1f0a", wallA: "#201608", wallB: "#160f06" },
+  { id: "pink",      label: "Rosa",    color: "#ec4899", even: "#1e0f18", odd: "#180c13", highlight: "#301528", wallA: "#22141e", wallB: "#160d16" },
+  { id: "teal",      label: "Skov",    color: "#14b8a6", even: "#0e1c1a", odd: "#0b1615", highlight: "#102e2a", wallA: "#112422", wallB: "#0b1c1a" },
+  { id: "dark",      label: "Mørk",    color: "#475569", even: "#080a0e", odd: "#060809", highlight: "#12151e", wallA: "#0b0d14", wallB: "#060810" },
+];
+const FLOOR_PATTERNS: { id: string; label: string }[] = [
+  { id: "standard",     label: "Standard"  },
+  { id: "checkerboard", label: "Skakbræt"  },
+  { id: "diamond",      label: "Diamant"   },
+  { id: "uniform",      label: "Ensfarvet" },
+];
+
 // ─── Room themes ───────────────────────────────────────────────────────────────
-type RoomTheme = { even: string; odd: string; highlight: string; wallA: string; wallB: string };
-function getRoomTheme(roomName: string): RoomTheme {
-  const n = roomName.toLowerCase();
-  if (n.includes("køkken") || n.includes("kitchen"))
-    return { even: "#1a2010", odd: "#161d0e", highlight: "#2e3d10", wallA: "#222b14", wallB: "#161f0c" };
-  if (n.includes("stue") || n.includes("living"))
-    return { even: "#12181f", odd: "#0f1419", highlight: "#1a2d3a", wallA: "#16202c", wallB: "#0d1620" };
-  if (n.includes("soveværelse") || n.includes("bedroom") || n.includes("sove"))
-    return { even: "#1a1020", odd: "#15091a", highlight: "#2e1045", wallA: "#22142e", wallB: "#160d1e" };
-  if (n.includes("bad") || n.includes("bathroom") || n.includes("toilet"))
-    return { even: "#0e1e22", odd: "#0b181c", highlight: "#0e2e38", wallA: "#122630", wallB: "#0b1c24" };
-  if (n.includes("kontor") || n.includes("office"))
-    return { even: "#1a1510", odd: "#14100c", highlight: "#2e2010", wallA: "#221c12", wallB: "#16120c" };
-  return { even: "#0f1a2e", odd: "#0c1525", highlight: "#231850", wallA: "#132038", wallB: "#0a1222" };
-}
+type RoomTheme = { id?: string; label?: string; color?: string; even: string; odd: string; highlight: string; wallA: string; wallB: string };
 function getShopTheme(): RoomTheme {
   return { even: "#180f05", odd: "#130c04", highlight: "#2a1a06", wallA: "#201408", wallB: "#140d04" };
 }
@@ -320,6 +326,8 @@ interface ChatRoom {
   cols: number;
   rows: number;
   room_type: string;
+  theme_key: string;
+  floor_pattern: string;
 }
 interface VirtualRoomProps {
   roomId: string;
@@ -378,7 +386,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [createForm, setCreateForm] = useState<{ name: string; item_type: string } | null>(null);
   const [editItem, setEditItem] = useState<RoomItem | null>(null);
   const [globalUsers, setGlobalUsers] = useState<Map<string, GlobalUser>>(new Map());
-  const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number; room_type: string } | null>(null);
+  const [activeThemeKey, setActiveThemeKey] = useState("blue");
+  const [activeFloorPattern, setActiveFloorPattern] = useState("standard");
+  const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
+  const [editRoomForm, setEditRoomForm] = useState<{ id: string; name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
   const [adminTab, setAdminTab] = useState<"items" | "bots">("items");
   const [createBotForm, setCreateBotForm] = useState<{ name: string; color: string; message: string; moves_randomly: boolean; gives_clothing_id: string } | null>(null);
   const [movingBotId, setMovingBotId] = useState<string | null>(null);
@@ -435,14 +446,16 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   // ─── Data fetches ──────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.from("chat_rooms").select("id, name, cols, rows, room_type").order("name").then(({ data }) => {
+    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern").order("name").then(({ data }) => {
       if (data) {
-        const list = (data as ChatRoom[]).map(r => ({ ...r, cols: r.cols ?? DEFAULT_COLS, rows: r.rows ?? DEFAULT_ROWS, room_type: r.room_type ?? "normal" }));
+        const list = (data as ChatRoom[]).map(r => ({ ...r, cols: r.cols ?? DEFAULT_COLS, rows: r.rows ?? DEFAULT_ROWS, room_type: r.room_type ?? "normal", theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }));
         setRooms(list);
         const cur = list.find(r => r.id === roomId);
         if (cur) {
           setRoomDimensions(cur.cols, cur.rows);
           setActiveRoomType(cur.room_type);
+          setActiveThemeKey(cur.theme_key ?? "blue");
+          setActiveFloorPattern(cur.floor_pattern ?? "standard");
           if (cur.room_type === "shop") setRightPanel("shop");
         }
       }
@@ -719,11 +732,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     channelRef.current?.send({ type: "broadcast", event: "kick", payload: { user_id: user.user_id } });
   };
 
-  const switchRoom = (id: string, name: string, cols?: number, rows?: number, roomType?: string) => {
+  const switchRoom = (id: string, name: string, cols?: number, rows?: number, roomType?: string, themeKey?: string, floorPattern?: string) => {
     const nc = cols ?? roomColsRef.current; const nr = rows ?? roomRowsRef.current;
     const rt = roomType ?? "normal";
     setActiveRoomId(id); setActiveRoomName(name); setRoomDimensions(nc, nr);
     setActiveRoomType(rt); setRightPanel(rt === "shop" ? "shop" : "chatlog");
+    setActiveThemeKey(themeKey ?? "blue");
+    setActiveFloorPattern(floorPattern ?? "standard");
     lastActivityRef.current = Date.now();
     myPosRef.current = { gx: Math.floor(Math.random() * nc), gy: Math.floor(Math.random() * nr) };
     setMyPos(myPosRef.current);
@@ -827,12 +842,23 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     if (data) setMyWardrobe(prev => prev.map(w => w.id === tempEntry.id ? data as UserWardrobeEntry : w));
   };
 
-  // ─── Room creation ─────────────────────────────────────────────────────────
+  // ─── Room creation / editing ───────────────────────────────────────────────
   const createRoom = async () => {
     if (!createRoomForm?.name.trim()) return;
-    const { data } = await supabase.from("chat_rooms").insert({ name: createRoomForm.name.trim(), cols: createRoomForm.cols, rows: createRoomForm.rows, room_type: createRoomForm.room_type }).select("id, name, cols, rows, room_type").single();
+    const { data } = await supabase.from("chat_rooms").insert({ name: createRoomForm.name.trim(), cols: createRoomForm.cols, rows: createRoomForm.rows, room_type: createRoomForm.room_type, theme_key: createRoomForm.theme_key, floor_pattern: createRoomForm.floor_pattern }).select("id, name, cols, rows, room_type, theme_key, floor_pattern").single();
     if (data) setRooms(prev => [...prev, data as ChatRoom].sort((a, b) => a.name.localeCompare(b.name)));
     setCreateRoomForm(null);
+  };
+
+  const updateRoom = async () => {
+    if (!editRoomForm?.name.trim()) return;
+    await supabase.from("chat_rooms").update({ name: editRoomForm.name.trim(), cols: editRoomForm.cols, rows: editRoomForm.rows, room_type: editRoomForm.room_type, theme_key: editRoomForm.theme_key, floor_pattern: editRoomForm.floor_pattern }).eq("id", editRoomForm.id);
+    setRooms(prev => prev.map(r => r.id === editRoomForm.id ? { ...r, ...editRoomForm, name: editRoomForm.name.trim() } : r).sort((a, b) => a.name.localeCompare(b.name)));
+    if (editRoomForm.id === activeRoomId) {
+      setActiveThemeKey(editRoomForm.theme_key);
+      setActiveFloorPattern(editRoomForm.floor_pattern);
+    }
+    setEditRoomForm(null);
   };
 
   const reloadChat = useCallback(async () => {
@@ -881,7 +907,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   }, [roomCols, roomRows]);
 
   const totalUsers = users.has(currentProfile.id) ? users.size : users.size + 1;
-  const theme = useMemo(() => activeRoomType === "shop" ? getShopTheme() : getRoomTheme(activeRoomName), [activeRoomName, activeRoomType]);
+  const theme = useMemo(() => activeRoomType === "shop" ? getShopTheme() : (ROOM_THEMES.find(t => t.id === activeThemeKey) ?? ROOM_THEMES[0]), [activeThemeKey, activeRoomType]);
 
   const roomOccupancy = useMemo(() => {
     const m = new Map<string, number>();
@@ -1038,7 +1064,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 const isMyTile = myPos.gx === gx && myPos.gy === gy;
                 const isBotTarget = !!movingBotId && !cellBot;
 
-                const tileFill = isMyTile ? theme.highlight : isBotTarget && isHov ? "#1a3020" : isHov ? "#192e4a" : (gx + gy) % 2 === 0 ? theme.even : theme.odd;
+                const baseFill = (() => {
+                  switch (activeFloorPattern) {
+                    case "checkerboard": return (Math.floor(gx / 2) + Math.floor(gy / 2)) % 2 === 0 ? theme.even : theme.odd;
+                    case "diamond":      return (gx % 4 === 0 && gy % 4 === 0) || (gx % 4 === 2 && gy % 4 === 2) ? theme.highlight : (gx + gy) % 2 === 0 ? theme.even : theme.odd;
+                    case "uniform":      return theme.even;
+                    default:             return (gx + gy) % 2 === 0 ? theme.even : theme.odd;
+                  }
+                })();
+                const tileFill = isMyTile ? theme.highlight : isBotTarget && isHov ? "#1a3020" : isHov ? "#192e4a" : baseFill;
                 const tileStroke = isMyTile ? myColor : isBotTarget && isHov ? "#22c55e" : "#16243a";
                 const ax = x; const ay = y - AR_S;
 
@@ -1137,9 +1171,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <Users className="w-[18px] h-[18px]" />
                 {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
               </button>
-              <button onClick={() => setRightPanel(p => p === "wardrobe" ? "chatlog" : "wardrobe")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
+              <button onClick={() => setRightPanel(p => p === "wardrobe" ? "chatlog" : "wardrobe")} className={`p-2 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
                 <Shirt className="w-[18px] h-[18px]" />
-                {myWardrobe.filter(w => w.equipped).length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myWardrobe.filter(w => w.equipped).length}</span>}
               </button>
               <button onClick={() => setRightPanel(p => p === "inventory" ? "chatlog" : "inventory")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rygsæk">
                 <Package className="w-[18px] h-[18px]" />
@@ -1182,7 +1215,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           <p className="text-[12px] text-slate-300 truncate">{isMe ? `${u.display_name} (dig)` : u.display_name}</p>
                           <p className={`text-[10px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</p>
                         </div>
-                        {!inSameRoom && !isMe && <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type); }} className="text-[10px] text-slate-500 hover:text-violet-400 flex-shrink-0">Gå til</button>}
+                        {!inSameRoom && !isMe && <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern); }} className="text-[10px] text-slate-500 hover:text-violet-400 flex-shrink-0">Gå til</button>}
                       </div>
                     );
                   })}
@@ -1335,42 +1368,70 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
                   <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Skift rum</span>
                   <div className="flex items-center gap-1">
-                    {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8, room_type: "normal" })} className="p-1 rounded text-slate-500 hover:text-emerald-400" title="Opret rum"><Plus className="w-3 h-3" /></button>}
+                    {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8, room_type: "normal", theme_key: "blue", floor_pattern: "standard" })} className="p-1 rounded text-slate-500 hover:text-emerald-400" title="Opret rum"><Plus className="w-3 h-3" /></button>}
                     <button onClick={() => setRightPanel("chatlog")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
                   </div>
                 </div>
-                {createRoomForm && isAdmin && (
-                  <div className="px-3 py-2 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0">
-                    <p className="text-[10px] font-semibold text-slate-500 mb-1.5">Nyt rum</p>
-                    <input autoFocus value={createRoomForm.name} onChange={e => setCreateRoomForm({ ...createRoomForm, name: e.target.value })} onKeyDown={e => { if (e.key === "Enter") createRoom(); if (e.key === "Escape") setCreateRoomForm(null); }} placeholder="Rum navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50" />
-                    <div className="flex gap-1.5 mb-1">
-                      <div className="flex-1"><p className="text-[9px] text-slate-500 mb-0.5">Bredde</p><input type="number" min={4} max={20} value={createRoomForm.cols} onChange={e => setCreateRoomForm({ ...createRoomForm, cols: Math.max(4, Math.min(20, parseInt(e.target.value) || 10)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-violet-500/50" /></div>
-                      <div className="flex-1"><p className="text-[9px] text-slate-500 mb-0.5">Dybde</p><input type="number" min={4} max={16} value={createRoomForm.rows} onChange={e => setCreateRoomForm({ ...createRoomForm, rows: Math.max(4, Math.min(16, parseInt(e.target.value) || 8)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-violet-500/50" /></div>
+                {/* Room design form (shared for create + edit) */}
+                {(createRoomForm || editRoomForm) && isAdmin && (() => {
+                  const form = editRoomForm ?? createRoomForm!;
+                  const isEdit = !!editRoomForm;
+                  const set = isEdit
+                    ? (v: typeof form) => setEditRoomForm(v as typeof editRoomForm)
+                    : (v: typeof form) => setCreateRoomForm(v as typeof createRoomForm);
+                  return (
+                    <div className="px-3 py-2.5 border-b border-white/[0.06] bg-violet-500/[0.04] flex-shrink-0 overflow-y-auto max-h-[70%]">
+                      <p className="text-[10px] font-bold text-slate-400 mb-2">{isEdit ? "Rediger rum" : "Nyt rum"}</p>
+                      <input autoFocus value={form.name} onChange={e => set({ ...form, name: e.target.value })} onKeyDown={e => { if (e.key === "Escape") { isEdit ? setEditRoomForm(null) : setCreateRoomForm(null); } }} placeholder="Rum navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-2 py-1.5 text-[11px] text-slate-100 outline-none mb-2 focus:border-violet-500/50" />
+                      <div className="flex gap-1.5 mb-2">
+                        <div className="flex-1"><p className="text-[9px] text-slate-500 mb-0.5">Bredde</p><input type="number" min={4} max={20} value={form.cols} onChange={e => set({ ...form, cols: Math.max(4, Math.min(20, parseInt(e.target.value) || 10)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-violet-500/50" /></div>
+                        <div className="flex-1"><p className="text-[9px] text-slate-500 mb-0.5">Dybde</p><input type="number" min={4} max={16} value={form.rows} onChange={e => set({ ...form, rows: Math.max(4, Math.min(16, parseInt(e.target.value) || 8)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-violet-500/50" /></div>
+                      </div>
+                      <p className="text-[9px] text-slate-500 mb-0.5">Type</p>
+                      <select value={form.room_type} onChange={e => set({ ...form, room_type: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none mb-2">
+                        <option value="normal">Normal</option>
+                        <option value="shop">Butik</option>
+                      </select>
+                      <p className="text-[9px] text-slate-500 mb-1">Farvetema</p>
+                      <div className="grid grid-cols-5 gap-1.5 mb-2">
+                        {ROOM_THEMES.map(t => (
+                          <button key={t.id} onClick={() => set({ ...form, theme_key: t.id })} title={t.label}
+                            className={`w-full aspect-square rounded-lg border-2 transition-all ${form.theme_key === t.id ? "border-white scale-110" : "border-transparent hover:border-white/40"}`}
+                            style={{ backgroundColor: t.color }} />
+                        ))}
+                      </div>
+                      <p className="text-[9px] text-slate-500 mb-1">Gulvmønster</p>
+                      <div className="grid grid-cols-2 gap-1 mb-2.5">
+                        {FLOOR_PATTERNS.map(p => (
+                          <button key={p.id} onClick={() => set({ ...form, floor_pattern: p.id })}
+                            className={`py-1 rounded-lg text-[10px] font-medium transition-all ${form.floor_pattern === p.id ? "bg-violet-500/30 text-violet-200 border border-violet-500/50" : "bg-white/[0.04] text-slate-400 border border-transparent hover:border-white/10"}`}>
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[9px] text-slate-600 mb-2">{form.cols * form.rows} felter</p>
+                      <div className="flex gap-1">
+                        <button onClick={isEdit ? updateRoom : createRoom} className="flex-1 py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[10px] font-semibold text-white transition-colors">{isEdit ? "Gem" : "Opret"}</button>
+                        <button onClick={() => { isEdit ? setEditRoomForm(null) : setCreateRoomForm(null); }} className="flex-1 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] rounded-lg text-[10px] text-slate-300 transition-colors">Annuller</button>
+                      </div>
                     </div>
-                    <p className="text-[9px] text-slate-500 mb-0.5">Type</p>
-                    <select value={createRoomForm.room_type} onChange={e => setCreateRoomForm({ ...createRoomForm, room_type: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none mb-1.5">
-                      <option value="normal">Normal</option>
-                      <option value="shop">Butik 🛍</option>
-                    </select>
-                    <p className="text-[9px] text-slate-600 mb-1.5">{createRoomForm.cols * createRoomForm.rows} felter</p>
-                    <div className="flex gap-1">
-                      <button onClick={createRoom} className="flex-1 py-1 bg-violet-600 hover:bg-violet-500 rounded text-[10px] text-white">Opret</button>
-                      <button onClick={() => setCreateRoomForm(null)} className="flex-1 py-1 bg-white/[0.06] hover:bg-white/[0.1] rounded text-[10px] text-slate-300">Annuller</button>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
                 <div className="flex-1 overflow-y-auto py-1">
                   {rooms.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen rum fundet</p>}
                   {rooms.map(r => {
                     const occ = roomOccupancy.get(r.id) ?? 0;
+                    const rtheme = ROOM_THEMES.find(t => t.id === (r.theme_key ?? "blue"));
                     return (
-                      <button key={r.id} onClick={() => switchRoom(r.id, r.name, r.cols, r.rows, r.room_type)}
-                        className={`w-full text-left px-3 py-2 text-[12px] transition-colors flex items-center gap-2 ${r.id === activeRoomId ? "bg-violet-500/20 text-violet-300" : "text-slate-300 hover:bg-white/[0.05]"}`}>
-                        <span className="text-slate-500">#</span>
-                        <span className="flex-1 truncate">{r.name}</span>
-                        <span className={`text-[10px] flex-shrink-0 ${occ > 0 ? "text-emerald-500" : "text-slate-700"}`}>{occ}/{r.cols * r.rows}</span>
-                        {r.id === activeRoomId && <span className="w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" />}
-                      </button>
+                      <div key={r.id} className={`flex items-center gap-1 transition-colors ${r.id === activeRoomId ? "bg-violet-500/15" : "hover:bg-white/[0.03]"}`}>
+                        <button onClick={() => switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern)}
+                          className="flex-1 text-left px-3 py-2 text-[12px] flex items-center gap-2 min-w-0">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: rtheme?.color ?? "#475569" }} />
+                          <span className={`flex-1 truncate ${r.id === activeRoomId ? "text-violet-300" : "text-slate-300"}`}>{r.name}</span>
+                          <span className={`text-[10px] flex-shrink-0 ${occ > 0 ? "text-emerald-500" : "text-slate-700"}`}>{occ}</span>
+                        </button>
+                        {isAdmin && <button onClick={() => { setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="p-1.5 mr-1 rounded text-slate-600 hover:text-violet-400 flex-shrink-0 transition-colors" title="Rediger rum"><Pencil className="w-3 h-3" /></button>}
+                      </div>
                     );
                   })}
                 </div>
