@@ -647,12 +647,20 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId, activeRoomName]);
 
-  // Items realtime
+  // Items realtime — fetch room items + any items the user is carrying (owner_id = me, any room)
   useEffect(() => {
-    supabase.from("virtual_room_items").select("*").eq("room_id", activeRoomId).then(({ data }) => { if (data) setItems(data as RoomItem[]); });
+    Promise.all([
+      supabase.from("virtual_room_items").select("*").eq("room_id", activeRoomId),
+      supabase.from("virtual_room_items").select("*").eq("owner_id", currentProfile.id),
+    ]).then(([{ data: roomData }, { data: myData }]) => {
+      const merged = new Map<string, RoomItem>();
+      (roomData ?? []).forEach(i => merged.set(i.id, i as RoomItem));
+      (myData ?? []).forEach(i => merged.set(i.id, i as RoomItem));
+      setItems(Array.from(merged.values()));
+    });
     const itemCh = supabase.channel(`items-${activeRoomId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "virtual_room_items", filter: `room_id=eq.${activeRoomId}` }, (payload) => {
-        if (payload.eventType === "INSERT") setItems(prev => [...prev, payload.new as RoomItem]);
+        if (payload.eventType === "INSERT") setItems(prev => { const m = new Map(prev.map(i => [i.id, i])); m.set(payload.new.id, payload.new as RoomItem); return Array.from(m.values()); });
         else if (payload.eventType === "UPDATE") setItems(prev => prev.map(i => i.id === payload.new.id ? payload.new as RoomItem : i));
         else if (payload.eventType === "DELETE") setItems(prev => prev.filter(i => i.id !== (payload.old as RoomItem).id));
       }).subscribe();
@@ -879,6 +887,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     lastActivityRef.current = Date.now();
     myPosRef.current = { gx: Math.floor(Math.random() * nc), gy: Math.floor(Math.random() * nr) };
     setMyPos(myPosRef.current);
+    // Move all carried items (in inventory) to the new room so they follow the user
+    supabase.from("virtual_room_items").update({ room_id: id }).eq("owner_id", currentProfile.id);
   };
 
   // ─── Shop / buy ────────────────────────────────────────────────────────────
@@ -1016,13 +1026,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   };
 
   const reloadChat = useCallback(async () => {
-    const [{ data: msgs }, { data: roomItems }, { data: roomBots }] = await Promise.all([
+    const [{ data: msgs }, { data: roomItems }, { data: myItems }, { data: roomBots }] = await Promise.all([
       supabase.from("messages").select("id, content, user_id, created_at, profiles(display_name, avatar_color)").eq("room_id", activeRoomId).eq("is_deleted", false).order("created_at", { ascending: false }).limit(50),
       supabase.from("virtual_room_items").select("*").eq("room_id", activeRoomId),
+      supabase.from("virtual_room_items").select("*").eq("owner_id", currentProfile.id),
       supabase.from("virtual_room_bots").select("*").eq("room_id", activeRoomId),
     ]);
     if (msgs) setLogMessages((msgs as LogMessage[]).reverse());
-    if (roomItems) setItems(roomItems as RoomItem[]);
+    if (roomItems || myItems) {
+      const merged = new Map<string, RoomItem>();
+      (roomItems ?? []).forEach((i: RoomItem) => merged.set(i.id, i));
+      (myItems ?? []).forEach((i: RoomItem) => merged.set(i.id, i));
+      setItems(Array.from(merged.values()));
+    }
     if (roomBots) setBots(roomBots as RoomBot[]);
     broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
   }, [activeRoomId, broadcastMove]); // eslint-disable-line react-hooks/exhaustive-deps
