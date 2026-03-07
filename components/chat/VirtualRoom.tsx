@@ -38,6 +38,18 @@ const FLOOR_PATTERNS: { id: string; label: string }[] = [
   { id: "grid",         label: "Grid"      },
 ];
 
+// ─── Solarie tan levels ────────────────────────────────────────────────────────
+const TAN_LEVELS = [
+  null,
+  { color: "#c8956c", opacity: 0.32, label: "Mild solbrun",    minMinutes: 15  },
+  { color: "#a0714f", opacity: 0.52, label: "Solbrun",         minMinutes: 30  },
+  { color: "#8b4513", opacity: 0.68, label: "Solbrændt",       minMinutes: 60  },
+  { color: "#5c2b0f", opacity: 0.84, label: "Meget solbrændt", minMinutes: 120 },
+] as const;
+function tanLevelFromMinutes(m: number): number {
+  if (m >= 120) return 4; if (m >= 60) return 3; if (m >= 30) return 2; if (m >= 15) return 1; return 0;
+}
+
 // ─── Level system (based on cumulative hours online) ───────────────────────────
 // Cumulative hours required to reach each level (index = level - 1)
 const LEVEL_HOURS = [0, 1, 3, 8, 20, 50, 100, 140, 190, 250, 320, 400, 500, 650, 850];
@@ -63,11 +75,13 @@ function getShopTheme(): RoomTheme {
 
 // ─── Person Avatar ─────────────────────────────────────────────────────────────
 const AVATAR_TINT_COLORS = ["#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#3b82f6","#84cc16","#f97316","#14b8a6"];
-function PersonAvatar({ color }: { color: string; glow?: boolean; mood?: string }) {
+function PersonAvatar({ color, tanLevel }: { color: string; glow?: boolean; mood?: string; tanLevel?: number }) {
   const filterId = AVATAR_TINT_COLORS.includes(color) ? `alien-tint-${color.slice(1)}` : undefined;
+  const tan = tanLevel && tanLevel > 0 ? TAN_LEVELS[tanLevel] : null;
   return (
     <g>
       <image href="/alien.png" x="-31" y="-36" width="62" height="77" filter={filterId ? `url(#${filterId})` : undefined} />
+      {tan && <image href="/alien.png" x="-31" y="-36" width="62" height="77" filter={`url(#suntan-${tanLevel})`} opacity={tan.opacity} />}
     </g>
   );
 }
@@ -288,6 +302,7 @@ interface PresenceUser {
   gy: number;
   mood?: string;
   outfit?: Record<string, string>; // slot → clothing_id
+  tan_level?: number;
 }
 interface SpeechBubble { id: number; text: string; ts: number; }
 interface ClothingItem {
@@ -427,6 +442,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [awaitingVisit, setAwaitingVisit] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"shop" | "profil">("shop");
   const levelRef = useRef(1);
+  const [tanLevel, setTanLevel] = useState(0);
+  const tanLevelRef = useRef(0);
+  const [tanExpiresAt, setTanExpiresAt] = useState<string | null>(null);
+  const solarieEnteredRef = useRef<number | null>(null);
   const lastMsgTimesRef = useRef<number[]>([]);
   const cooldownEndRef = useRef(0);
   const [cooldownSec, setCooldownSec] = useState(0);
@@ -447,6 +466,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [movingBotId, setMovingBotId] = useState<string | null>(null);
   const [coins, setCoins] = useState(1000);
   const [activeRoomType, setActiveRoomType] = useState("normal");
+  const [activeRoomOwnerId, setActiveRoomOwnerId] = useState<string | null>(null);
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const xpRef = useRef(0);
@@ -503,10 +523,24 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     });
   }, [users]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch own spaceship
+  // Fetch own spaceship + auto-switch to it on first load
+  const autoSwitchedToSpaceshipRef = useRef(false);
   useEffect(() => {
     supabase.from("chat_rooms").select("*").eq("room_type", "spaceship").eq("owner_id", currentProfile.id).maybeSingle().then(({ data }) => {
-      setMySpaceship(data as ChatRoom | null);
+      const ship = data as ChatRoom | null;
+      setMySpaceship(ship);
+      if (ship && !autoSwitchedToSpaceshipRef.current) {
+        autoSwitchedToSpaceshipRef.current = true;
+        setActiveRoomId(ship.id);
+        setActiveRoomName(ship.name);
+        setRoomDimensions(ship.cols ?? DEFAULT_COLS, ship.rows ?? DEFAULT_ROWS);
+        setActiveRoomType("spaceship");
+        setActiveRoomOwnerId(ship.owner_id ?? null);
+        setActiveThemeKey(ship.theme_key ?? "blue");
+        setActiveFloorPattern(ship.floor_pattern ?? "standard");
+        myPosRef.current = { gx: Math.floor(Math.random() * (ship.cols ?? DEFAULT_COLS)), gy: Math.floor(Math.random() * (ship.rows ?? DEFAULT_ROWS)) };
+        setMyPos(myPosRef.current);
+      }
     });
   }, [currentProfile.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -663,6 +697,40 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     if (channelRef.current) broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
   }, [myOutfit]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Keep tanLevelRef in sync + re-broadcast when tan changes
+  useEffect(() => {
+    tanLevelRef.current = tanLevel;
+    if (channelRef.current) broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
+  }, [tanLevel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Solarie tanning timer — runs while in solarie room
+  useEffect(() => {
+    if (activeRoomType !== "solarie") {
+      solarieEnteredRef.current = null;
+      // Check if existing tan has expired
+      if (tanExpiresAt && new Date(tanExpiresAt) < new Date()) {
+        setTanLevel(0); tanLevelRef.current = 0;
+        setTanExpiresAt(null);
+        supabase.from("profiles").update({ tan_level: 0, tan_expires_at: null }).eq("id", currentProfile.id);
+      }
+      return;
+    }
+    const entered = Date.now();
+    solarieEnteredRef.current = entered;
+    const tick = setInterval(() => {
+      const elapsedMin = (Date.now() - entered) / 60000;
+      const newLvl = tanLevelFromMinutes(elapsedMin);
+      if (newLvl > tanLevelRef.current) {
+        setTanLevel(newLvl);
+        // tanLevelRef updated by the effect above
+      }
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      setTanExpiresAt(expiresAt);
+      supabase.from("profiles").update({ tan_level: Math.max(newLvl, tanLevelRef.current), tan_expires_at: expiresAt }).eq("id", currentProfile.id);
+    }, 30_000);
+    return () => { clearInterval(tick); solarieEnteredRef.current = null; };
+  }, [activeRoomType]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const changeMood = (mood: string) => {
     myMoodRef.current = mood; setMyMood(mood);
     channelRef.current?.send({ type: "broadcast", event: "move", payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood, outfit: outfitRef.current } satisfies PresenceUser });
@@ -670,7 +738,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   // ─── Data fetches ──────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern").order("name").then(({ data }) => {
+    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern, owner_id").order("name").then(({ data }) => {
       if (data) {
         const list = (data as ChatRoom[]).map(r => ({ ...r, cols: r.cols ?? DEFAULT_COLS, rows: r.rows ?? DEFAULT_ROWS, room_type: r.room_type ?? "normal", theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }));
         setRooms(list);
@@ -678,6 +746,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         if (cur) {
           setRoomDimensions(cur.cols, cur.rows);
           setActiveRoomType(cur.room_type);
+          setActiveRoomOwnerId(cur.owner_id ?? null);
           setActiveThemeKey(cur.theme_key ?? "blue");
           setActiveFloorPattern(cur.floor_pattern ?? "standard");
           if (cur.room_type === "shop") setRightPanel("shop");
@@ -694,9 +763,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("virtual_user_wardrobe").select("id, clothing_id, equipped").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyWardrobe(data as UserWardrobeEntry[]);
     });
-    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds").eq("id", currentProfile.id).single().then(({ data }) => {
+    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, tan_level, tan_expires_at").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
+        // Load tan — reset if expired
+        if (data.tan_expires_at && new Date(data.tan_expires_at) > new Date()) {
+          tanLevelRef.current = data.tan_level ?? 0;
+          setTanLevel(data.tan_level ?? 0);
+          setTanExpiresAt(data.tan_expires_at);
+        } else if (data.tan_level > 0) {
+          supabase.from("profiles").update({ tan_level: 0, tan_expires_at: null }).eq("id", currentProfile.id);
+        }
         if (data.total_online_seconds != null) {
           totalSecondsRef.current = data.total_online_seconds;
           setTotalSeconds(data.total_online_seconds);
@@ -838,7 +915,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   useEffect(() => { if (chatLogRef.current) chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight; }, [logMessages]);
 
   const broadcastMove = useCallback((gx: number, gy: number) => {
-    channelRef.current?.send({ type: "broadcast", event: "move", payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current } satisfies PresenceUser });
+    channelRef.current?.send({ type: "broadcast", event: "move", payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current } satisfies PresenceUser });
   }, [currentProfile.id, currentProfile.display_name, myColor]);
 
   // Main presence/broadcast channel
@@ -847,7 +924,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     const ch = supabase.channel(`virtual-${activeRoomId}`, { config: { presence: { key: currentProfile.id } } });
     channelRef.current = ch;
     const startPos = myPosRef.current;
-    const myData: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: startPos.gx, gy: startPos.gy, mood: myMoodRef.current, outfit: outfitRef.current };
+    const myData: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: startPos.gx, gy: startPos.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current };
     ch
       .on("presence", { event: "sync" }, () => {
         const state = ch.presenceState<PresenceUser>();
@@ -901,12 +978,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         setVisitRequest({ from_id: p.from_id, from_name: p.from_name, spaceship_room_id: p.spaceship_room_id, spaceship_room_name: p.spaceship_room_name });
       })
       .on("broadcast", { event: "spaceship_invite" }, ({ payload }) => {
-        const p = payload as { to_id: string; accepted: boolean; spaceship_room_id?: string; spaceship_room_name?: string };
+        const p = payload as { to_id: string; accepted: boolean; spaceship_room_id?: string; spaceship_room_name?: string; cols?: number; rows?: number; theme_key?: string; floor_pattern?: string };
         if (p.to_id !== currentProfile.id) return;
         setAwaitingVisit(false);
         if (p.accepted && p.spaceship_room_id) {
-          switchRoom(p.spaceship_room_id, p.spaceship_room_name ?? "Rumskib", undefined, undefined, "spaceship");
+          switchRoom(p.spaceship_room_id, p.spaceship_room_name ?? "Rumskib", p.cols, p.rows, "spaceship", p.theme_key, p.floor_pattern);
         }
+      })
+      .on("broadcast", { event: "spaceship_kick" }, ({ payload }) => {
+        const p = payload as { user_id: string; redirect_room_id: string; redirect_room_name: string; redirect_cols?: number; redirect_rows?: number; redirect_type?: string; redirect_theme?: string; redirect_floor?: string };
+        if (p.user_id !== currentProfile.id) return;
+        switchRoom(p.redirect_room_id, p.redirect_room_name, p.redirect_cols, p.redirect_rows, p.redirect_type, p.redirect_theme, p.redirect_floor);
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${activeRoomId}` }, async (payload) => {
         const sid: string = payload.new.user_id; const txt: string = payload.new.content;
@@ -1005,13 +1087,21 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     channelRef.current?.send({ type: "broadcast", event: "kick", payload: { user_id: user.user_id } });
   };
 
-  const switchRoom = (id: string, name: string, cols?: number, rows?: number, roomType?: string, themeKey?: string, floorPattern?: string) => {
+  const kickFromSpaceship = (user: PresenceUser) => {
+    setCtxMenu(null);
+    const normalRoom = rooms.find(r => r.room_type === "normal");
+    if (!normalRoom) return;
+    channelRef.current?.send({ type: "broadcast", event: "spaceship_kick", payload: { user_id: user.user_id, redirect_room_id: normalRoom.id, redirect_room_name: normalRoom.name, redirect_cols: normalRoom.cols, redirect_rows: normalRoom.rows, redirect_type: normalRoom.room_type, redirect_theme: normalRoom.theme_key, redirect_floor: normalRoom.floor_pattern } });
+  };
+
+  const switchRoom = (id: string, name: string, cols?: number, rows?: number, roomType?: string, themeKey?: string, floorPattern?: string, ownerId?: string | null) => {
     const nc = cols ?? roomColsRef.current; const nr = rows ?? roomRowsRef.current;
     const rt = roomType ?? "normal";
     setActiveRoomId(id); setActiveRoomName(name); setRoomDimensions(nc, nr);
     setActiveRoomType(rt); setRightPanel(rt === "shop" ? "shop" : "hidden");
     setActiveThemeKey(themeKey ?? "blue");
     setActiveFloorPattern(floorPattern ?? "standard");
+    setActiveRoomOwnerId(ownerId !== undefined ? ownerId : null);
     lastActivityRef.current = Date.now();
     panRef.current = { x: 0, y: 0 }; setPan({ x: 0, y: 0 });
     myPosRef.current = { gx: Math.floor(Math.random() * nc), gy: Math.floor(Math.random() * nr) };
@@ -1037,6 +1127,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   sendDraftRef.current = async () => {
     const t = draftRef.current.trim(); if (!t) return;
+    // /gå NUMMER command
+    if (/^\/gå\s+\d+$/i.test(t)) {
+      const num = parseInt(t.split(/\s+/)[1]);
+      const normalRooms = rooms.filter(r => r.room_type !== "spaceship");
+      const target = normalRooms[num - 1];
+      if (target) switchRoom(target.id, target.name, target.cols, target.rows, target.room_type, target.theme_key, target.floor_pattern, target.owner_id);
+      draftRef.current = ""; setDraft("");
+      return;
+    }
     const now = Date.now();
     if (now < cooldownEndRef.current) return;
     // Spam check: max 5 messages per 10 seconds → 5s cooldown
@@ -1068,16 +1167,22 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   };
 
   // ─── Item actions ──────────────────────────────────────────────────────────
-  const pickupItem = async (item: RoomItem) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: currentProfile.id, gx: null, gy: null, wall_side: null }).eq("id", item.id); };
+  const isSpaceshipOwner = activeRoomType !== "spaceship" || activeRoomOwnerId === currentProfile.id;
+
+  const pickupItem = async (item: RoomItem) => {
+    if (!isSpaceshipOwner) return;
+    setCtxMenu(null);
+    await supabase.from("virtual_room_items").update({ owner_id: currentProfile.id, gx: null, gy: null, wall_side: null }).eq("id", item.id);
+  };
 
   const placeFloorItem = async (gx: number, gy: number, rotation: number) => {
-    if (!placingItem) return;
+    if (!placingItem || !isSpaceshipOwner) return;
     await supabase.from("virtual_room_items").update({ owner_id: null, gx, gy, rotation, wall_side: null }).eq("id", placingItem.item.id);
     setPlacingItem(null);
   };
 
   const placeWallItem = async (wall_side: string, wall_pos: number, wall_height: number) => {
-    if (!placingItem) return;
+    if (!placingItem || !isSpaceshipOwner) return;
     await supabase.from("virtual_room_items").update({ owner_id: null, gx: null, gy: null, wall_side, wall_pos, wall_height }).eq("id", placingItem.item.id);
     setPlacingItem(null);
   };
@@ -1354,7 +1459,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           {/* Isometric room */}
           <div
             className="flex-1 min-h-0 flex items-center justify-center overflow-hidden relative cursor-grab active:cursor-grabbing select-none"
-            style={{ background: theme.even }}
+            style={{ background: activeRoomType === "solarie" ? "#0f0a02" : theme.even }}
             onPointerDown={e => {
               if (e.button !== 0) return;
               dragStartRef.current = { cx: e.clientX, cy: e.clientY, px: panRef.current.x, py: panRef.current.y };
@@ -1394,6 +1499,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <feBlend in="mask" in2="SourceGraphic" mode="color"/>
                   </filter>
                 ))}
+                {/* Suntan overlay filters */}
+                {TAN_LEVELS.slice(1).map((t, i) => t && (
+                  <filter key={i + 1} id={`suntan-${i + 1}`} colorInterpolationFilters="sRGB">
+                    <feFlood floodColor={t.color} result="flood"/>
+                    <feComposite in="flood" in2="SourceAlpha" operator="in" result="mask"/>
+                    <feBlend in="mask" in2="SourceGraphic" mode="multiply"/>
+                  </filter>
+                ))}
                 {/* Nebula glow gradient */}
                 <radialGradient id="nebula1" cx="50%" cy="50%" r="50%">
                   <stop offset="0%" stopColor={theme.color} stopOpacity="0.12"/>
@@ -1403,20 +1516,64 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <stop offset="0%" stopColor="#818cf8" stopOpacity="0.08"/>
                   <stop offset="100%" stopColor="#818cf8" stopOpacity="0"/>
                 </radialGradient>
+                {/* Solarie warm glow gradient */}
+                <radialGradient id="solarie-glow" cx="50%" cy="30%" r="60%">
+                  <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.18"/>
+                  <stop offset="60%" stopColor="#f97316" stopOpacity="0.08"/>
+                  <stop offset="100%" stopColor="#f97316" stopOpacity="0"/>
+                </radialGradient>
               </defs>
 
               <rect x={-svgW * 2} y={-svgH * 2} width={svgW * 6} height={svgH * 6} fill={theme.even} />
 
               {/* ── Galaxy background ── */}
-              {/* Nebula blobs */}
-              <ellipse cx={svgW * 0.2} cy={-svgH * 0.3} rx={svgW * 1.2} ry={svgH * 0.9} fill="url(#nebula1)" />
-              <ellipse cx={svgW * 1.1} cy={svgH * 0.1} rx={svgW * 0.9} ry={svgH * 0.7} fill="url(#nebula2)" />
-              {/* Stars */}
-              {stars.map((s, i) => (
-                <circle key={i} cx={svgW / 2 + s.x} cy={svgH * 0.3 + s.y} r={s.r} fill="white">
-                  <animate attributeName="opacity" values={`${s.op};${Math.min(1, s.op + 0.4)};${s.op}`} dur={`${s.dur}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
-                </circle>
-              ))}
+              {activeRoomType !== "solarie" && (
+                <>
+                  {/* Nebula blobs */}
+                  <ellipse cx={svgW * 0.2} cy={-svgH * 0.3} rx={svgW * 1.2} ry={svgH * 0.9} fill="url(#nebula1)" />
+                  <ellipse cx={svgW * 1.1} cy={svgH * 0.1} rx={svgW * 0.9} ry={svgH * 0.7} fill="url(#nebula2)" />
+                  {/* Stars */}
+                  {stars.map((s, i) => (
+                    <circle key={i} cx={svgW / 2 + s.x} cy={svgH * 0.3 + s.y} r={s.r} fill="white">
+                      <animate attributeName="opacity" values={`${s.op};${Math.min(1, s.op + 0.4)};${s.op}`} dur={`${s.dur}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+                    </circle>
+                  ))}
+                </>
+              )}
+              {/* ── Solarie UV rays background ── */}
+              {activeRoomType === "solarie" && (() => {
+                const cx = svgW / 2; const cy = -svgH * 0.5;
+                return (
+                  <>
+                    {/* Warm ambient glow */}
+                    <rect x={-svgW * 2} y={-svgH * 2} width={svgW * 6} height={svgH * 6} fill="url(#solarie-glow)" />
+                    {/* UV rays — 12 beams radiating from top center */}
+                    {Array.from({ length: 12 }).map((_, i) => {
+                      const angle = (i / 12) * Math.PI * 2 - Math.PI / 2;
+                      const len = Math.max(svgW, svgH) * 2.5;
+                      const ex = cx + Math.cos(angle) * len;
+                      const ey = cy + Math.sin(angle) * len;
+                      const opacity = (i % 3 === 0 ? 0.06 : 0.03);
+                      const delay = (i * 0.18).toFixed(2);
+                      const dur = (2.4 + (i % 4) * 0.4).toFixed(1);
+                      return (
+                        <line key={i} x1={cx} y1={cy} x2={ex} y2={ey}
+                          stroke="#fbbf24" strokeWidth={i % 2 === 0 ? 18 : 9}
+                          strokeLinecap="round" opacity={opacity}>
+                          <animate attributeName="opacity" values={`${opacity};${opacity * 2.5};${opacity}`} dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite" />
+                        </line>
+                      );
+                    })}
+                    {/* Sun disc */}
+                    <circle cx={cx} cy={cy} r={28} fill="#fde68a" opacity={0.25}>
+                      <animate attributeName="opacity" values="0.2;0.35;0.2" dur="2s" repeatCount="indefinite" />
+                    </circle>
+                    <circle cx={cx} cy={cy} r={14} fill="#fef3c7" opacity={0.45}>
+                      <animate attributeName="opacity" values="0.4;0.6;0.4" dur="1.5s" repeatCount="indefinite" />
+                    </circle>
+                  </>
+                );
+              })()}
 
               {/* ── Back walls ── */}
               {(() => {
@@ -1654,6 +1811,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   const isMe = user.user_id === currentProfile.id;
                   const userBubbles = bubbles.get(user.user_id) ?? [];
                   const isTyping = !isMe && typingUsers.has(user.user_id);
+                  const userTanLevel = isMe ? tanLevel : (user.tan_level ?? 0);
                   return (
                     <g key={`user-${user.user_id}`}
                       onClick={() => handleTileClick(user.gx, user.gy)}
@@ -1661,7 +1819,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       <g style={{ transform: `translate(${x}px, ${y}px)`, transition: "transform 0.38s cubic-bezier(0.22,1,0.36,1)" }}>
                         <ellipse cx={0} cy={16} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
                         <g transform={`translate(0,${-AR_S}) scale(${AVG_SCALE})`}>
-                          <PersonAvatar color={user.color} glow={false} mood={user.mood} />
+                          <PersonAvatar color={user.color} glow={false} mood={user.mood} tanLevel={userTanLevel} />
                         </g>
                         <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{user.display_name}</text>
                         <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
@@ -1712,13 +1870,32 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </div>
             )}
 
+            {/* Solarie tan status HUD */}
+            {activeRoomType === "solarie" && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 bg-amber-950/90 backdrop-blur-xl rounded-full border border-amber-500/30 shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
+                <span className="text-[13px]">☀️</span>
+                <div className="flex gap-0.5">
+                  {TAN_LEVELS.slice(1).map((t, i) => (
+                    <div key={i + 1} className="w-3 h-3 rounded-full border border-amber-800/50 transition-all"
+                      style={{ backgroundColor: (i + 1) <= tanLevel ? t!.color : "rgba(255,255,255,0.08)" }} />
+                  ))}
+                </div>
+                <span className="text-[10px] font-semibold text-amber-300">
+                  {tanLevel > 0 ? TAN_LEVELS[tanLevel]!.label : "Solarier…"}
+                </span>
+                {tanLevel > 0 && tanExpiresAt && (
+                  <span className="text-[9px] text-amber-600">· {Math.round((new Date(tanExpiresAt).getTime() - Date.now()) / 3600000)}t tilbage</span>
+                )}
+              </div>
+            )}
+
             {/* Visit request incoming */}
             {visitRequest && (
               <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-3 px-5 py-4 bg-[#070f1e]/98 backdrop-blur-xl rounded-2xl border border-violet-500/30 shadow-[0_16px_48px_rgba(0,0,0,0.8)] w-72">
                 <div className="flex items-center gap-2"><Rocket className="w-4 h-4 text-violet-400" /><span className="text-[13px] font-bold text-white">Besøgsanmodning</span></div>
                 <p className="text-[12px] text-slate-300 text-center"><span className="text-violet-300 font-semibold">{visitRequest.from_name}</span> vil besøge dit rumskib</p>
                 <div className="flex gap-2 w-full">
-                  <button onClick={() => { channelRef.current?.send({ type: "broadcast", event: "spaceship_invite", payload: { to_id: visitRequest.from_id, accepted: true, spaceship_room_id: visitRequest.spaceship_room_id, spaceship_room_name: visitRequest.spaceship_room_name } }); setVisitRequest(null); }} className="flex-1 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[12px] font-semibold transition-colors">Accepter</button>
+                  <button onClick={() => { channelRef.current?.send({ type: "broadcast", event: "spaceship_invite", payload: { to_id: visitRequest.from_id, accepted: true, spaceship_room_id: visitRequest.spaceship_room_id, spaceship_room_name: visitRequest.spaceship_room_name, cols: mySpaceship?.cols, rows: mySpaceship?.rows, theme_key: mySpaceship?.theme_key, floor_pattern: mySpaceship?.floor_pattern } }); setVisitRequest(null); }} className="flex-1 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[12px] font-semibold transition-colors">Accepter</button>
                   <button onClick={() => { channelRef.current?.send({ type: "broadcast", event: "spaceship_invite", payload: { to_id: visitRequest.from_id, accepted: false } }); setVisitRequest(null); }} className="flex-1 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-slate-300 text-[12px] font-semibold transition-colors">Afvis</button>
                 </div>
               </div>
@@ -1801,7 +1978,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           <p className="text-[12px] text-slate-300 truncate">{isMe ? `${u.display_name} (dig)` : u.display_name}</p>
                           <p className={`text-[10px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</p>
                         </div>
-                        {!inSameRoom && !isMe && <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern); }} className="text-[10px] text-slate-500 hover:text-violet-400 flex-shrink-0">Gå til</button>}
+                        {!inSameRoom && !isMe && <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id); }} className="text-[10px] text-slate-500 hover:text-violet-400 flex-shrink-0">Gå til</button>}
                       </div>
                     );
                   })}
@@ -1977,6 +2154,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       <select value={form.room_type} onChange={e => set({ ...form, room_type: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none mb-2">
                         <option value="normal">Normal</option>
                         <option value="shop">Butik</option>
+                        <option value="solarie">☀️ Solarie</option>
                       </select>
                       <p className="text-[9px] text-slate-500 mb-1">Farvetema</p>
                       <div className="grid grid-cols-5 gap-1.5 mb-2">
@@ -2005,21 +2183,30 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 })()}
                 <div className="flex-1 overflow-y-auto py-1">
                   {rooms.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen rum fundet</p>}
-                  {rooms.map(r => {
-                    const occ = roomOccupancy.get(r.id) ?? 0;
-                    const rtheme = ROOM_THEMES.find(t => t.id === (r.theme_key ?? "blue"));
-                    return (
-                      <div key={r.id} className={`flex items-center gap-1 transition-colors ${r.id === activeRoomId ? "bg-violet-500/15" : "hover:bg-white/[0.03]"}`}>
-                        <button onClick={() => switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern)}
-                          className="flex-1 text-left px-3 py-2 text-[12px] flex items-center gap-2 min-w-0">
-                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: rtheme?.color ?? "#475569" }} />
-                          <span className={`flex-1 truncate ${r.id === activeRoomId ? "text-violet-300" : "text-slate-300"}`}>{r.name}</span>
-                          <span className={`text-[10px] flex-shrink-0 ${occ > 0 ? "text-emerald-500" : "text-slate-700"}`}>{occ}</span>
-                        </button>
-                        {isAdmin && <button onClick={() => { setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="p-1.5 mr-1 rounded text-slate-600 hover:text-violet-400 flex-shrink-0 transition-colors" title="Rediger rum"><Pencil className="w-3 h-3" /></button>}
-                      </div>
-                    );
-                  })}
+                  {(() => {
+                    let normalIdx = 0;
+                    return rooms.map(r => {
+                      const occ = roomOccupancy.get(r.id) ?? 0;
+                      const rtheme = ROOM_THEMES.find(t => t.id === (r.theme_key ?? "blue"));
+                      const isSpaceship = r.room_type === "spaceship";
+                      const roomNum = isSpaceship ? null : ++normalIdx;
+                      return (
+                        <div key={r.id} className={`flex items-center gap-1 transition-colors ${r.id === activeRoomId ? "bg-violet-500/15" : "hover:bg-white/[0.03]"}`}>
+                          <button onClick={() => switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id)}
+                            className="flex-1 text-left px-3 py-2 text-[12px] flex items-center gap-2 min-w-0">
+                            {isSpaceship
+                              ? <span className="text-violet-400 flex-shrink-0 text-[10px]">🚀</span>
+                              : <span className="text-[9px] font-bold text-slate-600 w-4 text-center flex-shrink-0 tabular-nums">{roomNum}</span>
+                            }
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: rtheme?.color ?? "#475569" }} />
+                            <span className={`flex-1 truncate ${r.id === activeRoomId ? "text-violet-300" : "text-slate-300"}`}>{r.name}</span>
+                            <span className={`text-[10px] flex-shrink-0 ${occ > 0 ? "text-emerald-500" : "text-slate-700"}`}>{occ}</span>
+                          </button>
+                          {isAdmin && <button onClick={() => { setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="p-1.5 mr-1 rounded text-slate-600 hover:text-violet-400 flex-shrink-0 transition-colors" title="Rediger rum"><Pencil className="w-3 h-3" /></button>}
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </>
             )}
@@ -2220,7 +2407,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                             <Rocket className="w-4 h-4 text-violet-400" />
                             <div><p className="text-[12px] font-bold text-violet-300">{mySpaceship.name}</p><p className="text-[10px] text-slate-500">Dit rumskib · {mySpaceship.cols}×{mySpaceship.rows} tiles</p></div>
                           </div>
-                          <button onClick={() => switchRoom(mySpaceship.id, mySpaceship.name, mySpaceship.cols, mySpaceship.rows, "spaceship", mySpaceship.theme_key, mySpaceship.floor_pattern)} className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[11px] text-white font-semibold transition-colors">Gå til mit rumskib</button>
+                          <button onClick={() => switchRoom(mySpaceship.id, mySpaceship.name, mySpaceship.cols, mySpaceship.rows, "spaceship", mySpaceship.theme_key, mySpaceship.floor_pattern, mySpaceship.owner_id)} className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[11px] text-white font-semibold transition-colors">Gå til mit rumskib</button>
                         </div>
                       ) : (
                         SPACESHIP_VARIANTS.map(v => (
@@ -2381,6 +2568,23 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <span className="text-[11px] text-slate-400">Mønter</span>
                     <span className="text-[12px] text-amber-400 font-bold">🪙 {coins}</span>
                   </div>
+                  {/* Tan status */}
+                  {tanLevel > 0 && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-amber-300 font-semibold">☀️ {TAN_LEVELS[tanLevel]!.label}</span>
+                        <div className="flex gap-0.5">
+                          {TAN_LEVELS.slice(1).map((t, i) => (
+                            <div key={i + 1} className="w-2.5 h-2.5 rounded-full border border-amber-800/50"
+                              style={{ backgroundColor: (i + 1) <= tanLevel ? t!.color : "rgba(255,255,255,0.06)" }} />
+                          ))}
+                        </div>
+                      </div>
+                      {tanExpiresAt && (
+                        <p className="text-[9px] text-amber-700">Forsvinder om {Math.round((new Date(tanExpiresAt).getTime() - Date.now()) / 3600000)}t</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -2514,7 +2718,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <span className="text-xs font-semibold text-slate-200 truncate">{ctxMenu.user.display_name}</span>
                 </div>
                 <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06]" onClick={() => openProfile(ctxMenu.user!.user_id)}>Se profil</button>
-                {spaceshipOf.has(ctxMenu.user.user_id) && (
+                {spaceshipOf.has(ctxMenu.user.user_id) && activeRoomId !== spaceshipOf.get(ctxMenu.user.user_id)?.id && (
                   <button className="w-full text-left px-3 py-2.5 text-sm text-violet-300 hover:bg-violet-500/10 flex items-center gap-2" onClick={() => {
                     const ship = spaceshipOf.get(ctxMenu.user!.user_id)!;
                     setCtxMenu(null);
@@ -2534,6 +2738,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <span className="truncate">{item.name}</span>
                       </div>
                     ))}
+                  </div>
+                )}
+                {activeRoomType === "spaceship" && activeRoomOwnerId === currentProfile.id && (
+                  <div className="border-t border-white/[0.06]">
+                    <button className="w-full text-left px-3 py-2.5 text-sm text-orange-400 hover:bg-orange-500/10 flex items-center gap-2" onClick={() => kickFromSpaceship(ctxMenu.user!)}><Rocket className="w-3.5 h-3.5" /> Smid ud af rumskib</button>
                   </div>
                 )}
                 {isAdmin && (
