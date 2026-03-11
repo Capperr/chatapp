@@ -754,20 +754,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     if (channelRef.current) broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
   }, [myColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load accumulated solarie minutes from localStorage on mount
-  useEffect(() => {
-    const stored = localStorage.getItem("solarie_minutes");
-    const storedExpiry = localStorage.getItem("solarie_expiry");
-    if (stored && storedExpiry && new Date(storedExpiry) > new Date()) {
-      solarieMinutesRef.current = parseFloat(stored) || 0;
-    } else {
-      solarieMinutesRef.current = 0;
-      localStorage.removeItem("solarie_minutes");
-      localStorage.removeItem("solarie_expiry");
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Load accumulated solarie minutes from DB on mount
+  // (solarieMinutesRef is initially 0; will be overwritten once profiles fetch returns)
 
-  // Solarie tanning timer — runs while in solarie room, accumulates across sessions
+  // Solarie tanning timer — runs while in solarie room, accumulates across sessions (DB-persisted)
   useEffect(() => {
     if (activeRoomType !== "solarie") {
       solarieEnteredRef.current = null;
@@ -775,35 +765,40 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         setTanLevel(0); tanLevelRef.current = 0;
         setTanExpiresAt(null);
         solarieMinutesRef.current = 0;
-        localStorage.removeItem("solarie_minutes");
-        localStorage.removeItem("solarie_expiry");
-        supabase.from("profiles").update({ tan_level: 0, tan_expires_at: null }).eq("id", currentProfile.id);
+        supabase.from("profiles").update({ tan_level: 0, tan_expires_at: null, solarie_minutes: 0 }).eq("id", currentProfile.id);
       }
       return;
     }
     const entered = Date.now();
     solarieEnteredRef.current = entered;
-    // 1-second display tick
-    const displayTick = setInterval(() => setSolarieTick(t => t + 1), 1000);
-    // 30-second save + level-up tick
-    const saveTick = setInterval(() => {
+    // 1-second display tick + immediate level-up detection
+    const displayTick = setInterval(() => {
+      setSolarieTick(t => t + 1);
       const sessionMin = (Date.now() - entered) / 60000;
       const totalMin = solarieMinutesRef.current + sessionMin;
       const newLvl = tanLevelFromMinutes(totalMin);
-      if (newLvl > tanLevelRef.current) setTanLevel(newLvl);
+      if (newLvl > tanLevelRef.current) {
+        tanLevelRef.current = newLvl;
+        setTanLevel(newLvl);
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        setTanExpiresAt(expiresAt);
+        supabase.from("profiles").update({ tan_level: newLvl, tan_expires_at: expiresAt, solarie_minutes: totalMin }).eq("id", currentProfile.id);
+      }
+    }, 1000);
+    // 30-second save to DB
+    const saveTick = setInterval(() => {
+      const sessionMin = (Date.now() - entered) / 60000;
+      const totalMin = solarieMinutesRef.current + sessionMin;
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       setTanExpiresAt(expiresAt);
-      localStorage.setItem("solarie_minutes", totalMin.toString());
-      localStorage.setItem("solarie_expiry", expiresAt);
-      supabase.from("profiles").update({ tan_level: Math.max(newLvl, tanLevelRef.current), tan_expires_at: expiresAt }).eq("id", currentProfile.id);
+      supabase.from("profiles").update({ tan_level: tanLevelRef.current, tan_expires_at: expiresAt, solarie_minutes: totalMin }).eq("id", currentProfile.id);
     }, 30_000);
     return () => {
-      // Save accumulated minutes when leaving the room
+      // Save accumulated minutes to DB when leaving
       const sessionMin = (Date.now() - entered) / 60000;
       solarieMinutesRef.current += sessionMin;
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      localStorage.setItem("solarie_minutes", solarieMinutesRef.current.toString());
-      localStorage.setItem("solarie_expiry", expiresAt);
+      supabase.from("profiles").update({ tan_level: tanLevelRef.current, tan_expires_at: expiresAt, solarie_minutes: solarieMinutesRef.current }).eq("id", currentProfile.id);
       clearInterval(displayTick);
       clearInterval(saveTick);
       solarieEnteredRef.current = null;
@@ -842,7 +837,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("virtual_user_wardrobe").select("id, clothing_id, equipped").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyWardrobe(data as UserWardrobeEntry[]);
     });
-    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, tan_level, tan_expires_at").eq("id", currentProfile.id).single().then(({ data }) => {
+    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, tan_level, tan_expires_at, solarie_minutes").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
         // Load tan — reset if expired
@@ -850,8 +845,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           tanLevelRef.current = data.tan_level ?? 0;
           setTanLevel(data.tan_level ?? 0);
           setTanExpiresAt(data.tan_expires_at);
+          solarieMinutesRef.current = data.solarie_minutes ?? 0;
         } else if (data.tan_level > 0) {
-          supabase.from("profiles").update({ tan_level: 0, tan_expires_at: null }).eq("id", currentProfile.id);
+          supabase.from("profiles").update({ tan_level: 0, tan_expires_at: null, solarie_minutes: 0 }).eq("id", currentProfile.id);
         }
         if (data.total_online_seconds != null) {
           totalSecondsRef.current = data.total_online_seconds;
@@ -1604,7 +1600,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             </div>
           </div>
 
-          {/* XP glow bar with next level indicator + inline stats (non-fullscreen) */}
+          {/* XP glow bar */}
           <div className="flex items-center">
             <div className="flex-1 h-0.5 bg-white/[0.03] relative overflow-hidden">
               <div
@@ -1612,16 +1608,22 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 6px rgba(139,92,246,0.8)" }}
               />
             </div>
-            {!fullscreen && (
-              <div className="flex items-center gap-1.5 px-2 flex-shrink-0">
-                <span className="text-[9px] font-black tabular-nums" style={{ color: "#a78bfa" }}>LV {level}</span>
-                <span className="w-px h-2.5 bg-white/[0.1]" />
-                <span className="text-sm leading-none">🪙</span>
-                <span className="text-[9px] font-bold tabular-nums" style={{ color: "#f59e0b" }}>{coins}</span>
-              </div>
-            )}
             <span className="text-[8px] font-bold px-1.5 flex-shrink-0" style={{ color: "rgba(139,92,246,0.5)" }}>LV {level + 1}</span>
           </div>
+          {/* LV + coins row (non-fullscreen only) */}
+          {!fullscreen && (
+            <div className="flex items-center justify-end gap-3 px-3 py-1 border-t border-white/[0.03]" style={{ background: "rgba(0,0,0,0.15)" }}>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[7px] font-black tracking-[0.18em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
+                <span className="text-[13px] font-black tabular-nums text-white leading-none">{level}</span>
+              </div>
+              <span className="w-px h-3 bg-white/[0.08]" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm leading-none">🪙</span>
+                <span className="text-[13px] font-black tabular-nums leading-none" style={{ color: "#f59e0b" }}>{coins}</span>
+              </div>
+            </div>
+          )}
           {/* Placing hint */}
           {(movingBotId || placingItem) && (
             <div className="px-4 py-1 bg-violet-600/10 border-t border-violet-500/15 text-center">
