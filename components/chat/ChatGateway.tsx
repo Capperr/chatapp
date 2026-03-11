@@ -42,8 +42,8 @@ function AlienHero({ color }: { color: string }) {
   const padH = 14; const padV = 9;
   const bw = Math.max(80, lines.reduce((m, l) => Math.max(m, l.length), 0) * 6.8 + padH * 2);
   const bh = lines.length * lineH + padV * 2;
-  // Bubble sits above the alien head (head top is near y=0 in local space)
-  const bx = 0; const by = -bh - 20;
+  // Bubble sits above the alien head (alien image top is at y=-36)
+  const bx = 0; const by = -bh - 55;
 
   return (
     <svg width="240" height="300" viewBox="-60 -180 120 220" style={{ overflow: "visible" }}>
@@ -60,7 +60,7 @@ function AlienHero({ color }: { color: string }) {
         <rect x={bx - bw / 2} y={by} width={bw} height={bh} rx={12} fill="white" />
         <rect x={bx - bw / 2 + 2} y={by + 2} width={bw} height={bh} rx={12} fill="rgba(0,0,0,0.15)" style={{ transform: `translate(0, 2px)` }} />
         <rect x={bx - bw / 2} y={by} width={bw} height={bh} rx={12} fill="white" stroke="rgba(139,92,246,0.2)" strokeWidth={1} />
-        <polygon points={`${bx - 8},${by + bh} ${bx + 8},${by + bh} ${bx},${by + bh + 10}`} fill="white" />
+        <polygon points={`${bx - 8},${by + bh} ${bx + 8},${by + bh} ${bx},${by + bh + 18}`} fill="white" />
         {lines.map((line, i) => (
           <text key={i} x={bx} y={by + padV + 12 + i * lineH} textAnchor="middle" fontSize={11} fontFamily="system-ui,sans-serif" fontWeight="700" fill="#111827">{line}</text>
         ))}
@@ -109,7 +109,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
       setLoginLoading(false);
       return;
     }
-    window.location.reload();
+    if (onAuthSuccess) { onAuthSuccess(); } else { window.location.reload(); }
   };
 
   const handleRegister = async (e: React.FormEvent) => {

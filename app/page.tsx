@@ -15,8 +15,9 @@ export default function Home() {
 
   const loadUserData = useCallback(async (): Promise<boolean> => {
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return false;
+    const user = session.user;
     const [{ data: p }, { data: rooms }] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", user.id).single(),
       supabase.from("chat_rooms").select("id, name, cols, rows, is_default").order("created_at"),
