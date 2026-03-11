@@ -1612,7 +1612,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           </div>
           {/* LV + coins row (non-fullscreen only) */}
           {!fullscreen && (
-            <div className="flex items-center justify-end gap-3 px-3 py-1 border-t border-white/[0.03]" style={{ background: "rgba(0,0,0,0.15)" }}>
+            <div className="flex items-center justify-end gap-3 px-3 py-1">
               <div className="flex items-center gap-1.5">
                 <span className="text-[7px] font-black tracking-[0.18em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
                 <span className="text-[13px] font-black tabular-nums text-white leading-none">{level}</span>
