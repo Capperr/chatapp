@@ -1389,7 +1389,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   };
 
   // ─── Render ────────────────────────────────────────────────────────────────
-  const extensionOpen = rightPanel !== "hidden" && !fullscreen;
+  const extensionOpen = rightPanel !== "hidden";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setCtxMenu(null)}>
@@ -1405,7 +1405,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         })}
       </div>
       <div className="flex items-stretch max-sm:w-screen max-sm:h-[100dvh]" onClick={e => e.stopPropagation()}>
-      <div className={`relative flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] bg-gradient-to-b from-[#060d1a] to-[#04090f] max-sm:!rounded-none max-sm:border-0 ${extensionOpen ? "sm:rounded-l-2xl sm:rounded-r-none" : "sm:rounded-2xl"}`} style={windowStyle}>
+      <div className={`relative flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] bg-gradient-to-b from-[#060d1a] to-[#04090f] max-sm:!rounded-none max-sm:border-0 ${extensionOpen && !fullscreen ? "sm:rounded-l-2xl sm:rounded-r-none" : "sm:rounded-2xl"}`} style={windowStyle}>
 
         {/* Header */}
         <div className="flex-shrink-0 flex flex-col" style={{ background: "linear-gradient(180deg,#07101e 0%,#040c18 100%)", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
@@ -1413,7 +1413,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             @keyframes xpShimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(200%)} }
             @keyframes coinPulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
           `}</style>
-          <div className="flex items-center px-3 sm:px-4 gap-2" style={{ height: "52px" }}>
+          <div className="flex items-center px-3 sm:px-4 gap-3" style={{ height: "48px" }}>
             {/* Left: room + online */}
             <div className="flex items-center gap-2 min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
@@ -1427,37 +1427,47 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </div>
             </div>
 
-            {/* Center: stats */}
-            <div className="flex items-center gap-1.5">
-              {/* Level badge */}
+            {/* Center: unified stats pill */}
+            <div
+              className="flex items-stretch rounded-2xl overflow-hidden border border-white/[0.08]"
+              style={{ background: "linear-gradient(135deg,rgba(12,18,32,0.98),rgba(8,12,24,0.98))", boxShadow: "0 2px 16px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.04)" }}
+            >
+              {/* Level — clickable */}
               <button
                 onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")}
-                className={`relative flex items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "profile" ? "bg-violet-500/25 border border-violet-400/40 shadow-[0_0_16px_rgba(139,92,246,0.4)]" : "bg-gradient-to-br from-violet-600/15 to-indigo-700/10 border border-violet-500/20 hover:border-violet-400/35 hover:shadow-[0_0_12px_rgba(139,92,246,0.2)]"}`}
+                className={`flex items-center gap-1.5 px-4 py-0 transition-colors h-full ${rightPanel === "profile" ? "bg-violet-500/15" : "hover:bg-white/[0.04]"}`}
               >
-                <span className="text-[7px] font-black text-violet-500 tracking-[0.18em] uppercase leading-none">LV</span>
-                <span className="text-[16px] font-black text-white tabular-nums leading-none">{level}</span>
+                <span className="text-[7px] font-black tracking-[0.2em] uppercase" style={{ color: "#7c3aed" }}>LV</span>
+                <span className="text-[17px] font-black text-white tabular-nums leading-none">{level}</span>
               </button>
 
-              {/* XP bar */}
-              <div className="hidden sm:flex flex-col gap-1 px-2.5 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.06]" style={{ minWidth: "96px" }}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">XP</span>
-                  <span className="text-[9px] font-bold tabular-nums"><span className="text-violet-400">{xp % 100}</span><span className="text-slate-700">/100</span></span>
-                </div>
-                <div className="h-1.5 rounded-full bg-white/[0.05] overflow-hidden relative">
-                  <div
-                    className="h-full rounded-full transition-all duration-700 relative overflow-hidden"
-                    style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#6d28d9,#8b5cf6,#a78bfa)" }}
-                  >
-                    <div className="absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/30 to-transparent" style={{ animation: "xpShimmer 1.8s ease-in-out infinite" }} />
+              {/* Divider */}
+              <div className="w-px bg-white/[0.07] my-2" />
+
+              {/* XP */}
+              <div className="hidden sm:flex items-center gap-2.5 px-4 py-0">
+                <div className="flex flex-col gap-[3px]">
+                  <div className="h-[5px] w-[72px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                    <div
+                      className="h-full rounded-full transition-[width] duration-700 relative overflow-hidden"
+                      style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6)" }}
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent" style={{ animation: "xpShimmer 2s ease-in-out infinite" }} />
+                    </div>
                   </div>
+                  <span className="text-[8px] tabular-nums" style={{ color: "rgba(255,255,255,0.25)" }}>
+                    <span style={{ color: "#a78bfa" }}>{xp % 100}</span>/100 xp
+                  </span>
                 </div>
               </div>
 
+              {/* Divider */}
+              <div className="w-px bg-white/[0.07] my-2" />
+
               {/* Coins */}
-              <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border transition-all" style={{ background: "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(234,179,8,0.06))", borderColor: "rgba(245,158,11,0.22)", boxShadow: "0 2px 12px rgba(245,158,11,0.08)" }}>
-                <span className="text-sm leading-none" style={{ animation: "coinPulse 3s ease-in-out infinite" }}>🪙</span>
-                <span className="text-[13px] font-black text-amber-400 tabular-nums leading-none">{coins}</span>
+              <div className="flex items-center gap-1.5 px-4 py-0">
+                <span className="text-sm leading-none">🪙</span>
+                <span className="text-[14px] font-black tabular-nums leading-none" style={{ color: "#fbbf24" }}>{coins}</span>
               </div>
             </div>
 
@@ -1988,8 +1998,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
         </div>
         {/* Extension panel - appears to the right of window */}
-        {extensionOpen && !fullscreen && (
-          <div className="absolute right-0 top-0 translate-x-full h-full w-72 flex flex-col bg-[#030912]/98 border border-l-0 border-white/[0.1] rounded-r-2xl overflow-hidden shadow-[16px_0_40px_rgba(0,0,0,0.6)] max-sm:hidden">
+        {extensionOpen && (
+          <div className={`${fullscreen ? "absolute right-4 top-14 bottom-4 z-30 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl" : "absolute right-0 top-0 translate-x-full h-full rounded-r-2xl border border-l-0 border-white/[0.1] shadow-[16px_0_40px_rgba(0,0,0,0.6)] max-sm:hidden"} w-72 flex flex-col bg-[#030912]/98 overflow-hidden`}>
             {/* Online users */}
             {rightPanel === "online" && (
               <>
