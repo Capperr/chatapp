@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck, Settings, Rocket } from "lucide-react";
+import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck, Settings, Rocket, Layers } from "lucide-react";
 import type { Profile } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -472,6 +472,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const xpRef = useRef(0);
   const [wardrobeActiveSlot, setWardrobeActiveSlot] = useState<string | null>(null);
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
+  const [wardrobeOpen, setWardrobeOpen] = useState(false);
   const [reconnectKey, setReconnectKey] = useState(0);
   const [disconnected, setDisconnected] = useState(false);
   const [disconnectMsg, setDisconnectMsg] = useState("");
@@ -1407,41 +1408,73 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       <div className={`relative flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] bg-gradient-to-b from-[#060d1a] to-[#04090f] max-sm:!rounded-none max-sm:border-0 ${extensionOpen ? "sm:rounded-l-2xl sm:rounded-r-none" : "sm:rounded-2xl"}`} style={windowStyle}>
 
         {/* Header */}
-        <div className="flex-shrink-0 flex flex-col" style={{ background: "linear-gradient(180deg,#070f1e 0%,#040c19 100%)" }}>
-          <div className="flex items-center justify-between px-3 sm:px-4 h-12 gap-2">
-            {/* Left: room */}
-            <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse" />
-              <span className="text-[13px] font-extrabold text-white tracking-tight truncate max-w-[90px] sm:max-w-[160px]">#{activeRoomName}</span>
-              {activeRoomType === "shop" && <span className="hidden sm:flex text-[9px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Shop</span>}
+        <div className="flex-shrink-0 flex flex-col" style={{ background: "linear-gradient(180deg,#07101e 0%,#040c18 100%)", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <style>{`
+            @keyframes xpShimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(200%)} }
+            @keyframes coinPulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
+          `}</style>
+          <div className="flex items-center px-3 sm:px-4 gap-2" style={{ height: "52px" }}>
+            {/* Left: room + online */}
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse" />
+                <span className="text-[13px] font-extrabold text-white tracking-tight truncate max-w-[80px] sm:max-w-[150px]">#{activeRoomName}</span>
+                {activeRoomType === "shop" && <span className="hidden sm:flex text-[8px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Shop</span>}
+              </div>
+              <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/[0.08] border border-emerald-500/[0.12]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                <span className="text-[10px] font-semibold text-emerald-400 tabular-nums">{totalUsers}</span>
+              </div>
             </div>
+
             {/* Center: stats */}
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-              <button onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")} className={`flex items-center gap-1 px-2 py-1 rounded-lg border transition-all text-[11px] font-bold ${rightPanel === "profile" ? "text-violet-200 bg-violet-500/20 border-violet-400/30 shadow-[0_0_10px_rgba(139,92,246,0.3)]" : "text-violet-300 bg-violet-500/10 border-violet-500/15 hover:bg-violet-500/20"}`}>
-                <span className="text-[9px] text-violet-400 font-black">LV</span>
-                <span className="tabular-nums">{level}</span>
+            <div className="flex items-center gap-1.5">
+              {/* Level badge */}
+              <button
+                onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")}
+                className={`relative flex items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "profile" ? "bg-violet-500/25 border border-violet-400/40 shadow-[0_0_16px_rgba(139,92,246,0.4)]" : "bg-gradient-to-br from-violet-600/15 to-indigo-700/10 border border-violet-500/20 hover:border-violet-400/35 hover:shadow-[0_0_12px_rgba(139,92,246,0.2)]"}`}
+              >
+                <span className="text-[7px] font-black text-violet-500 tracking-[0.18em] uppercase leading-none">LV</span>
+                <span className="text-[16px] font-black text-white tabular-nums leading-none">{level}</span>
               </button>
-              <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.05] text-[11px] text-slate-400 font-semibold tabular-nums">
-                {xp} <span className="text-[9px] text-slate-600 ml-0.5">XP</span>
+
+              {/* XP bar */}
+              <div className="hidden sm:flex flex-col gap-1 px-2.5 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.06]" style={{ minWidth: "96px" }}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">XP</span>
+                  <span className="text-[9px] font-bold tabular-nums"><span className="text-violet-400">{xp % 100}</span><span className="text-slate-700">/100</span></span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/[0.05] overflow-hidden relative">
+                  <div
+                    className="h-full rounded-full transition-all duration-700 relative overflow-hidden"
+                    style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#6d28d9,#8b5cf6,#a78bfa)" }}
+                  >
+                    <div className="absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/30 to-transparent" style={{ animation: "xpShimmer 1.8s ease-in-out infinite" }} />
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/15 text-[11px] font-bold text-amber-400 tabular-nums">
-                🪙 {coins}
-              </div>
-              <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/15 text-[11px] font-semibold text-emerald-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                {totalUsers}
+
+              {/* Coins */}
+              <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border transition-all" style={{ background: "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(234,179,8,0.06))", borderColor: "rgba(245,158,11,0.22)", boxShadow: "0 2px 12px rgba(245,158,11,0.08)" }}>
+                <span className="text-sm leading-none" style={{ animation: "coinPulse 3s ease-in-out infinite" }}>🪙</span>
+                <span className="text-[13px] font-black text-amber-400 tabular-nums leading-none">{coins}</span>
               </div>
             </div>
+
             {/* Right: actions */}
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
-              <button onClick={handleLogout} className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-3.5 h-3.5" /></button>
-              <button onClick={onClose} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
+            <div className="flex items-center gap-0.5 flex-shrink-0 flex-1 justify-end">
+              <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
+              <button onClick={handleLogout} className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-3.5 h-3.5" /></button>
+              <button onClick={onClose} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
             </div>
           </div>
-          {/* XP progress bar */}
-          <div className="h-px bg-white/[0.04]">
-            <div className="h-full bg-gradient-to-r from-violet-700 to-violet-400 transition-[width] duration-700" style={{ width: `${xp % 100}%` }} />
+
+          {/* XP glow bar */}
+          <div className="h-0.5 bg-white/[0.03]">
+            <div
+              className="h-full transition-[width] duration-700 rounded-full"
+              style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 8px rgba(139,92,246,0.7),0 0 16px rgba(139,92,246,0.3)" }}
+            />
           </div>
           {/* Placing hint */}
           {(movingBotId || placingItem) && (
@@ -1936,7 +1969,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <Users className="w-[18px] h-[18px]" />
                 {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
               </button>
-              <button onClick={() => setRightPanel(p => p === "wardrobe" ? "hidden" : "wardrobe")} className={`p-2 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
+              <button onClick={() => { setWardrobeOpen(true); setWardrobeActiveSlot(null); setWardrobePreviewId(null); }} className={`p-2 rounded-xl transition-all ${wardrobeOpen ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
                 <Shirt className="w-[18px] h-[18px]" />
               </button>
               <button onClick={() => setRightPanel(p => p === "inventory" ? "hidden" : "inventory")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rygsæk">
@@ -1986,101 +2019,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </>
             )}
 
-            {/* Wardrobe */}
-            {rightPanel === "wardrobe" && (() => {
-              const activeSlotItems = wardrobeActiveSlot
-                ? myWardrobe
-                    .map(w => ({ w, item: clothingCatalog.find(c => c.id === w.clothing_id) }))
-                    .filter(({ item }) => item?.slot === wardrobeActiveSlot)
-                : [];
-              const previewItem = wardrobePreviewId ? clothingCatalog.find(c => c.id === wardrobePreviewId) : null;
-              return (
-                <>
-                  {/* Header */}
-                  <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0 bg-[#030912]/60">
-                    <span className="text-[11px] font-bold text-slate-300 tracking-wide">Garderobe</span>
-                    <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
-                  </div>
-
-                  {/* Avatar preview */}
-                  <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-2 border-b border-white/[0.06] bg-gradient-to-b from-violet-500/[0.04] to-transparent">
-                    <svg width="110" height="115" viewBox="-28 -60 56 100">
-                      <ellipse cx="0" cy="38" rx="13" ry="3.5" fill="rgba(0,0,0,0.4)" />
-                      <g transform="scale(1.8)">
-                        <PersonAvatar color={myColor} glow={false} mood="happy" />
-                        {Object.keys(previewOutfit).length > 0 && (
-                          <ClothingOverlay outfit={previewOutfit} catalog={clothingCatalog} />
-                        )}
-                      </g>
-                    </svg>
-                    <span className="text-[10px] h-4 text-violet-400 font-medium mt-1">
-                      {previewItem ? previewItem.name : "\u00a0"}
-                    </span>
-                  </div>
-
-                  {/* Slot grid */}
-                  <div className="flex-shrink-0 p-2 grid grid-cols-4 gap-1 border-b border-white/[0.06]">
-                    {CLOTHING_SLOTS.map(slot => {
-                      const isEquipped = slot.id in myOutfit;
-                      const isActive = wardrobeActiveSlot === slot.id;
-                      return (
-                        <button
-                          key={slot.id}
-                          onClick={() => { setWardrobeActiveSlot(s => s === slot.id ? null : slot.id); setWardrobePreviewId(null); }}
-                          className={`flex flex-col items-center gap-0.5 p-1.5 rounded-xl transition-all relative ${
-                            isActive
-                              ? "bg-violet-500/20 border border-violet-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)]"
-                              : "hover:bg-white/[0.05] border border-transparent"
-                          }`}
-                        >
-                          <span className="text-base leading-none">{slot.emoji}</span>
-                          <span className={`text-[8px] font-medium leading-none ${isActive ? "text-violet-300" : "text-slate-500"}`}>{slot.label}</span>
-                          {isEquipped && <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-violet-500" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Items for selected slot */}
-                  <div className="flex-1 overflow-y-auto py-1">
-                    {!wardrobeActiveSlot && (
-                      <p className="text-[11px] text-slate-600 text-center mt-8 px-3">
-                        {myWardrobe.length === 0 ? "Ingen tøj endnu. Find en bot med 🎁." : "Klik på en slot for at se dit tøj"}
-                      </p>
-                    )}
-                    {wardrobeActiveSlot && activeSlotItems.length === 0 && (
-                      <p className="text-[11px] text-slate-600 text-center mt-8 px-3">Intet tøj i denne slot endnu.</p>
-                    )}
-                    {wardrobeActiveSlot && activeSlotItems.map(({ w, item }) => item && (
-                      <div
-                        key={w.id}
-                        className={`mx-2 my-1 p-2.5 rounded-xl border transition-all ${
-                          wardrobePreviewId === item.id
-                            ? "border-violet-500/40 bg-violet-500/10"
-                            : w.equipped
-                            ? "border-violet-500/25 bg-violet-500/[0.06]"
-                            : "border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]"
-                        }`}
-                        onMouseEnter={() => setWardrobePreviewId(item.id)}
-                        onMouseLeave={() => setWardrobePreviewId(null)}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-4 h-4 rounded-full flex-shrink-0 ring-1 ring-white/10" style={{ backgroundColor: item.color }} />
-                          <span className={`text-[12px] font-medium flex-1 truncate ${w.equipped ? "text-violet-300" : "text-slate-300"}`}>{item.name}</span>
-                          {w.equipped && <span className="text-[9px] text-violet-400 bg-violet-500/15 px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0">På</span>}
-                        </div>
-                        <div className="flex gap-1.5">
-                          {w.equipped
-                            ? <button onClick={() => unequip(w.clothing_id)} className="flex-1 text-[10px] py-1 rounded-lg bg-slate-700/50 text-slate-400 hover:bg-rose-500/15 hover:text-rose-400 font-medium transition-colors">Tag af</button>
-                            : <button onClick={() => equip(w.clothing_id)} className="flex-1 text-[10px] py-1 rounded-lg bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 font-medium transition-colors">Tag på</button>
-                          }
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              );
-            })()}
+            {/* Wardrobe moved to modal overlay */}
 
             {/* Shop */}
             {rightPanel === "shop" && (
@@ -2821,6 +2760,187 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </>
             );
           })()}
+        </div>
+      )}
+
+      {/* ── Wardrobe Modal ── */}
+      {wardrobeOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md" onClick={() => { setWardrobeOpen(false); setWardrobePreviewId(null); }}>
+          <div
+            className="relative flex bg-[#080f1c] border border-white/[0.1] rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.9),0_0_80px_rgba(99,102,241,0.08)] w-full max-w-[840px]"
+            style={{ height: "min(580px, 92vh)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* ── Left panel: avatar + layer list ── */}
+            <div className="w-52 flex-shrink-0 flex flex-col border-r border-white/[0.06]" style={{ background: "linear-gradient(180deg,#070e1c 0%,#050b16 100%)" }}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                <div className="flex items-center gap-2">
+                  <Shirt className="w-4 h-4 text-violet-400" />
+                  <span className="text-[13px] font-bold text-slate-200">Garderobe</span>
+                </div>
+                <span className="text-[9px] font-bold text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full">
+                  {Object.keys(myOutfit).length}/{CLOTHING_SLOTS.length} valgt
+                </span>
+              </div>
+
+              {/* Avatar preview */}
+              <div className="flex-shrink-0 flex flex-col items-center py-5 relative border-b border-white/[0.06]" style={{ background: "radial-gradient(ellipse at 50% 60%,rgba(139,92,246,0.08) 0%,transparent 70%)" }}>
+                <svg width="140" height="150" viewBox="-34 -60 68 110" style={{ overflow: "visible" }}>
+                  <defs>
+                    {AVATAR_TINT_COLORS.map(c => (
+                      <filter key={c} id={`wd-tint-${c.slice(1)}`} colorInterpolationFilters="sRGB">
+                        <feFlood floodColor={c} result="flood"/>
+                        <feComposite in="flood" in2="SourceAlpha" operator="in" result="mask"/>
+                        <feBlend in="mask" in2="SourceGraphic" mode="color"/>
+                      </filter>
+                    ))}
+                  </defs>
+                  <ellipse cx="0" cy="42" rx="18" ry="5" fill="rgba(0,0,0,0.35)" />
+                  <g transform="scale(1.9)">
+                    <PersonAvatar color={myColor} glow={false} mood="happy" />
+                    {Object.keys(previewOutfit).length > 0 && <ClothingOverlay outfit={previewOutfit} catalog={clothingCatalog} />}
+                  </g>
+                </svg>
+                <span className="text-[10px] text-violet-400 font-medium mt-1 h-4">
+                  {wardrobePreviewId ? (clothingCatalog.find(c => c.id === wardrobePreviewId)?.name ?? "\u00a0") : "\u00a0"}
+                </span>
+              </div>
+
+              {/* Layer list */}
+              <div className="flex-1 overflow-y-auto p-3">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Layers className="w-3 h-3 text-slate-600" />
+                  <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">Lag</span>
+                </div>
+                <div className="space-y-1">
+                  {CLOTHING_SLOTS.map((slot, i) => {
+                    const equippedId = myOutfit[slot.id];
+                    const equippedItem = equippedId ? clothingCatalog.find(c => c.id === equippedId) : null;
+                    const isActive = wardrobeActiveSlot === slot.id;
+                    return (
+                      <button
+                        key={slot.id}
+                        onClick={() => { setWardrobeActiveSlot(s => s === slot.id ? null : slot.id); setWardrobePreviewId(null); }}
+                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl transition-all text-left ${isActive ? "bg-violet-500/15 border border-violet-500/30 shadow-[0_0_8px_rgba(139,92,246,0.1)]" : "hover:bg-white/[0.04] border border-transparent"}`}
+                      >
+                        <span className="text-[15px] leading-none flex-shrink-0">{slot.emoji}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-[11px] font-semibold truncate ${equippedItem ? (isActive ? "text-violet-300" : "text-slate-300") : "text-slate-600"}`}>
+                            {equippedItem ? equippedItem.name : slot.label}
+                          </p>
+                          <p className="text-[8px] text-slate-700 uppercase tracking-wider">Lag {i + 1}</p>
+                        </div>
+                        {equippedItem && (
+                          <div className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-white/10" style={{ backgroundColor: equippedItem.color }} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Right panel: tabs + item grid ── */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Category tabs */}
+              <div className="flex-shrink-0 flex border-b border-white/[0.06] bg-[#060c18]/60 overflow-x-auto">
+                {CLOTHING_SLOTS.map(slot => {
+                  const isActive = wardrobeActiveSlot === slot.id;
+                  const hasOwned = myWardrobe.some(w => clothingCatalog.find(c => c.id === w.clothing_id)?.slot === slot.id);
+                  return (
+                    <button
+                      key={slot.id}
+                      onClick={() => { setWardrobeActiveSlot(s => s === slot.id ? null : slot.id); setWardrobePreviewId(null); }}
+                      className={`relative flex flex-col items-center gap-1 px-4 py-3 transition-all flex-shrink-0 ${isActive ? "text-violet-300" : "text-slate-600 hover:text-slate-400"}`}
+                    >
+                      <span className="text-lg leading-none">{slot.emoji}</span>
+                      <span className="text-[8px] font-bold uppercase tracking-widest leading-none">{slot.label}</span>
+                      {isActive && <div className="absolute bottom-0 left-3 right-3 h-0.5 rounded-t-full bg-gradient-to-r from-violet-500 to-indigo-400" />}
+                      {hasOwned && !isActive && <div className="absolute top-2 right-2.5 w-1.5 h-1.5 rounded-full bg-violet-500 opacity-70" />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Items */}
+              <div className="flex-1 overflow-y-auto p-4">
+                {!wardrobeActiveSlot && (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
+                    <Shirt className="w-10 h-10 text-slate-700" />
+                    <p className="text-[12px] text-slate-500 max-w-[200px]">
+                      {myWardrobe.length === 0 ? "Ingen tøj endnu. Find en bot med 🎁 for at få tøj." : "Vælg en kategori ovenfor for at se dit tøj"}
+                    </p>
+                  </div>
+                )}
+                {wardrobeActiveSlot && (() => {
+                  const slotItems = myWardrobe
+                    .map(w => ({ w, item: clothingCatalog.find(c => c.id === w.clothing_id) }))
+                    .filter(({ item }) => item?.slot === wardrobeActiveSlot);
+                  if (slotItems.length === 0) {
+                    return (
+                      <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
+                        <p className="text-[12px] text-slate-600">Intet tøj i denne kategori endnu.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="grid grid-cols-3 gap-3">
+                      {slotItems.map(({ w, item }) => item && (
+                        <button
+                          key={w.id}
+                          className={`relative flex flex-col items-center gap-2.5 p-4 rounded-2xl border transition-all cursor-pointer text-left ${
+                            w.equipped
+                              ? "border-teal-500/50 bg-teal-500/[0.08] shadow-[0_0_20px_rgba(20,184,166,0.12)]"
+                              : wardrobePreviewId === item.id
+                              ? "border-violet-500/40 bg-violet-500/[0.08]"
+                              : "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.14]"
+                          }`}
+                          onMouseEnter={() => setWardrobePreviewId(item.id)}
+                          onMouseLeave={() => setWardrobePreviewId(null)}
+                          onClick={() => w.equipped ? unequip(w.clothing_id) : equip(w.clothing_id)}
+                        >
+                          {w.equipped && (
+                            <div className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center shadow-[0_0_8px_rgba(20,184,166,0.5)]">
+                              <svg viewBox="0 0 12 12" className="w-3 h-3"><path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                            </div>
+                          )}
+                          {/* Color swatch */}
+                          <div
+                            className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                            style={{ background: `linear-gradient(135deg,${item.color}33,${item.color}11)`, border: `1.5px solid ${item.color}55` }}
+                          >
+                            <div className="w-9 h-9 rounded-xl" style={{ backgroundColor: item.color, boxShadow: `0 4px 16px ${item.color}70` }} />
+                          </div>
+                          <span className={`text-[11px] font-semibold text-center leading-tight w-full ${w.equipped ? "text-teal-300" : "text-slate-400"}`}>
+                            {item.name}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Bottom action bar */}
+              <div className="flex-shrink-0 flex items-center gap-3 px-4 py-3 border-t border-white/[0.06]" style={{ background: "linear-gradient(180deg,transparent,rgba(5,10,20,0.8))" }}>
+                <button
+                  onClick={() => { setWardrobeOpen(false); setWardrobePreviewId(null); setWardrobeActiveSlot(null); }}
+                  className="flex-1 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.09] text-slate-400 hover:text-slate-200 text-[13px] font-semibold transition-all border border-white/[0.06]"
+                >
+                  Annuller
+                </button>
+                <button
+                  onClick={() => { setWardrobeOpen(false); setWardrobePreviewId(null); setWardrobeActiveSlot(null); }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-[13px] font-bold transition-all shadow-[0_4px_20px_rgba(20,184,166,0.3)] hover:shadow-[0_6px_24px_rgba(20,184,166,0.45)]"
+                  style={{ background: "linear-gradient(135deg,#0d9488,#059669)" }}
+                >
+                  <Shirt className="w-4 h-4" />
+                  Gem garderobe
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
