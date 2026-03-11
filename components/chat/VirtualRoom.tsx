@@ -1437,7 +1437,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   const windowStyle = fullscreen
     ? { width: "100vw", height: "100vh", borderRadius: "0" }
-    : { width: "min(96vw, 1040px)", height: "min(88vh, 660px)" };
+    : { width: "min(98vw, 1440px)", height: "min(94vh, 860px)" };
 
   const renderTypingBubble = (ax: number, ay: number, yOffset: number = 0) => {
     const frames = ["●  ○  ○", "○  ●  ○", "○  ○  ●"];
@@ -2184,7 +2184,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         </div>
         {/* Extension panel - appears to the right of window */}
         {extensionOpen && (
-          <div className={`${fullscreen ? "absolute right-4 top-14 bottom-4 z-30 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl" : "absolute right-0 top-0 translate-x-full h-full rounded-r-2xl border border-l-0 border-white/[0.1] shadow-[16px_0_40px_rgba(0,0,0,0.6)] max-sm:hidden"} w-72 flex flex-col bg-[#030912]/98 overflow-hidden`}>
+          <div className={`${fullscreen ? "absolute right-4 top-14 bottom-4 z-30 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl" : "absolute right-0 top-0 translate-x-full h-full rounded-r-2xl border border-l-0 border-white/[0.1] shadow-[16px_0_40px_rgba(0,0,0,0.6)] max-sm:hidden"} ${rightPanel === "wardrobe" ? "w-[420px]" : "w-72"} flex flex-col bg-[#030912]/98 overflow-hidden`}>
             {/* Online users */}
             {rightPanel === "online" && (
               <>
@@ -2857,36 +2857,57 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {/* Wardrobe panel */}
             {rightPanel === "wardrobe" && (
               <>
+                {/* Header */}
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <Shirt className="w-4 h-4 text-violet-400" />
-                    <span className="text-[11px] font-bold text-slate-300 tracking-wide">Garderobe</span>
-                    <span className="text-[9px] font-bold text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full">{Object.keys(myOutfit).length}/{CLOTHING_SLOTS.length}</span>
+                    <span className="text-[12px] font-bold text-slate-200 tracking-wide">Garderobe</span>
+                    <span className="text-[9px] font-bold text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full">{Object.keys(myOutfit).length}/{CLOTHING_SLOTS.length} udstyret</span>
                   </div>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
-                {/* Avatar preview */}
-                <div className="flex-shrink-0 flex items-center gap-3 px-4 py-3 border-b border-white/[0.06]" style={{ background: "radial-gradient(ellipse at 50% 80%,rgba(139,92,246,0.07) 0%,transparent 70%)" }}>
-                  <svg width="64" height="72" viewBox="-34 -60 68 110" style={{ overflow: "visible", flexShrink: 0 }}>
-                    <ellipse cx="0" cy="42" rx="18" ry="5" fill="rgba(0,0,0,0.35)" />
-                    <g transform="scale(1.7)">
-                      <PersonAvatar color={myColor} glow={false} mood="happy" />
-                      {Object.keys(previewOutfit).length > 0 && <ClothingOverlay outfit={previewOutfit} catalog={clothingCatalog} />}
-                    </g>
-                  </svg>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-semibold text-slate-300">{currentProfile.display_name}</p>
-                    <p className="text-[10px] text-violet-400 h-4 truncate">{wardrobePreviewId ? (clothingCatalog.find(c => c.id === wardrobePreviewId)?.name ?? "\u00a0") : "\u00a0"}</p>
-                    <div className="flex flex-wrap gap-1.5 mt-1.5">
-                      {CLOTHING_SLOTS.map(slot => {
-                        const eq = myOutfit[slot.id];
-                        return eq ? (
-                          <span key={slot.id} className="text-[11px]" title={clothingCatalog.find(c => c.id === eq)?.name}>{slot.emoji}</span>
-                        ) : null;
-                      })}
-                    </div>
+
+                {/* Two-column body: avatar left, slot list right */}
+                <div className="flex flex-shrink-0 border-b border-white/[0.06]" style={{ background: "radial-gradient(ellipse at 30% 80%,rgba(139,92,246,0.07) 0%,transparent 70%)" }}>
+                  {/* Avatar */}
+                  <div className="flex flex-col items-center justify-center px-4 py-4 gap-1" style={{ width: 140 }}>
+                    <svg width="110" height="130" viewBox="-34 -60 68 110" style={{ overflow: "visible" }}>
+                      <ellipse cx="0" cy="42" rx="18" ry="5" fill="rgba(0,0,0,0.35)" />
+                      <g transform="scale(2.0)">
+                        <PersonAvatar color={myColor} glow={false} mood="happy" />
+                        {Object.keys(previewOutfit).length > 0 && <ClothingOverlay outfit={previewOutfit} catalog={clothingCatalog} />}
+                      </g>
+                    </svg>
+                    <p className="text-[11px] font-semibold text-slate-300 truncate max-w-[120px] text-center">{currentProfile.display_name}</p>
+                    <p className="text-[10px] text-violet-400 h-4 truncate max-w-[120px] text-center">{wardrobePreviewId ? (clothingCatalog.find(c => c.id === wardrobePreviewId)?.name ?? "\u00a0") : "\u00a0"}</p>
+                  </div>
+                  {/* Slot list */}
+                  <div className="flex-1 flex flex-col justify-center py-3 pr-4 gap-0.5 overflow-y-auto" style={{ maxHeight: 210 }}>
+                    {CLOTHING_SLOTS.map(slot => {
+                      const equippedId = myOutfit[slot.id];
+                      const equippedItem = equippedId ? clothingCatalog.find(c => c.id === equippedId) : null;
+                      const isActive = wardrobeActiveSlot === slot.id;
+                      return (
+                        <button
+                          key={slot.id}
+                          onClick={() => { setWardrobeActiveSlot(s => s === slot.id ? null : slot.id); setWardrobePreviewId(null); }}
+                          className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-left ${isActive ? "bg-violet-500/15 border border-violet-500/30" : "hover:bg-white/[0.04] border border-transparent"}`}
+                        >
+                          <span className="text-[13px] leading-none flex-shrink-0">{slot.emoji}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-[11px] font-semibold truncate ${equippedItem ? (isActive ? "text-violet-300" : "text-slate-300") : "text-slate-600"}`}>
+                              {equippedItem ? equippedItem.name : <span className="italic">{slot.label}</span>}
+                            </p>
+                          </div>
+                          {equippedItem && (
+                            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: equippedItem.color }} />
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
+
                 {/* Category tabs */}
                 <div className="flex-shrink-0 flex border-b border-white/[0.06] bg-[#060c18]/60 overflow-x-auto">
                   {CLOTHING_SLOTS.map(slot => {
@@ -2896,23 +2917,24 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       <button
                         key={slot.id}
                         onClick={() => { setWardrobeActiveSlot(s => s === slot.id ? null : slot.id); setWardrobePreviewId(null); }}
-                        className={`relative flex flex-col items-center gap-0.5 px-3 py-2.5 transition-all flex-shrink-0 ${isActive ? "text-violet-300" : "text-slate-600 hover:text-slate-400"}`}
+                        className={`relative flex flex-col items-center gap-1 px-4 py-3 transition-all flex-shrink-0 ${isActive ? "text-violet-300" : "text-slate-600 hover:text-slate-400"}`}
                       >
-                        <span className="text-base leading-none">{slot.emoji}</span>
-                        <span className="text-[7px] font-bold uppercase tracking-widest leading-none">{slot.label}</span>
-                        {isActive && <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-t-full bg-gradient-to-r from-violet-500 to-indigo-400" />}
-                        {hasOwned && !isActive && <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-violet-500 opacity-70" />}
+                        <span className="text-lg leading-none">{slot.emoji}</span>
+                        <span className="text-[8px] font-bold uppercase tracking-widest leading-none">{slot.label}</span>
+                        {isActive && <div className="absolute bottom-0 left-3 right-3 h-0.5 rounded-t-full bg-gradient-to-r from-violet-500 to-indigo-400" />}
+                        {hasOwned && !isActive && <div className="absolute top-2 right-2.5 w-1.5 h-1.5 rounded-full bg-violet-500 opacity-70" />}
                       </button>
                     );
                   })}
                 </div>
-                {/* Items */}
-                <div className="flex-1 overflow-y-auto p-3">
+
+                {/* Item grid */}
+                <div className="flex-1 overflow-y-auto p-4">
                   {!wardrobeActiveSlot && (
                     <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
-                      <Shirt className="w-8 h-8 text-slate-700" />
-                      <p className="text-[11px] text-slate-500 max-w-[180px]">
-                        {myWardrobe.length === 0 ? "Ingen tøj endnu. Find en bot med 🎁." : "Vælg en kategori ovenfor"}
+                      <Shirt className="w-10 h-10 text-slate-700" />
+                      <p className="text-[12px] text-slate-500 max-w-[220px]">
+                        {myWardrobe.length === 0 ? "Ingen tøj endnu. Find en bot med 🎁 for at få tøj." : "Vælg en kategori ovenfor for at se dit tøj"}
                       </p>
                     </div>
                   )}
@@ -2922,19 +2944,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       .filter(({ item }) => item?.slot === wardrobeActiveSlot);
                     if (slotItems.length === 0) {
                       return (
-                        <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
-                          <p className="text-[11px] text-slate-600">Intet tøj i denne kategori.</p>
+                        <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
+                          <p className="text-[12px] text-slate-600">Intet tøj i denne kategori endnu.</p>
                         </div>
                       );
                     }
                     return (
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-3 gap-3">
                         {slotItems.map(({ w, item }) => item && (
                           <button
                             key={w.id}
-                            className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all cursor-pointer ${
+                            className={`relative flex flex-col items-center gap-2.5 p-4 rounded-2xl border transition-all cursor-pointer ${
                               w.equipped
-                                ? "border-teal-500/50 bg-teal-500/[0.08]"
+                                ? "border-teal-500/50 bg-teal-500/[0.08] shadow-[0_0_20px_rgba(20,184,166,0.12)]"
                                 : wardrobePreviewId === item.id
                                 ? "border-violet-500/40 bg-violet-500/[0.08]"
                                 : "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.14]"
@@ -2944,14 +2966,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                             onClick={() => w.equipped ? unequip(w.clothing_id) : equip(w.clothing_id)}
                           >
                             {w.equipped && (
-                              <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-teal-500 flex items-center justify-center">
-                                <svg viewBox="0 0 12 12" className="w-2.5 h-2.5"><path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                              <div className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center shadow-[0_0_8px_rgba(20,184,166,0.5)]">
+                                <svg viewBox="0 0 12 12" className="w-3 h-3"><path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
                               </div>
                             )}
-                            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg,${item.color}33,${item.color}11)`, border: `1.5px solid ${item.color}55` }}>
-                              <div className="w-6 h-6 rounded-lg" style={{ backgroundColor: item.color }} />
+                            <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: `linear-gradient(135deg,${item.color}33,${item.color}11)`, border: `1.5px solid ${item.color}55` }}>
+                              <div className="w-9 h-9 rounded-xl" style={{ backgroundColor: item.color, boxShadow: `0 4px 16px ${item.color}70` }} />
                             </div>
-                            <span className={`text-[10px] font-semibold text-center leading-tight w-full truncate ${w.equipped ? "text-teal-300" : "text-slate-400"}`}>{item.name}</span>
+                            <span className={`text-[11px] font-semibold text-center leading-tight w-full ${w.equipped ? "text-teal-300" : "text-slate-400"}`}>{item.name}</span>
                           </button>
                         ))}
                       </div>
