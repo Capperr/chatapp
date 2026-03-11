@@ -446,6 +446,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const tanLevelRef = useRef(0);
   const [tanExpiresAt, setTanExpiresAt] = useState<string | null>(null);
   const solarieEnteredRef = useRef<number | null>(null);
+  const solarieMinutesRef = useRef(0); // accumulated minutes from previous sessions
+  const [solarieTick, setSolarieTick] = useState(0); // increments each second in solarie
   const lastMsgTimesRef = useRef<number[]>([]);
   const cooldownEndRef = useRef(0);
   const [cooldownSec, setCooldownSec] = useState(0);
@@ -704,32 +706,60 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     if (channelRef.current) broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
   }, [tanLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Solarie tanning timer — runs while in solarie room
+  // Load accumulated solarie minutes from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem("solarie_minutes");
+    const storedExpiry = localStorage.getItem("solarie_expiry");
+    if (stored && storedExpiry && new Date(storedExpiry) > new Date()) {
+      solarieMinutesRef.current = parseFloat(stored) || 0;
+    } else {
+      solarieMinutesRef.current = 0;
+      localStorage.removeItem("solarie_minutes");
+      localStorage.removeItem("solarie_expiry");
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Solarie tanning timer — runs while in solarie room, accumulates across sessions
   useEffect(() => {
     if (activeRoomType !== "solarie") {
       solarieEnteredRef.current = null;
-      // Check if existing tan has expired
       if (tanExpiresAt && new Date(tanExpiresAt) < new Date()) {
         setTanLevel(0); tanLevelRef.current = 0;
         setTanExpiresAt(null);
+        solarieMinutesRef.current = 0;
+        localStorage.removeItem("solarie_minutes");
+        localStorage.removeItem("solarie_expiry");
         supabase.from("profiles").update({ tan_level: 0, tan_expires_at: null }).eq("id", currentProfile.id);
       }
       return;
     }
     const entered = Date.now();
     solarieEnteredRef.current = entered;
-    const tick = setInterval(() => {
-      const elapsedMin = (Date.now() - entered) / 60000;
-      const newLvl = tanLevelFromMinutes(elapsedMin);
-      if (newLvl > tanLevelRef.current) {
-        setTanLevel(newLvl);
-        // tanLevelRef updated by the effect above
-      }
+    // 1-second display tick
+    const displayTick = setInterval(() => setSolarieTick(t => t + 1), 1000);
+    // 30-second save + level-up tick
+    const saveTick = setInterval(() => {
+      const sessionMin = (Date.now() - entered) / 60000;
+      const totalMin = solarieMinutesRef.current + sessionMin;
+      const newLvl = tanLevelFromMinutes(totalMin);
+      if (newLvl > tanLevelRef.current) setTanLevel(newLvl);
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       setTanExpiresAt(expiresAt);
+      localStorage.setItem("solarie_minutes", totalMin.toString());
+      localStorage.setItem("solarie_expiry", expiresAt);
       supabase.from("profiles").update({ tan_level: Math.max(newLvl, tanLevelRef.current), tan_expires_at: expiresAt }).eq("id", currentProfile.id);
     }, 30_000);
-    return () => { clearInterval(tick); solarieEnteredRef.current = null; };
+    return () => {
+      // Save accumulated minutes when leaving the room
+      const sessionMin = (Date.now() - entered) / 60000;
+      solarieMinutesRef.current += sessionMin;
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      localStorage.setItem("solarie_minutes", solarieMinutesRef.current.toString());
+      localStorage.setItem("solarie_expiry", expiresAt);
+      clearInterval(displayTick);
+      clearInterval(saveTick);
+      solarieEnteredRef.current = null;
+    };
   }, [activeRoomType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const changeMood = (mood: string) => {
@@ -1488,16 +1518,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
                 {/* XP */}
                 <div className="hidden sm:flex items-center px-3.5">
-                  <div className="flex flex-col gap-[3px]">
-                    <div className="h-[4px] w-[64px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
-                      <div className="h-full rounded-full transition-[width] duration-700 relative overflow-hidden" style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6)" }}>
-                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent" style={{ animation: "xpShimmer 2s ease-in-out infinite" }} />
-                      </div>
-                    </div>
-                    <span className="text-[8px] tabular-nums" style={{ color: "rgba(255,255,255,0.2)" }}>
-                      <span style={{ color: "#8b5cf6" }}>{xp % 100}</span>/100 xp
-                    </span>
-                  </div>
+                  <span className="text-[11px] font-semibold tabular-nums" style={{ color: "rgba(255,255,255,0.22)" }}>
+                    <span style={{ color: "#8b5cf6" }}>{xp % 100}</span>/100 xp
+                  </span>
                 </div>
 
                 <div className="w-px bg-white/[0.06] my-2.5" />
@@ -1518,12 +1541,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             </div>
           </div>
 
-          {/* XP glow bar */}
-          <div className="h-0.5 bg-white/[0.03]">
-            <div
-              className="h-full transition-[width] duration-700 rounded-full"
-              style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 8px rgba(139,92,246,0.7),0 0 16px rgba(139,92,246,0.3)" }}
-            />
+          {/* XP glow bar with next level indicator */}
+          <div className="flex items-center">
+            <div className="flex-1 h-0.5 bg-white/[0.03] relative overflow-hidden">
+              <div
+                className="h-full transition-[width] duration-700"
+                style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 6px rgba(139,92,246,0.8)" }}
+              />
+            </div>
+            <span className="text-[8px] font-bold px-1.5 flex-shrink-0" style={{ color: "rgba(139,92,246,0.5)" }}>LV {level + 1}</span>
           </div>
           {/* Placing hint */}
           {(movingBotId || placingItem) && (
@@ -1569,6 +1595,18 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             onPointerLeave={() => { if (!isDraggingRef.current) dragStartRef.current = null; }}
             onWheel={e => { setZoom(z => parseFloat(Math.max(0.4, Math.min(2.5, z + (e.deltaY < 0 ? 0.1 : -0.1))).toFixed(2))); }}
           >
+            {/* Room starfield */}
+            {activeRoomType !== "solarie" && (
+              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                {Array.from({ length: 35 }).map((_, i) => {
+                  const x = (i * 137.508 + 7) % 100;
+                  const y = (i * 91.3 + 19) % 100;
+                  const sz = i % 9 === 0 ? 1.5 : 1;
+                  return <div key={i} style={{ position: "absolute", left: `${x}%`, top: `${y}%`, width: sz, height: sz, borderRadius: "50%", background: i % 6 === 0 ? "rgba(167,139,250,0.7)" : "white", opacity: 0.12 + (i % 5) * 0.06, animation: `drift${(i % 3) + 1} ${20 + i % 14}s ${-(i * 1.9) % 18}s ease-in-out infinite, pulse ${2 + i % 3}s ${(i * 0.5) % 4}s ease-in-out infinite alternate` }} />;
+                })}
+              </div>
+            )}
+
             <svg ref={svgRef} viewBox={roomViewBox}
               preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
               {/* Background fills entire visible area regardless of viewBox */}
@@ -1953,23 +1991,45 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             )}
 
             {/* Solarie tan status HUD */}
-            {activeRoomType === "solarie" && (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 bg-amber-950/90 backdrop-blur-xl rounded-full border border-amber-500/30 shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
-                <span className="text-[13px]">☀️</span>
-                <div className="flex gap-0.5">
-                  {TAN_LEVELS.slice(1).map((t, i) => (
-                    <div key={i + 1} className="w-3 h-3 rounded-full border border-amber-800/50 transition-all"
-                      style={{ backgroundColor: (i + 1) <= tanLevel ? t!.color : "rgba(255,255,255,0.08)" }} />
-                  ))}
+            {activeRoomType === "solarie" && (() => {
+              const sessionMin = solarieEnteredRef.current ? (Date.now() - solarieEnteredRef.current) / 60000 : 0;
+              const totalMin = solarieMinutesRef.current + sessionMin;
+              const THRESHOLDS = [0, 15, 30, 60, 120];
+              const nextThreshold = tanLevel < 4 ? THRESHOLDS[tanLevel + 1] : null;
+              const minsLeft = nextThreshold !== null ? Math.max(0, nextThreshold - totalMin) : 0;
+              const secsLeft = Math.ceil(minsLeft * 60);
+              const displayMin = Math.floor(secsLeft / 60);
+              const displaySec = secsLeft % 60;
+              return (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 px-4 py-2 bg-amber-950/90 backdrop-blur-xl rounded-2xl border border-amber-500/25 shadow-[0_4px_24px_rgba(0,0,0,0.7),0_0_20px_rgba(245,158,11,0.08)]">
+                  <span className="text-base">☀️</span>
+                  {/* Level dots */}
+                  <div className="flex gap-1">
+                    {TAN_LEVELS.slice(1).map((t, i) => (
+                      <div key={i + 1} className="w-2.5 h-2.5 rounded-full border border-amber-800/40 transition-all duration-500"
+                        style={{ backgroundColor: (i + 1) <= tanLevel ? t!.color : "rgba(255,255,255,0.06)", boxShadow: (i + 1) <= tanLevel ? `0 0 6px ${t!.color}80` : "none" }} />
+                    ))}
+                  </div>
+                  {/* Current level label */}
+                  <span className="text-[11px] font-bold text-amber-300">
+                    {tanLevel > 0 ? TAN_LEVELS[tanLevel]!.label : "Solarier…"}
+                  </span>
+                  {/* Countdown to next level */}
+                  {tanLevel < 4 && (
+                    <>
+                      <div className="w-px h-3 bg-amber-800/40" />
+                      <div className="flex flex-col items-center">
+                        <span className="text-[8px] text-amber-700 uppercase tracking-wider leading-none mb-0.5">næste niveau</span>
+                        <span className="text-[11px] font-black text-amber-400 tabular-nums leading-none">
+                          {displayMin > 0 ? `${displayMin}m ` : ""}{displaySec}s
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {tanLevel === 4 && <span className="text-[10px] text-amber-500 font-semibold">Max brunet 🔥</span>}
                 </div>
-                <span className="text-[10px] font-semibold text-amber-300">
-                  {tanLevel > 0 ? TAN_LEVELS[tanLevel]!.label : "Solarier…"}
-                </span>
-                {tanLevel > 0 && tanExpiresAt && (
-                  <span className="text-[9px] text-amber-600">· {Math.round((new Date(tanExpiresAt).getTime() - Date.now()) / 3600000)}t tilbage</span>
-                )}
-              </div>
-            )}
+              );
+            })()}
 
             {/* Visit request incoming */}
             {visitRequest && (
