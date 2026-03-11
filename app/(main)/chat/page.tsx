@@ -16,12 +16,24 @@ export default async function ChatPage({ searchParams }: PageProps) {
   } = await supabase.auth.getUser();
   if (!user) return <ChatGateway />;
 
-  const { data: profileData } = await supabase
+  let { data: profileData } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
     .single();
-  if (!profileData) redirect("/login");
+
+  // Auto-create profile if missing (prevents redirect loop for users without a profile row)
+  if (!profileData) {
+    const emailPrefix = user.email?.split("@")[0]?.replace(/[^a-z0-9]/gi, "_").toLowerCase() ?? "user";
+    const uniqueUsername = `${emailPrefix}_${Date.now().toString(36)}`;
+    const { data: created } = await supabase
+      .from("profiles")
+      .insert({ id: user.id, username: uniqueUsername, display_name: emailPrefix, avatar_color: "#8b5cf6" })
+      .select("*")
+      .single();
+    profileData = created;
+  }
+  if (!profileData) redirect("/");
 
   const profile = profileData as Profile;
 

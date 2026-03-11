@@ -16,7 +16,7 @@ export default async function DashboardPage() {
     .select("*")
     .eq("id", user.id)
     .single();
-  if (!profileData) redirect("/login");
+  if (!profileData) redirect("/");
 
   const profile = profileData as Profile;
 

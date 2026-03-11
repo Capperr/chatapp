@@ -2307,30 +2307,28 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     </div>
                   );
                 })()}
-                {/* Room list with hover preview */}
-                <div className="flex-1 overflow-y-auto relative">
-                  {/* Hover preview tooltip — positioned to the left */}
-                  {hoveredRoomId && (() => {
-                    const hRoom = rooms.find(rm => rm.id === hoveredRoomId);
-                    if (!hRoom) return null;
-                    const ht = ROOM_THEMES.find(t => t.id === (hRoom.theme_key ?? "blue")) ?? ROOM_THEMES[0];
-                    return (
-                      <div className="absolute top-2 right-full mr-2 w-52 bg-[#060e1c]/98 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.95)] z-50 pointer-events-none overflow-hidden">
-                        <div className="w-full h-28" style={{ background: ht.even }}>
-                          <MiniRoomPreview cols={hRoom.cols} rows={hRoom.rows} themeKey={hRoom.theme_key ?? "blue"} />
-                        </div>
-                        <div className="px-3 py-2.5">
-                          <p className="text-[12px] font-bold text-slate-200 truncate">{hRoom.name}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[9px] text-slate-500">{hRoom.cols}×{hRoom.rows} felter</span>
-                            <span className="w-px h-2.5 bg-white/[0.1]" />
-                            <span className={`text-[9px] font-bold ${(roomOccupancy.get(hRoom.id) ?? 0) > 0 ? "text-emerald-400" : "text-slate-600"}`}>{roomOccupancy.get(hRoom.id) ?? 0} online</span>
-                          </div>
-                        </div>
+                {/* Hover preview — inside panel, above room list */}
+                {hoveredRoomId && (() => {
+                  const hRoom = rooms.find(rm => rm.id === hoveredRoomId);
+                  if (!hRoom) return null;
+                  const ht = ROOM_THEMES.find(t => t.id === (hRoom.theme_key ?? "blue")) ?? ROOM_THEMES[0];
+                  return (
+                    <div className="mx-3 mt-2 mb-1 rounded-xl overflow-hidden border border-white/[0.08] flex-shrink-0 pointer-events-none">
+                      <div className="w-full h-24" style={{ background: ht.even }}>
+                        <MiniRoomPreview cols={hRoom.cols} rows={hRoom.rows} themeKey={hRoom.theme_key ?? "blue"} />
                       </div>
-                    );
-                  })()}
-
+                      <div className="px-3 py-2 flex items-center justify-between" style={{ background: "rgba(4,9,18,0.9)" }}>
+                        <div>
+                          <p className="text-[12px] font-bold text-slate-200 truncate">{hRoom.name}</p>
+                          <p className="text-[9px] text-slate-500 mt-0.5">{hRoom.cols}×{hRoom.rows} felter</p>
+                        </div>
+                        <span className={`text-[10px] font-bold flex-shrink-0 ${(roomOccupancy.get(hRoom.id) ?? 0) > 0 ? "text-emerald-400" : "text-slate-600"}`}>{roomOccupancy.get(hRoom.id) ?? 0} online</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {/* Room list */}
+                <div className="flex-1 overflow-y-auto relative">
                   {/* Normal rooms */}
                   {(() => {
                     const normalRooms = rooms.filter(r => r.room_type !== "spaceship");
