@@ -419,7 +419,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const lastCoinAwardRef = useRef<Date | null>(null);
   const lastTypingBroadcastRef = useRef(0);
 
-  const myColor = currentProfile.avatar_color ?? "#8b5cf6";
+  const [myColor, setMyColor] = useState(currentProfile.avatar_color ?? "#8b5cf6");
   const isAdmin = currentProfile.role === "admin";
 
   const [activeRoomId, setActiveRoomId] = useState(roomId);
@@ -482,7 +482,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [wardrobeActiveSlot, setWardrobeActiveSlot] = useState<string | null>(null);
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
   const [wardrobeOpen, setWardrobeOpen] = useState(false);
-  const [statsOpen, setStatsOpen] = useState(false);
   const [reconnectKey, setReconnectKey] = useState(0);
   const [disconnected, setDisconnected] = useState(false);
   const [disconnectMsg, setDisconnectMsg] = useState("");
@@ -713,6 +712,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     tanLevelRef.current = tanLevel;
     if (channelRef.current) broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
   }, [tanLevel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-broadcast when avatar color changes
+  useEffect(() => {
+    if (channelRef.current) broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
+  }, [myColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load accumulated solarie minutes from localStorage on mount
   useEffect(() => {
@@ -1544,14 +1548,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
               {/* Action buttons */}
               <div className="flex items-center gap-0.5">
-                <button onClick={() => { setFullscreen(f => !f); setStatsOpen(false); }} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
+                <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
                 <button onClick={handleLogout} className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-3.5 h-3.5" /></button>
                 <button onClick={onClose} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
               </div>
             </div>
           </div>
 
-          {/* XP glow bar with next level indicator */}
+          {/* XP glow bar with next level indicator + inline stats (non-fullscreen) */}
           <div className="flex items-center">
             <div className="flex-1 h-0.5 bg-white/[0.03] relative overflow-hidden">
               <div
@@ -1559,6 +1563,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 6px rgba(139,92,246,0.8)" }}
               />
             </div>
+            {!fullscreen && (
+              <div className="flex items-center gap-1.5 px-2 flex-shrink-0">
+                <span className="text-[9px] font-black tabular-nums" style={{ color: "#a78bfa" }}>LV {level}</span>
+                <span className="w-px h-2.5 bg-white/[0.1]" />
+                <span className="text-sm leading-none">🪙</span>
+                <span className="text-[9px] font-bold tabular-nums" style={{ color: "#f59e0b" }}>{coins}</span>
+              </div>
+            )}
             <span className="text-[8px] font-bold px-1.5 flex-shrink-0" style={{ color: "rgba(139,92,246,0.5)" }}>LV {level + 1}</span>
           </div>
           {/* Placing hint */}
@@ -1950,6 +1962,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <ellipse cx={0} cy={16} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
                         <g transform={`translate(0,${-AR_S}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={user.color} glow={false} mood={user.mood} tanLevel={userTanLevel} />
+                          {(() => { const outfit = isMe ? myOutfit : (user.outfit ?? {}); return Object.keys(outfit).length > 0 ? <ClothingOverlay outfit={outfit} catalog={clothingCatalog} /> : null; })()}
                         </g>
                         <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{user.display_name}</text>
                         <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
@@ -2076,72 +2089,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <span className="text-[10px] text-slate-600 tabular-nums flex-shrink-0">{draft.length}/40</span>
                 <kbd className="text-[9px] text-slate-500 flex-shrink-0 bg-white/[0.07] border border-white/[0.08] px-1.5 py-0.5 rounded-md font-mono">↵</kbd>
                 <button onClick={() => { draftRef.current = ""; setDraft(""); }} className="text-slate-600 hover:text-rose-400 flex-shrink-0 transition-colors ml-0.5"><X className="w-3.5 h-3.5" /></button>
-              </div>
-            )}
-
-            {/* Bottom stats panel (non-fullscreen only) */}
-            {!fullscreen && (
-              <div className="absolute bottom-4 left-4 z-20 flex flex-col items-start" style={{ pointerEvents: "auto" }}>
-                {/* Expandable stats panel */}
-                {statsOpen && (
-                  <div
-                    className="mb-2 rounded-2xl overflow-hidden border border-white/[0.1] shadow-[0_16px_48px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.06)]"
-                    style={{ background: "linear-gradient(160deg,rgba(8,12,24,0.99),rgba(4,8,16,0.99))", backdropFilter: "blur(20px)", minWidth: 180 }}
-                  >
-                    {/* XP section */}
-                    <div className="px-4 pt-3.5 pb-1">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[7px] font-black tracking-[0.18em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
-                          <span className="text-[22px] font-black text-white tabular-nums leading-none">{level}</span>
-                        </div>
-                        <button
-                          onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")}
-                          className="text-[9px] font-bold text-violet-400/60 hover:text-violet-400 transition-colors"
-                        >
-                          Profil →
-                        </button>
-                      </div>
-                      {/* XP bar */}
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1 bg-white/[0.05] rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-[width] duration-700"
-                            style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 6px rgba(139,92,246,0.9)" }}
-                          />
-                        </div>
-                        <span className="text-[9px] font-bold tabular-nums flex-shrink-0" style={{ color: "rgba(139,92,246,0.6)" }}>{xp % 100}/100</span>
-                      </div>
-                      <div className="mt-0.5 flex items-center justify-between">
-                        <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.15)" }}>næste niveau</span>
-                        <span className="text-[8px] font-bold" style={{ color: "rgba(139,92,246,0.4)" }}>LV {level + 1}</span>
-                      </div>
-                    </div>
-                    {/* Divider */}
-                    <div className="h-px bg-white/[0.05] mx-4" />
-                    {/* Coins */}
-                    <div className="px-4 py-3 flex items-center gap-2.5">
-                      <span className="text-base leading-none">🪙</span>
-                      <span className="text-[18px] font-black tabular-nums leading-none" style={{ color: "#f59e0b" }}>{coins}</span>
-                      <span className="text-[9px] font-semibold ml-auto" style={{ color: "rgba(251,191,36,0.35)" }}>mønter</span>
-                    </div>
-                  </div>
-                )}
-                {/* Toggle button */}
-                <button
-                  onClick={() => setStatsOpen(o => !o)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/[0.1] backdrop-blur-xl transition-all hover:border-violet-500/30 hover:shadow-[0_0_16px_rgba(139,92,246,0.2)] active:scale-95"
-                  style={{ background: "linear-gradient(135deg,rgba(8,12,24,0.96),rgba(4,8,16,0.96))", boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}
-                >
-                  <span className="text-[7px] font-black tracking-[0.18em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
-                  <span className="text-[14px] font-black text-white tabular-nums leading-none">{level}</span>
-                  <div className="w-px h-3 bg-white/[0.08]" />
-                  <span className="text-sm leading-none">🪙</span>
-                  <span className="text-[12px] font-bold tabular-nums" style={{ color: "#f59e0b" }}>{coins}</span>
-                  <svg viewBox="0 0 10 10" className={`w-2.5 h-2.5 ml-0.5 transition-transform duration-200 ${statsOpen ? "rotate-180" : ""}`} fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5">
-                    <path d="M2 3.5 L5 6.5 L8 3.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
               </div>
             )}
 
@@ -2500,13 +2447,29 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         <button type="submit" className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[11px] text-white font-semibold transition-colors">Gem navn</button>
                       </form>
                       <div className="border-t border-white/[0.06] pt-3">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Alien farve</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Alien farve</p>
+                          <span className="text-[9px] font-bold text-amber-400">25 🪙</span>
+                        </div>
                         <div className="flex flex-wrap gap-2">
-                          {["#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#3b82f6","#84cc16","#f97316","#14b8a6"].map(c => (
-                            <button key={c} onClick={async () => { await supabase.from("profiles").update({ avatar_color: c }).eq("id", currentProfile.id); currentProfile.avatar_color = c; }} className="w-7 h-7 rounded-full transition-all border-2 flex-shrink-0" style={{ backgroundColor: c, borderColor: myColor === c ? "white" : "transparent", boxShadow: myColor === c ? `0 0 8px ${c}` : "none" }} />
+                          {AVATAR_TINT_COLORS.map(c => (
+                            <button
+                              key={c}
+                              disabled={myColor === c}
+                              onClick={async () => {
+                                if (myColor === c) return;
+                                if (coinsRef.current < 25) return;
+                                const nc = coinsRef.current - 25;
+                                coinsRef.current = nc; setCoins(nc);
+                                setMyColor(c); currentProfile.avatar_color = c;
+                                await supabase.from("profiles").update({ avatar_color: c, coins: nc }).eq("id", currentProfile.id);
+                              }}
+                              className="w-7 h-7 rounded-full transition-all border-2 flex-shrink-0 disabled:cursor-default"
+                              style={{ backgroundColor: c, borderColor: myColor === c ? "white" : "transparent", boxShadow: myColor === c ? `0 0 8px ${c}` : "none", opacity: coins < 25 && myColor !== c ? 0.4 : 1 }}
+                            />
                           ))}
                         </div>
-                        <p className="text-[9px] text-slate-600 mt-1.5">Farveændring er gratis — afspejles ved næste login</p>
+                        <p className="text-[9px] text-slate-600 mt-1.5">{coins < 25 ? "Ikke nok mønter" : "Klik en farve for at skifte · 25 🪙"}</p>
                       </div>
                     </>
                   )}
