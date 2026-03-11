@@ -109,7 +109,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
       setLoginLoading(false);
       return;
     }
-    if (onAuthSuccess) { onAuthSuccess(); } else { window.location.href = "/"; }
+    window.location.reload();
   };
 
   const handleRegister = async (e: React.FormEvent) => {
