@@ -73,6 +73,37 @@ function getShopTheme(): RoomTheme {
   return { color: "#fbbf24", even: "#0f0802", odd: "#0c0601", highlight: "#241402", wallA: "#180e02", wallB: "#0c0901" };
 }
 
+// ─── Mini room isometric preview ───────────────────────────────────────────────
+function MiniRoomPreview({ cols, rows, themeKey }: { cols: number; rows: number; themeKey: string }) {
+  const theme = ROOM_THEMES.find(t => t.id === themeKey) ?? ROOM_THEMES[0];
+  const TW = 14, TH = 7;
+  const c = Math.min(cols, 10), r = Math.min(rows, 8);
+  const vx = -(r - 1) * TW / 2 - 1;
+  const vy = -1;
+  const vw = (c + r - 1) * TW / 2 + TW + 2;
+  const vh = (c + r - 1) * TH / 2 + TH + 2;
+  return (
+    <svg viewBox={`${vx} ${vy} ${vw} ${vh}`} style={{ width: "100%", height: "100%" }}>
+      {Array.from({ length: r }, (_, gy) =>
+        Array.from({ length: c }, (_, gx) => {
+          const x = (gx - gy) * TW / 2;
+          const y = (gx + gy) * TH / 2;
+          const isEven = (gx + gy) % 2 === 0;
+          return (
+            <polygon
+              key={`${gx}-${gy}`}
+              points={`${x + TW / 2},${y} ${x + TW},${y + TH / 2} ${x + TW / 2},${y + TH} ${x},${y + TH / 2}`}
+              fill={isEven ? theme.even : theme.odd}
+              stroke={theme.highlight}
+              strokeWidth="0.5"
+            />
+          );
+        })
+      )}
+    </svg>
+  );
+}
+
 // ─── Person Avatar ─────────────────────────────────────────────────────────────
 const AVATAR_TINT_COLORS = ["#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#3b82f6","#84cc16","#f97316","#14b8a6"];
 function PersonAvatar({ color, tanLevel }: { color: string; glow?: boolean; mood?: string; tanLevel?: number }) {
@@ -382,6 +413,7 @@ interface ChatRoom {
   floor_pattern: string;
   owner_id?: string | null;
   spaceship_design?: string | null;
+  spaceship_passcode?: string | null;
 }
 interface VisitRequest { from_id: string; from_name: string; spaceship_room_id: string; spaceship_room_name: string; }
 
@@ -482,6 +514,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [wardrobeActiveSlot, setWardrobeActiveSlot] = useState<string | null>(null);
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
   const [wardrobeOpen, setWardrobeOpen] = useState(false);
+  const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
+  const [passcodePrompt, setPasscodePrompt] = useState<{ room: ChatRoom } | null>(null);
+  const [passcodeInput, setPasscodeInput] = useState("");
+  const [passcodeError, setPasscodeError] = useState(false);
   const [reconnectKey, setReconnectKey] = useState(0);
   const [disconnected, setDisconnected] = useState(false);
   const [disconnectMsg, setDisconnectMsg] = useState("");
@@ -781,7 +817,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   // ─── Data fetches ──────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern, owner_id").order("name").then(({ data }) => {
+    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern, owner_id, spaceship_passcode").order("name").then(({ data }) => {
       if (data) {
         const list = (data as ChatRoom[]).map(r => ({ ...r, cols: r.cols ?? DEFAULT_COLS, rows: r.rows ?? DEFAULT_ROWS, room_type: r.room_type ?? "normal", theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }));
         setRooms(list);
@@ -1344,6 +1380,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     await supabase.auth.signOut();
     onClose();
   }, [onClose]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const verifyPasscode = useCallback(() => {
+    if (!passcodePrompt) return;
+    if (passcodeInput === passcodePrompt.room.spaceship_passcode) {
+      const r = passcodePrompt.room;
+      switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id);
+      setPasscodePrompt(null);
+      setPasscodeInput("");
+      setRightPanel("hidden");
+    } else {
+      setPasscodeError(true);
+    }
+  }, [passcodePrompt, passcodeInput, switchRoom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Derived data ──────────────────────────────────────────────────────────
   const usersByCell = useMemo(() => {
@@ -2199,11 +2248,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {/* Room picker */}
             {rightPanel === "rooms" && (
               <>
-                <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Skift rum</span>
-                  <div className="flex items-center gap-1">
-                    {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8, room_type: "normal", theme_key: "blue", floor_pattern: "standard" })} className="p-1 rounded text-slate-500 hover:text-emerald-400" title="Opret rum"><Plus className="w-3 h-3" /></button>}
-                    <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
+                {/* Header */}
+                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Hash className="w-4 h-4 text-violet-400" />
+                    <span className="text-[12px] font-bold text-slate-200 tracking-wide">Skift rum</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8, room_type: "normal", theme_key: "blue", floor_pattern: "standard" })} className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all" title="Opret rum"><Plus className="w-3.5 h-3.5" /></button>}
+                    <button onClick={() => setRightPanel("hidden")} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
                   </div>
                 </div>
                 {/* Room design form (shared for create + edit) */}
@@ -2252,31 +2305,112 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     </div>
                   );
                 })()}
-                <div className="flex-1 overflow-y-auto py-1">
-                  {rooms.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen rum fundet</p>}
-                  {(() => {
-                    let normalIdx = 0;
-                    return rooms.map(r => {
-                      const occ = roomOccupancy.get(r.id) ?? 0;
-                      const rtheme = ROOM_THEMES.find(t => t.id === (r.theme_key ?? "blue"));
-                      const isSpaceship = r.room_type === "spaceship";
-                      const roomNum = isSpaceship ? null : ++normalIdx;
-                      return (
-                        <div key={r.id} className={`flex items-center gap-1 transition-colors ${r.id === activeRoomId ? "bg-violet-500/15" : "hover:bg-white/[0.03]"}`}>
-                          <button onClick={() => switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id)}
-                            className="flex-1 text-left px-3 py-2 text-[12px] flex items-center gap-2 min-w-0">
-                            {isSpaceship
-                              ? <span className="text-violet-400 flex-shrink-0 text-[10px]">🚀</span>
-                              : <span className="text-[9px] font-bold text-slate-600 w-4 text-center flex-shrink-0 tabular-nums">{roomNum}</span>
-                            }
-                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: rtheme?.color ?? "#475569" }} />
-                            <span className={`flex-1 truncate ${r.id === activeRoomId ? "text-violet-300" : "text-slate-300"}`}>{r.name}</span>
-                            <span className={`text-[10px] flex-shrink-0 ${occ > 0 ? "text-emerald-500" : "text-slate-700"}`}>{occ}</span>
-                          </button>
-                          {isAdmin && <button onClick={() => { setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="p-1.5 mr-1 rounded text-slate-600 hover:text-violet-400 flex-shrink-0 transition-colors" title="Rediger rum"><Pencil className="w-3 h-3" /></button>}
+                {/* Room list with hover preview */}
+                <div className="flex-1 overflow-y-auto relative">
+                  {/* Hover preview tooltip — positioned to the left */}
+                  {hoveredRoomId && (() => {
+                    const hRoom = rooms.find(rm => rm.id === hoveredRoomId);
+                    if (!hRoom) return null;
+                    const ht = ROOM_THEMES.find(t => t.id === (hRoom.theme_key ?? "blue")) ?? ROOM_THEMES[0];
+                    return (
+                      <div className="absolute top-2 right-full mr-2 w-52 bg-[#060e1c]/98 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.95)] z-50 pointer-events-none overflow-hidden">
+                        <div className="w-full h-28" style={{ background: ht.even }}>
+                          <MiniRoomPreview cols={hRoom.cols} rows={hRoom.rows} themeKey={hRoom.theme_key ?? "blue"} />
                         </div>
-                      );
-                    });
+                        <div className="px-3 py-2.5">
+                          <p className="text-[12px] font-bold text-slate-200 truncate">{hRoom.name}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[9px] text-slate-500">{hRoom.cols}×{hRoom.rows} felter</span>
+                            <span className="w-px h-2.5 bg-white/[0.1]" />
+                            <span className={`text-[9px] font-bold ${(roomOccupancy.get(hRoom.id) ?? 0) > 0 ? "text-emerald-400" : "text-slate-600"}`}>{roomOccupancy.get(hRoom.id) ?? 0} online</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Normal rooms */}
+                  {(() => {
+                    const normalRooms = rooms.filter(r => r.room_type !== "spaceship");
+                    const spaceshipRooms = rooms.filter(r => r.room_type === "spaceship");
+                    return (
+                      <>
+                        {normalRooms.length > 0 && (
+                          <>
+                            <div className="px-4 pt-3.5 pb-1.5">
+                              <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">Rum</span>
+                            </div>
+                            {normalRooms.map((r, i) => {
+                              const occ = roomOccupancy.get(r.id) ?? 0;
+                              const rtheme = ROOM_THEMES.find(t => t.id === (r.theme_key ?? "blue"));
+                              const isActive = r.id === activeRoomId;
+                              return (
+                                <div
+                                  key={r.id}
+                                  className={`group flex items-center gap-3 px-4 py-3 cursor-pointer transition-all ${isActive ? "bg-violet-500/15" : "hover:bg-white/[0.04]"}`}
+                                  onMouseEnter={() => setHoveredRoomId(r.id)}
+                                  onMouseLeave={() => setHoveredRoomId(null)}
+                                  onClick={() => switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id)}
+                                >
+                                  <span className="text-[10px] font-bold text-slate-700 w-4 text-right flex-shrink-0 tabular-nums">{i + 1}</span>
+                                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-[0_0_6px_currentColor]" style={{ backgroundColor: rtheme?.color ?? "#475569", color: rtheme?.color ?? "#475569" }} />
+                                  <span className={`flex-1 text-[13px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</span>
+                                  {occ > 0 && <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
+                                  {isAdmin && <button onClick={e => { e.stopPropagation(); setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-600 hover:text-violet-400 flex-shrink-0 transition-all" title="Rediger rum"><Pencil className="w-3 h-3" /></button>}
+                                </div>
+                              );
+                            })}
+                          </>
+                        )}
+
+                        {spaceshipRooms.length > 0 && (
+                          <>
+                            <div className="px-4 pt-3.5 pb-1.5 flex items-center gap-2">
+                              <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">🚀 Rumskibe</span>
+                              <span className="text-[8px] text-slate-700">({spaceshipRooms.length})</span>
+                            </div>
+                            {spaceshipRooms.map(r => {
+                              const occ = roomOccupancy.get(r.id) ?? 0;
+                              const isOwn = r.owner_id === currentProfile.id;
+                              const isActive = r.id === activeRoomId;
+                              const ownerOnline = globalUsers.has(r.owner_id ?? "");
+                              const hasPasscode = !!r.spaceship_passcode;
+                              const rtheme = ROOM_THEMES.find(t => t.id === (r.theme_key ?? "blue"));
+                              return (
+                                <div
+                                  key={r.id}
+                                  className={`group flex items-center gap-3 px-4 py-3 transition-all ${isActive ? "bg-violet-500/15" : isOwn || hasPasscode || ownerOnline ? "cursor-pointer hover:bg-white/[0.04]" : "opacity-50 cursor-not-allowed"}`}
+                                  onMouseEnter={() => setHoveredRoomId(r.id)}
+                                  onMouseLeave={() => setHoveredRoomId(null)}
+                                  onClick={() => {
+                                    if (isOwn) {
+                                      switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id);
+                                    } else if (hasPasscode) {
+                                      setPasscodePrompt({ room: r });
+                                      setPasscodeInput("");
+                                      setPasscodeError(false);
+                                    } else if (ownerOnline) {
+                                      setAwaitingVisit(true);
+                                      channelRef.current?.send({ type: "broadcast", event: "spaceship_request", payload: { to_id: r.owner_id, from_id: currentProfile.id, from_name: currentProfile.display_name, spaceship_room_id: r.id, spaceship_room_name: r.name } });
+                                      setTimeout(() => setAwaitingVisit(false), 30000);
+                                      setRightPanel("hidden");
+                                    }
+                                  }}
+                                >
+                                  <span className="text-base leading-none flex-shrink-0">🚀</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className={`text-[13px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</p>
+                                    <p className="text-[9px] truncate mt-0.5" style={{ color: rtheme?.color ?? "#475569", opacity: 0.7 }}>{isOwn ? "Dit rumskib" : hasPasscode ? "Kodeord påkrævet" : ownerOnline ? "Anmod om adgang" : "Ejeren er offline"}</p>
+                                  </div>
+                                  <span className="text-[11px] flex-shrink-0 leading-none" title={hasPasscode ? "Kodelåst" : "Åbent for anmodninger"}>{hasPasscode ? "🔒" : "🔓"}</span>
+                                  {occ > 0 && <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
+                                </div>
+                              );
+                            })}
+                          </>
+                        )}
+                      </>
+                    );
                   })()}
                 </div>
               </>
@@ -2495,6 +2629,20 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                             <div><p className="text-[12px] font-bold text-violet-300">{mySpaceship.name}</p><p className="text-[10px] text-slate-500">Dit rumskib · {mySpaceship.cols}×{mySpaceship.rows} tiles</p></div>
                           </div>
                           <button onClick={() => switchRoom(mySpaceship.id, mySpaceship.name, mySpaceship.cols, mySpaceship.rows, "spaceship", mySpaceship.theme_key, mySpaceship.floor_pattern, mySpaceship.owner_id)} className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[11px] text-white font-semibold transition-colors">Gå til mit rumskib</button>
+                          <div className="border-t border-white/[0.06] pt-2.5 mt-1">
+                            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Adgangskode</p>
+                            <form onSubmit={async e => {
+                              e.preventDefault();
+                              const v = (e.currentTarget.elements.namedItem("pc") as HTMLInputElement).value.trim();
+                              await supabase.from("chat_rooms").update({ spaceship_passcode: v || null }).eq("id", mySpaceship!.id);
+                              setMySpaceship(prev => prev ? { ...prev, spaceship_passcode: v || null } : prev);
+                              setRooms(prev => prev.map(r => r.id === mySpaceship!.id ? { ...r, spaceship_passcode: v || null } : r));
+                            }} className="flex gap-1.5">
+                              <input name="pc" type="text" defaultValue={mySpaceship.spaceship_passcode ?? ""} placeholder="Ingen kode sat..." maxLength={20} className="flex-1 bg-white/[0.05] border border-white/[0.07] rounded-lg px-2 py-1.5 text-[11px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
+                              <button type="submit" className="px-2.5 py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[10px] text-white font-semibold transition-colors flex-shrink-0">Gem</button>
+                            </form>
+                            <p className="text-[9px] text-slate-600 mt-1">{mySpaceship.spaceship_passcode ? "🔒 Kodelåst" : "🔓 Kræver ejeracceptering"}</p>
+                          </div>
                         </div>
                       ) : (
                         SPACESHIP_VARIANTS.map(v => (
@@ -3087,6 +3235,35 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   Gem garderobe
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Passcode prompt modal */}
+      {passcodePrompt && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setPasscodePrompt(null)}>
+          <div className="bg-[#060e1c] rounded-2xl border border-white/[0.12] p-6 w-80 shadow-[0_24px_64px_rgba(0,0,0,0.95)]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center text-xl flex-shrink-0">🔒</div>
+              <div>
+                <p className="text-[14px] font-bold text-white">Kodelåst rumskib</p>
+                <p className="text-[11px] text-slate-500 truncate">{passcodePrompt.room.name}</p>
+              </div>
+            </div>
+            <input
+              autoFocus
+              type="password"
+              value={passcodeInput}
+              onChange={e => { setPasscodeInput(e.target.value); setPasscodeError(false); }}
+              onKeyDown={e => e.key === "Enter" && verifyPasscode()}
+              placeholder="Indtast adgangskode..."
+              className={`w-full bg-white/[0.05] border rounded-xl px-4 py-3 text-[13px] text-slate-200 placeholder-slate-600 outline-none transition-all mb-3 ${passcodeError ? "border-rose-500/50 focus:border-rose-500/70" : "border-white/[0.08] focus:border-violet-500/50"}`}
+            />
+            {passcodeError && <p className="text-[11px] text-rose-400 mb-3 flex items-center gap-1.5"><span>⚠️</span>Forkert adgangskode</p>}
+            <div className="flex gap-2">
+              <button onClick={() => setPasscodePrompt(null)} className="flex-1 py-2.5 bg-white/[0.05] rounded-xl text-slate-400 text-[12px] font-semibold hover:bg-white/[0.09] transition-colors border border-white/[0.06]">Annuller</button>
+              <button onClick={verifyPasscode} className="flex-1 py-2.5 rounded-xl text-white text-[12px] font-bold transition-all shadow-[0_4px_20px_rgba(124,58,237,0.3)]" style={{ background: "linear-gradient(135deg,#6d28d9,#4f46e5)" }}>Gå ind 🚀</button>
             </div>
           </div>
         </div>
