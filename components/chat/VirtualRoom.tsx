@@ -178,6 +178,13 @@ function ClothingLayerSVG({ styleKey, color }: { styleKey: string; color: string
     case "top_solid": return (
       <rect x="-8" y="-4" width="16" height="13" rx="3" fill={color} opacity="0.75" />
     );
+    // ── Image-based clothing (PNG overlays) ──────────────────────────────────
+    case "hair_dark_spiky": return (
+      <image href="/clothing/hair_dark_spiky.png" x="-31" y="-36" width="62" height="77" />
+    );
+    case "jacket_tactical": return (
+      <image href="/clothing/jacket_tactical.png" x="-31" y="-36" width="62" height="77" />
+    );
     default: return null;
   }
 }
@@ -475,6 +482,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [wardrobeActiveSlot, setWardrobeActiveSlot] = useState<string | null>(null);
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
   const [wardrobeOpen, setWardrobeOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
   const [reconnectKey, setReconnectKey] = useState(0);
   const [disconnected, setDisconnected] = useState(false);
   const [disconnectMsg, setDisconnectMsg] = useState("");
@@ -1498,43 +1506,45 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </div>
             </div>
 
-            {/* Right: unified stats pill + actions */}
+            {/* Right: unified stats pill (fullscreen only) + actions */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              {/* Stats pill */}
-              <div
-                className="flex items-stretch rounded-2xl overflow-hidden border border-white/[0.07]"
-                style={{ background: "linear-gradient(135deg,rgba(10,15,28,0.98),rgba(6,10,20,0.98))", boxShadow: "0 2px 12px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.04)" }}
-              >
-                {/* Level */}
-                <button
-                  onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")}
-                  className={`flex items-center gap-1.5 px-3.5 transition-colors h-full ${rightPanel === "profile" ? "bg-violet-500/15" : "hover:bg-white/[0.04]"}`}
+              {/* Stats pill — only shown in fullscreen mode */}
+              {fullscreen && (
+                <div
+                  className="flex items-stretch rounded-2xl overflow-hidden border border-white/[0.07]"
+                  style={{ background: "linear-gradient(135deg,rgba(10,15,28,0.98),rgba(6,10,20,0.98))", boxShadow: "0 2px 12px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.04)" }}
                 >
-                  <span className="text-[7px] font-black tracking-[0.2em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
-                  <span className="text-[16px] font-black text-white tabular-nums leading-none">{level}</span>
-                </button>
+                  {/* Level */}
+                  <button
+                    onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")}
+                    className={`flex items-center gap-1.5 px-3.5 transition-colors h-full ${rightPanel === "profile" ? "bg-violet-500/15" : "hover:bg-white/[0.04]"}`}
+                  >
+                    <span className="text-[7px] font-black tracking-[0.2em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
+                    <span className="text-[16px] font-black text-white tabular-nums leading-none">{level}</span>
+                  </button>
 
-                <div className="w-px bg-white/[0.06] my-2.5" />
+                  <div className="w-px bg-white/[0.06] my-2.5" />
 
-                {/* XP */}
-                <div className="hidden sm:flex items-center px-3.5">
-                  <span className="text-[11px] font-semibold tabular-nums" style={{ color: "rgba(255,255,255,0.22)" }}>
-                    <span style={{ color: "#8b5cf6" }}>{xp % 100}</span>/100 xp
-                  </span>
+                  {/* XP */}
+                  <div className="hidden sm:flex items-center px-3.5">
+                    <span className="text-[11px] font-semibold tabular-nums" style={{ color: "rgba(255,255,255,0.22)" }}>
+                      <span style={{ color: "#8b5cf6" }}>{xp % 100}</span>/100 xp
+                    </span>
+                  </div>
+
+                  <div className="w-px bg-white/[0.06] my-2.5" />
+
+                  {/* Coins */}
+                  <div className="flex items-center gap-1.5 px-3.5">
+                    <span className="text-sm leading-none">🪙</span>
+                    <span className="text-[14px] font-black tabular-nums leading-none" style={{ color: "#f59e0b" }}>{coins}</span>
+                  </div>
                 </div>
-
-                <div className="w-px bg-white/[0.06] my-2.5" />
-
-                {/* Coins */}
-                <div className="flex items-center gap-1.5 px-3.5">
-                  <span className="text-sm leading-none">🪙</span>
-                  <span className="text-[14px] font-black tabular-nums leading-none" style={{ color: "#f59e0b" }}>{coins}</span>
-                </div>
-              </div>
+              )}
 
               {/* Action buttons */}
               <div className="flex items-center gap-0.5">
-                <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
+                <button onClick={() => { setFullscreen(f => !f); setStatsOpen(false); }} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
                 <button onClick={handleLogout} className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-3.5 h-3.5" /></button>
                 <button onClick={onClose} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
               </div>
@@ -2066,6 +2076,72 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <span className="text-[10px] text-slate-600 tabular-nums flex-shrink-0">{draft.length}/40</span>
                 <kbd className="text-[9px] text-slate-500 flex-shrink-0 bg-white/[0.07] border border-white/[0.08] px-1.5 py-0.5 rounded-md font-mono">↵</kbd>
                 <button onClick={() => { draftRef.current = ""; setDraft(""); }} className="text-slate-600 hover:text-rose-400 flex-shrink-0 transition-colors ml-0.5"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
+
+            {/* Bottom stats panel (non-fullscreen only) */}
+            {!fullscreen && (
+              <div className="absolute bottom-4 left-4 z-20 flex flex-col items-start" style={{ pointerEvents: "auto" }}>
+                {/* Expandable stats panel */}
+                {statsOpen && (
+                  <div
+                    className="mb-2 rounded-2xl overflow-hidden border border-white/[0.1] shadow-[0_16px_48px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.06)]"
+                    style={{ background: "linear-gradient(160deg,rgba(8,12,24,0.99),rgba(4,8,16,0.99))", backdropFilter: "blur(20px)", minWidth: 180 }}
+                  >
+                    {/* XP section */}
+                    <div className="px-4 pt-3.5 pb-1">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[7px] font-black tracking-[0.18em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
+                          <span className="text-[22px] font-black text-white tabular-nums leading-none">{level}</span>
+                        </div>
+                        <button
+                          onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")}
+                          className="text-[9px] font-bold text-violet-400/60 hover:text-violet-400 transition-colors"
+                        >
+                          Profil →
+                        </button>
+                      </div>
+                      {/* XP bar */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1 bg-white/[0.05] rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-[width] duration-700"
+                            style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 6px rgba(139,92,246,0.9)" }}
+                          />
+                        </div>
+                        <span className="text-[9px] font-bold tabular-nums flex-shrink-0" style={{ color: "rgba(139,92,246,0.6)" }}>{xp % 100}/100</span>
+                      </div>
+                      <div className="mt-0.5 flex items-center justify-between">
+                        <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.15)" }}>næste niveau</span>
+                        <span className="text-[8px] font-bold" style={{ color: "rgba(139,92,246,0.4)" }}>LV {level + 1}</span>
+                      </div>
+                    </div>
+                    {/* Divider */}
+                    <div className="h-px bg-white/[0.05] mx-4" />
+                    {/* Coins */}
+                    <div className="px-4 py-3 flex items-center gap-2.5">
+                      <span className="text-base leading-none">🪙</span>
+                      <span className="text-[18px] font-black tabular-nums leading-none" style={{ color: "#f59e0b" }}>{coins}</span>
+                      <span className="text-[9px] font-semibold ml-auto" style={{ color: "rgba(251,191,36,0.35)" }}>mønter</span>
+                    </div>
+                  </div>
+                )}
+                {/* Toggle button */}
+                <button
+                  onClick={() => setStatsOpen(o => !o)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/[0.1] backdrop-blur-xl transition-all hover:border-violet-500/30 hover:shadow-[0_0_16px_rgba(139,92,246,0.2)] active:scale-95"
+                  style={{ background: "linear-gradient(135deg,rgba(8,12,24,0.96),rgba(4,8,16,0.96))", boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}
+                >
+                  <span className="text-[7px] font-black tracking-[0.18em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
+                  <span className="text-[14px] font-black text-white tabular-nums leading-none">{level}</span>
+                  <div className="w-px h-3 bg-white/[0.08]" />
+                  <span className="text-sm leading-none">🪙</span>
+                  <span className="text-[12px] font-bold tabular-nums" style={{ color: "#f59e0b" }}>{coins}</span>
+                  <svg viewBox="0 0 10 10" className={`w-2.5 h-2.5 ml-0.5 transition-transform duration-200 ${statsOpen ? "rotate-180" : ""}`} fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5">
+                    <path d="M2 3.5 L5 6.5 L8 3.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
               </div>
             )}
 
