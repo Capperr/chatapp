@@ -1393,15 +1393,49 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setCtxMenu(null)}>
-      {/* Starfield background */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ background: "radial-gradient(ellipse at 50% 60%, #0a0f1e 0%, #04060d 100%)" }}>
-        {Array.from({ length: 120 }).map((_, i) => {
+      {/* Animated starfield background */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ background: "radial-gradient(ellipse at 45% 35%, #0d1028 0%, #060810 50%, #02030a 100%)" }}>
+        <style>{`
+          @keyframes drift1{0%,100%{transform:translate(0,0)}33%{transform:translate(14px,-10px)}66%{transform:translate(-6px,8px)}}
+          @keyframes drift2{0%,100%{transform:translate(0,0)}40%{transform:translate(-12px,16px)}70%{transform:translate(8px,-4px)}}
+          @keyframes drift3{0%,100%{transform:translate(0,0)}50%{transform:translate(10px,12px)}}
+          @keyframes nebulaPulse{0%,100%{opacity:0.055;transform:scale(1)}50%{opacity:0.09;transform:scale(1.08)}}
+          @keyframes shootStar{0%{opacity:0;transform:translateX(0) translateY(0) scaleX(1)}3%{opacity:1}18%{opacity:0;transform:translateX(220px) translateY(90px) scaleX(3)}100%{opacity:0}}
+        `}</style>
+
+        {/* Nebula glows */}
+        <div style={{ position:"absolute", top:"15%", left:"20%", width:500, height:350, borderRadius:"50%", background:"radial-gradient(ellipse,rgba(79,70,229,0.07) 0%,transparent 65%)", animation:"nebulaPulse 18s ease-in-out infinite" }} />
+        <div style={{ position:"absolute", top:"55%", left:"55%", width:380, height:260, borderRadius:"50%", background:"radial-gradient(ellipse,rgba(139,92,246,0.06) 0%,transparent 60%)", animation:"nebulaPulse 24s ease-in-out infinite reverse" }} />
+        <div style={{ position:"absolute", top:"30%", left:"70%", width:280, height:200, borderRadius:"50%", background:"radial-gradient(ellipse,rgba(6,182,212,0.04) 0%,transparent 60%)", animation:"nebulaPulse 30s ease-in-out infinite" }} />
+
+        {/* Layer 1 — small distant stars, slow drift */}
+        {Array.from({ length: 55 }).map((_, i) => {
           const x = (i * 137.508 + 23) % 100;
           const y = (i * 97.3 + 41) % 100;
-          const size = i % 5 === 0 ? 2 : i % 3 === 0 ? 1.5 : 1;
-          const delay = (i * 0.23) % 4;
-          const dur = 2 + (i % 3);
-          return <div key={i} className="absolute rounded-full bg-white" style={{ left: `${x}%`, top: `${y}%`, width: size, height: size, opacity: 0.4 + (i % 4) * 0.1, animation: `pulse ${dur}s ${delay}s ease-in-out infinite alternate` }} />;
+          return <div key={i} style={{ position:"absolute", left:`${x}%`, top:`${y}%`, width:1, height:1, borderRadius:"50%", background:"white", opacity:0.18+(i%5)*0.06, animation:`drift${(i%3)+1} ${22+i%18}s ${-(i*1.7)%20}s ease-in-out infinite, pulse ${3+i%3}s ${(i*0.4)%4}s ease-in-out infinite alternate` }} />;
+        })}
+
+        {/* Layer 2 — medium stars, medium drift */}
+        {Array.from({ length: 40 }).map((_, i) => {
+          const x = ((i+55) * 137.508 + 73) % 100;
+          const y = ((i+55) * 97.3 + 61) % 100;
+          const sz = i%7===0 ? 1.5 : 1;
+          return <div key={i+55} style={{ position:"absolute", left:`${x}%`, top:`${y}%`, width:sz, height:sz, borderRadius:"50%", background:"white", opacity:0.28+(i%4)*0.09, animation:`drift${((i+1)%3)+1} ${16+i%12}s ${-(i*2.1)%16}s ease-in-out infinite, pulse ${2.5+i%2}s ${(i*0.6)%5}s ease-in-out infinite alternate` }} />;
+        })}
+
+        {/* Layer 3 — bright accent stars */}
+        {Array.from({ length: 18 }).map((_, i) => {
+          const x = ((i+95) * 137.508 + 11) % 100;
+          const y = ((i+95) * 97.3 + 79) % 100;
+          const purple = i%3===0;
+          return <div key={i+95} style={{ position:"absolute", left:`${x}%`, top:`${y}%`, width:2, height:2, borderRadius:"50%", background:purple?"rgba(167,139,250,0.85)":"white", opacity:0.55+(i%3)*0.15, boxShadow:purple?`0 0 5px 1px rgba(139,92,246,0.35)`:i%4===0?"0 0 4px 1px rgba(255,255,255,0.2)":undefined, animation:`drift1 ${28+i*2}s ${-(i*3)}s ease-in-out infinite, pulse 2s ${i*0.5}s ease-in-out infinite alternate` }} />;
+        })}
+
+        {/* Occasional shooting star */}
+        {Array.from({ length: 3 }).map((_, i) => {
+          const x = (i * 33 + 10) % 80;
+          const y = (i * 27 + 5) % 40;
+          return <div key={`shoot-${i}`} style={{ position:"absolute", left:`${x}%`, top:`${y}%`, width:2, height:1, borderRadius:"50%", background:"linear-gradient(90deg,white,transparent)", opacity:0, animation:`shootStar ${8+i*5}s ${i*7}s ease-out infinite` }} />;
         })}
       </div>
       <div className="flex items-stretch max-sm:w-screen max-sm:h-[100dvh]" onClick={e => e.stopPropagation()}>
@@ -1414,68 +1448,73 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             @keyframes coinPulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
           `}</style>
           <div className="flex items-center px-3 sm:px-4 gap-3" style={{ height: "48px" }}>
-            {/* Left: room + online */}
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse" />
-                <span className="text-[13px] font-extrabold text-white tracking-tight truncate max-w-[80px] sm:max-w-[150px]">#{activeRoomName}</span>
+            {/* Left: app name + room name */}
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              {/* App icon */}
+              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-700 flex items-center justify-center flex-shrink-0 shadow-[0_0_8px_rgba(139,92,246,0.4)]">
+                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+              </div>
+              <span className="hidden sm:block text-[11px] font-bold text-white/50 tracking-tight flex-shrink-0">ChatApp</span>
+              <div className="hidden sm:block w-px h-3.5 bg-white/[0.1] flex-shrink-0" />
+              {/* Room */}
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 shadow-[0_0_6px_rgba(52,211,153,0.8)] animate-pulse" />
+                <span className="text-[13px] font-bold text-white tracking-tight truncate">#{activeRoomName}</span>
                 {activeRoomType === "shop" && <span className="hidden sm:flex text-[8px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Shop</span>}
               </div>
-              <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/[0.08] border border-emerald-500/[0.12]">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-                <span className="text-[10px] font-semibold text-emerald-400 tabular-nums">{totalUsers}</span>
+              <div className="hidden sm:flex items-center gap-1 flex-shrink-0">
+                <span className="w-1 h-1 rounded-full bg-emerald-400/60" />
+                <span className="text-[10px] font-semibold text-emerald-500 tabular-nums">{totalUsers}</span>
               </div>
             </div>
 
-            {/* Center: unified stats pill */}
-            <div
-              className="flex items-stretch rounded-2xl overflow-hidden border border-white/[0.08]"
-              style={{ background: "linear-gradient(135deg,rgba(12,18,32,0.98),rgba(8,12,24,0.98))", boxShadow: "0 2px 16px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.04)" }}
-            >
-              {/* Level — clickable */}
-              <button
-                onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")}
-                className={`flex items-center gap-1.5 px-4 py-0 transition-colors h-full ${rightPanel === "profile" ? "bg-violet-500/15" : "hover:bg-white/[0.04]"}`}
+            {/* Right: unified stats pill + actions */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Stats pill */}
+              <div
+                className="flex items-stretch rounded-2xl overflow-hidden border border-white/[0.07]"
+                style={{ background: "linear-gradient(135deg,rgba(10,15,28,0.98),rgba(6,10,20,0.98))", boxShadow: "0 2px 12px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.04)" }}
               >
-                <span className="text-[7px] font-black tracking-[0.2em] uppercase" style={{ color: "#7c3aed" }}>LV</span>
-                <span className="text-[17px] font-black text-white tabular-nums leading-none">{level}</span>
-              </button>
+                {/* Level */}
+                <button
+                  onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")}
+                  className={`flex items-center gap-1.5 px-3.5 transition-colors h-full ${rightPanel === "profile" ? "bg-violet-500/15" : "hover:bg-white/[0.04]"}`}
+                >
+                  <span className="text-[7px] font-black tracking-[0.2em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
+                  <span className="text-[16px] font-black text-white tabular-nums leading-none">{level}</span>
+                </button>
 
-              {/* Divider */}
-              <div className="w-px bg-white/[0.07] my-2" />
+                <div className="w-px bg-white/[0.06] my-2.5" />
 
-              {/* XP */}
-              <div className="hidden sm:flex items-center gap-2.5 px-4 py-0">
-                <div className="flex flex-col gap-[3px]">
-                  <div className="h-[5px] w-[72px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-                    <div
-                      className="h-full rounded-full transition-[width] duration-700 relative overflow-hidden"
-                      style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6)" }}
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent" style={{ animation: "xpShimmer 2s ease-in-out infinite" }} />
+                {/* XP */}
+                <div className="hidden sm:flex items-center px-3.5">
+                  <div className="flex flex-col gap-[3px]">
+                    <div className="h-[4px] w-[64px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+                      <div className="h-full rounded-full transition-[width] duration-700 relative overflow-hidden" style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6)" }}>
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent" style={{ animation: "xpShimmer 2s ease-in-out infinite" }} />
+                      </div>
                     </div>
+                    <span className="text-[8px] tabular-nums" style={{ color: "rgba(255,255,255,0.2)" }}>
+                      <span style={{ color: "#8b5cf6" }}>{xp % 100}</span>/100 xp
+                    </span>
                   </div>
-                  <span className="text-[8px] tabular-nums" style={{ color: "rgba(255,255,255,0.25)" }}>
-                    <span style={{ color: "#a78bfa" }}>{xp % 100}</span>/100 xp
-                  </span>
+                </div>
+
+                <div className="w-px bg-white/[0.06] my-2.5" />
+
+                {/* Coins */}
+                <div className="flex items-center gap-1.5 px-3.5">
+                  <span className="text-sm leading-none">🪙</span>
+                  <span className="text-[14px] font-black tabular-nums leading-none" style={{ color: "#f59e0b" }}>{coins}</span>
                 </div>
               </div>
 
-              {/* Divider */}
-              <div className="w-px bg-white/[0.07] my-2" />
-
-              {/* Coins */}
-              <div className="flex items-center gap-1.5 px-4 py-0">
-                <span className="text-sm leading-none">🪙</span>
-                <span className="text-[14px] font-black tabular-nums leading-none" style={{ color: "#fbbf24" }}>{coins}</span>
+              {/* Action buttons */}
+              <div className="flex items-center gap-0.5">
+                <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
+                <button onClick={handleLogout} className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-3.5 h-3.5" /></button>
+                <button onClick={onClose} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
               </div>
-            </div>
-
-            {/* Right: actions */}
-            <div className="flex items-center gap-0.5 flex-shrink-0 flex-1 justify-end">
-              <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
-              <button onClick={handleLogout} className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-3.5 h-3.5" /></button>
-              <button onClick={onClose} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
             </div>
           </div>
 
