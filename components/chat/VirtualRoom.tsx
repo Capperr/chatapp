@@ -461,7 +461,12 @@ interface DmMessage {
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: VirtualRoomProps) {
-  const supabase = createClient();
+  // Store client in a ref so it never changes reference between renders.
+  // createBrowserClient creates a new object each call, which would cause
+  // useEffect dependency arrays to see a "changed" value on every render,
+  // resetting any intervals that list `supabase` as a dependency.
+  const supabaseRef = useRef(createClient());
+  const supabase = supabaseRef.current;
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const globalChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
@@ -717,7 +722,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       if (newLevel >= 20) checkAchievement("level_20");
     }, 30_000);
     return () => clearInterval(check);
-  }, [triggerDisconnect, supabase, currentProfile.id]);
+  }, [triggerDisconnect, currentProfile.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Confirmation modal countdown
   useEffect(() => {
@@ -973,6 +978,20 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Save total_online_seconds to DB on page unload (refresh / tab close)
+  useEffect(() => {
+    const save = () => {
+      if (totalSecondsRef.current > 0)
+        supabase.from("profiles").update({ total_online_seconds: totalSecondsRef.current }).eq("id", currentProfile.id);
+    };
+    window.addEventListener("pagehide", save);
+    window.addEventListener("beforeunload", save);
+    return () => {
+      window.removeEventListener("pagehide", save);
+      window.removeEventListener("beforeunload", save);
+    };
+  }, [currentProfile.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hourly coin award (50 coins per active hour)
   useEffect(() => {
