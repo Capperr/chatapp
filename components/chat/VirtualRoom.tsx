@@ -601,6 +601,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         setActiveFloorPattern(ship.floor_pattern ?? "standard");
         myPosRef.current = { gx: Math.floor(Math.random() * (ship.cols ?? DEFAULT_COLS)), gy: Math.floor(Math.random() * (ship.rows ?? DEFAULT_ROWS)) };
         setMyPos(myPosRef.current);
+        setZoom(1);
+        panRef.current = { x: 0, y: 0 };
+        setPan({ x: 0, y: 0 });
       }
     });
   }, [currentProfile.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -784,8 +787,18 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       }
       return;
     }
+
+    // Always load latest minutes from DB on entry — this is the source of truth
+    // so minutes persist whether the user reloaded the page or just switched rooms
+    supabase.from("profiles").select("solarie_minutes").eq("id", currentProfile.id).single().then(({ data }) => {
+      if (data?.solarie_minutes != null) {
+        solarieMinutesRef.current = data.solarie_minutes;
+      }
+    });
+
     const entered = Date.now();
     solarieEnteredRef.current = entered;
+
     // 1-second display tick + immediate level-up detection
     const displayTick = setInterval(() => {
       setSolarieTick(t => t + 1);
@@ -800,6 +813,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         supabase.from("profiles").update({ tan_level: newLvl, tan_expires_at: expiresAt, solarie_minutes: totalMin }).eq("id", currentProfile.id);
       }
     }, 1000);
+
     // 30-second save to DB
     const saveTick = setInterval(() => {
       const sessionMin = (Date.now() - entered) / 60000;
@@ -808,8 +822,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       setTanExpiresAt(expiresAt);
       supabase.from("profiles").update({ tan_level: tanLevelRef.current, tan_expires_at: expiresAt, solarie_minutes: totalMin }).eq("id", currentProfile.id);
     }, 30_000);
+
     return () => {
-      // Save accumulated minutes to DB when leaving
       const sessionMin = (Date.now() - entered) / 60000;
       solarieMinutesRef.current += sessionMin;
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -1370,6 +1384,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     setActiveFloorPattern(floorPattern ?? "standard");
     setActiveRoomOwnerId(ownerId !== undefined ? ownerId : null);
     lastActivityRef.current = Date.now();
+    setZoom(1);
     panRef.current = { x: 0, y: 0 }; setPan({ x: 0, y: 0 });
     myPosRef.current = { gx: Math.floor(Math.random() * nc), gy: Math.floor(Math.random() * nr) };
     setMyPos(myPosRef.current);
@@ -1740,10 +1755,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 shadow-[0_0_6px_rgba(52,211,153,0.8)] animate-pulse" />
                 <span className="text-[15px] font-bold text-white tracking-tight truncate">#{activeRoomName}</span>
                 {activeRoomType === "shop" && <span className="hidden sm:flex text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Shop</span>}
-              </div>
-              <div className="hidden sm:flex items-center gap-1 flex-shrink-0">
-                <span className="w-1 h-1 rounded-full bg-emerald-400/60" />
-                <span className="text-[12px] font-semibold text-emerald-500 tabular-nums">{totalUsers}</span>
               </div>
             </div>
 
