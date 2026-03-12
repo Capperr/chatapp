@@ -554,7 +554,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [allAchievements, setAllAchievements] = useState<Achievement[]>([]);
   const [myAchievements, setMyAchievements] = useState<Set<string>>(new Set());
   const messageCountRef = useRef(0);
+  const [messageCountState, setMessageCountState] = useState(0);
+  const [loginStreak, setLoginStreak] = useState(0);
   const [achievementNotif, setAchievementNotif] = useState<Achievement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   // ─── DM state ───────────────────────────────────────────────────────────
   const [dmConversations, setDmConversations] = useState<DmConversation[]>([]);
   const [activeDmConvId, setActiveDmConvId] = useState<string | null>(null);
@@ -573,10 +576,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [disconnectMsg, setDisconnectMsg] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmCountdown, setConfirmCountdown] = useState(120);
-  // If there's a pending hourly confirm from a previous session, make the modal show in 1-3 min
-  const _pendingConfirm = typeof window !== "undefined" && !!localStorage.getItem("vr_pending_confirm");
-  const _confirmDelay = _pendingConfirm ? (60 + Math.random() * 120) * 1000 : 0; // 1-3 min
-  const lastHourConfirmRef = useRef(_pendingConfirm ? Date.now() - 3_600_000 + _confirmDelay : Date.now());
+  // If DB says confirm_pending=true from a previous session, the profile load effect will move this
+  // back by (3600s - 1-3min) so the modal fires again soon.
+  const lastHourConfirmRef = useRef(Date.now());
   const showConfirmModalRef = useRef(false);
   const disconnectedRef = useRef(false);
   const minuteXpAccRef = useRef(0);
@@ -658,14 +660,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     showConfirmModalRef.current = false;
     setShowConfirmModal(false);
     lastHourConfirmRef.current = Date.now();
-    if (typeof window !== "undefined") localStorage.removeItem("vr_pending_confirm");
     confirmedHoursRef.current += 1;
     setConfirmedHours(confirmedHoursRef.current);
     const newCoins = coinsRef.current + 100;
     coinsRef.current = newCoins; setCoins(newCoins);
     const newXp = xpRef.current + 50; // 50 XP bonus for hourly confirmation
     xpRef.current = newXp; setXp(newXp);
-    await supabase.from("profiles").update({ coins: newCoins, xp: newXp }).eq("id", currentProfile.id);
+    await supabase.from("profiles").update({ coins: newCoins, xp: newXp, confirm_pending: false }).eq("id", currentProfile.id);
   }, [supabase, currentProfile.id]);
 
   // Inactivity + hourly check (every 30s)
@@ -674,7 +675,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       if (disconnectedRef.current) return;
       const now = Date.now();
       if (now - lastActivityRef.current > 30 * 60 * 1000) {
-        triggerDisconnect("Du har mistet forbindelsen til chatten");
+        triggerDisconnect("Du er blevet afkoblet pga. inaktivitet");
         return;
       }
       if (!showConfirmModalRef.current && now - lastHourConfirmRef.current > 60 * 60 * 1000) {
@@ -725,8 +726,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       setConfirmCountdown(prev => {
         if (prev <= 1) {
           clearInterval(cd);
-          if (typeof window !== "undefined") localStorage.setItem("vr_pending_confirm", "1");
-          triggerDisconnect("Du har mistet forbindelsen til chatten");
+          supabase.from("profiles").update({ confirm_pending: true }).eq("id", currentProfile.id);
+          triggerDisconnect("Tilstedeværelsesbekræftelse udløbet");
           setShowConfirmModal(false);
           return 0;
         }
@@ -919,7 +920,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("user_achievements").select("achievement_id").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyAchievements(new Set(data.map((a: { achievement_id: string }) => a.achievement_id)));
     });
-    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak").eq("id", currentProfile.id).single().then(({ data }) => {
+    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
         // Load tan — reset if expired
@@ -949,9 +950,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         const la = (data as { coins: number; last_coin_award: string }).last_coin_award;
         if (la) lastCoinAwardRef.current = new Date(la);
         // Load message count
-        if ((data as { message_count?: number }).message_count != null) {
-          messageCountRef.current = (data as { message_count: number }).message_count;
-        }
+        const mc = (data as { message_count?: number }).message_count ?? 0;
+        messageCountRef.current = mc;
+        setMessageCountState(mc);
         // Daily login streak
         const today = new Date().toISOString().slice(0, 10);
         const lastLogin = (data as { last_login_date?: string | null }).last_login_date;
@@ -961,6 +962,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
           newStreak = lastLogin === yesterday ? streak + 1 : 1;
           supabase.from("profiles").update({ last_login_date: today, login_streak: newStreak }).eq("id", currentProfile.id);
+        }
+        setLoginStreak(newStreak);
+        // Pending hourly confirmation — move lastHourConfirmRef so modal shows in 1-3 min
+        if ((data as { confirm_pending?: boolean }).confirm_pending) {
+          const delay = (60 + Math.random() * 120) * 1000;
+          lastHourConfirmRef.current = Date.now() - 3_600_000 + delay;
         }
       }
     });
@@ -1097,18 +1104,20 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "private_messages" }, async (payload) => {
         const msg = payload.new as { id: string; conversation_id: string; sender_id: string; content: string; created_at: string };
         if (msg.sender_id === currentProfile.id) return;
-        // Play notification sound
+        // Play DM notification sound (only for incoming private messages)
         try {
-          const ctx = new AudioContext();
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain); gain.connect(ctx.destination);
-          osc.type = "sine"; osc.frequency.value = 880;
-          gain.gain.setValueAtTime(0.12, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
-          setTimeout(() => ctx.close(), 600);
-        } catch { /* ignore AudioContext errors */ }
+          if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+          const ac = audioCtxRef.current;
+          ac.resume().then(() => {
+            const osc = ac.createOscillator();
+            const gain = ac.createGain();
+            osc.connect(gain); gain.connect(ac.destination);
+            osc.type = "sine"; osc.frequency.value = 880;
+            gain.gain.setValueAtTime(0.12, ac.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.5);
+            osc.start(ac.currentTime); osc.stop(ac.currentTime + 0.5);
+          }).catch(() => {});
+        } catch { /* ignore */ }
         // Mark as delivered
         await supabase.from("private_messages").update({ delivered_at: new Date().toISOString() }).eq("id", msg.id);
         // If currently viewing this conversation → mark as read too + append message
@@ -1699,6 +1708,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     // Track message count + achievements
     const newMsgCount = messageCountRef.current + 1;
     messageCountRef.current = newMsgCount;
+    setMessageCountState(newMsgCount);
     await supabase.from("profiles").update({ xp: newXp, level: newLevel, message_count: newMsgCount }).eq("id", currentProfile.id);
     // Check message achievements
     if (newMsgCount === 1) checkAchievement("first_message");
@@ -3615,7 +3625,25 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             )}
 
             {/* Achievements panel */}
-            {rightPanel === "achievements" && (
+            {rightPanel === "achievements" && (() => {
+              const onlineHours = Math.floor(totalSeconds / 3600);
+              const progressMap: Record<string, { cur: number; max: number } | null> = {
+                first_message:   { cur: Math.min(messageCountState, 1),    max: 1    },
+                messages_50:     { cur: Math.min(messageCountState, 50),   max: 50   },
+                messages_200:    { cur: Math.min(messageCountState, 200),  max: 200  },
+                messages_1000:   { cur: Math.min(messageCountState, 1000), max: 1000 },
+                level_5:         { cur: Math.min(level, 5),    max: 5  },
+                level_10:        { cur: Math.min(level, 10),   max: 10 },
+                level_20:        { cur: Math.min(level, 20),   max: 20 },
+                login_streak_7:  { cur: Math.min(loginStreak, 7),   max: 7  },
+                login_streak_30: { cur: Math.min(loginStreak, 30),  max: 30 },
+                own_clothing_1:  { cur: Math.min(myWardrobe.length, 1), max: 1 },
+                solarie_1:       { cur: Math.min(tanLevel, 1), max: 1 },
+                online_10h:      { cur: Math.min(onlineHours, 10),  max: 10  },
+                online_100h:     { cur: Math.min(onlineHours, 100), max: 100 },
+                collect_5_items: { cur: Math.min(myInventory.length, 5), max: 5 },
+              };
+              return (
               <>
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
                   <div className="flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /><span className="text-[14px] font-bold text-slate-200 tracking-wide">Bedrifter</span><span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">{myAchievements.size}/{allAchievements.length}</span></div>
@@ -3624,17 +3652,31 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
                   {allAchievements.map(a => {
                     const earned = myAchievements.has(a.id);
+                    const prog = progressMap[a.id] ?? null;
+                    const pct = prog ? Math.round((prog.cur / prog.max) * 100) : 0;
                     return (
-                      <div key={a.id} className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${earned ? "border-white/[0.08] bg-white/[0.03]" : "border-white/[0.04] bg-white/[0.01] opacity-60"}`}>
+                      <div key={a.id} className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${earned ? "border-white/[0.08] bg-white/[0.03]" : "border-white/[0.04] bg-white/[0.01]"}`}>
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl" style={{ background: earned ? a.badge_color + "22" : "rgba(255,255,255,0.03)", border: `1.5px solid ${earned ? a.badge_color + "44" : "rgba(255,255,255,0.06)"}` }}>
                           {earned ? a.badge_emoji : "🔒"}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <p className={`text-[13px] font-bold truncate ${earned ? "text-slate-200" : "text-slate-500"}`} style={earned ? { color: a.badge_color } : {}}>{a.name}</p>
-                            {earned && <span className="text-[10px] text-emerald-400 font-bold flex-shrink-0">✓ Opnået</span>}
+                            <p className={`text-[13px] font-bold truncate`} style={{ color: earned ? a.badge_color : "#64748b" }}>{a.name}</p>
+                            {earned
+                              ? <span className="text-[10px] text-emerald-400 font-bold flex-shrink-0">✓ Opnået</span>
+                              : prog && <span className="text-[10px] text-slate-500 font-bold flex-shrink-0 tabular-nums">{prog.cur}/{prog.max}</span>
+                            }
                           </div>
                           <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">{a.description}</p>
+                          {/* Progress bar */}
+                          {prog && (
+                            <div className="mt-1.5 w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{ width: `${pct}%`, background: earned ? a.badge_color : `${a.badge_color}88` }}
+                              />
+                            </div>
+                          )}
                           <div className="flex items-center gap-2 mt-1.5">
                             {a.reward_coins > 0 && <span className="text-[11px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">+{a.reward_coins} 🪙</span>}
                             {a.reward_xp > 0 && <span className="text-[11px] text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full border border-violet-500/20">+{a.reward_xp} XP</span>}
@@ -3645,7 +3687,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   })}
                 </div>
               </>
-            )}
+              );
+            })()}
 
             {/* DM conversations list */}
             {rightPanel === "dms" && (
@@ -3963,16 +4006,24 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
         {/* ── Disconnect overlay ── */}
         {disconnected && (
-          <div className="absolute inset-0 z-[90] flex flex-col items-center justify-center bg-[#04090f]/96 backdrop-blur-sm">
-            <div className="text-4xl mb-4">🔌</div>
-            <p className="text-[17px] font-bold text-white mb-2 text-center px-6">{disconnectMsg}</p>
-            <p className="text-[14px] text-slate-500 mb-6 text-center px-8">Tryk på genindlæs-knappen for at genopret forbindelsen</p>
-            <button
-              onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); reloadChat(); }}
-              className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-[15px] font-semibold text-white transition-colors"
-            >
-              <RefreshCw className="w-4 h-4" /> Genopret forbindelse
-            </button>
+          <div className="absolute inset-0 z-[90] flex flex-col items-center justify-center bg-[#020609]/97 backdrop-blur-md">
+            <div className="flex flex-col items-center gap-4 bg-[#0a1628]/90 border border-white/[0.1] rounded-2xl px-8 py-8 max-w-[360px] w-[90%] shadow-[0_24px_80px_rgba(0,0,0,0.9)] text-center">
+              <div className="text-5xl">{disconnectMsg.includes("inaktivitet") ? "😴" : "⏱"}</div>
+              <div>
+                <p className="text-[17px] font-black text-white mb-1">{disconnectMsg}</p>
+                <p className="text-[13px] text-slate-500 leading-relaxed">
+                  {disconnectMsg.includes("inaktivitet")
+                    ? "Du var inaktiv i over 30 minutter og er blevet afkoblet."
+                    : "Du besvarede ikke tilstedeværelsesbekræftelsen inden for tidsfristen."}
+                </p>
+              </div>
+              <button
+                onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); reloadChat(); }}
+                className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-[15px] font-semibold text-white transition-colors w-full justify-center"
+              >
+                <RefreshCw className="w-4 h-4" /> Genopret forbindelse
+              </button>
+            </div>
           </div>
         )}
 
