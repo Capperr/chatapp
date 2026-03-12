@@ -13,6 +13,25 @@ export interface Profile {
   level?: number;
   coins?: number;
   total_online_seconds?: number;
+  last_login_date?: string | null;
+  login_streak?: number;
+  message_count?: number;
+}
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  badge_emoji: string;
+  badge_color: string;
+  reward_coins: number;
+  reward_xp: number;
+  sort_order: number;
+}
+
+export interface UserAchievement {
+  achievement_id: string;
+  earned_at: string;
 }
 
 export interface Message {

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck, Settings, Rocket } from "lucide-react";
-import type { Profile } from "@/types";
+import type { Profile, Achievement } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
 // ─── Grid constants ────────────────────────────────────────────────────────────
@@ -477,6 +477,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [draft, setDraft] = useState("");
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [profileView, setProfileView] = useState<Profile | null>(null);
+  const [profileViewAchievements, setProfileViewAchievements] = useState<Set<string>>(new Set());
   const [hovered, setHovered] = useState<string | null>(null);
   const [logMessages, setLogMessages] = useState<LogMessage[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
@@ -532,6 +533,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [lockedTiles, setLockedTiles] = useState<Set<string>>(new Set());
+  const [allAchievements, setAllAchievements] = useState<Achievement[]>([]);
+  const [myAchievements, setMyAchievements] = useState<Set<string>>(new Set());
+  const messageCountRef = useRef(0);
+  const [achievementNotif, setAchievementNotif] = useState<Achievement | null>(null);
   const [botMsgTick, setBotMsgTick] = useState(0);
   const [passcodePrompt, setPasscodePrompt] = useState<{ room: ChatRoom } | null>(null);
   const [passcodeInput, setPasscodeInput] = useState("");
@@ -669,6 +674,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         channelRef.current?.send({ type: "broadcast", event: "level_up", payload: { user_id: currentProfile.id, level: newLevel } });
       }
       supabase.from("profiles").update({ total_online_seconds: newTotal, level: newLevel }).eq("id", currentProfile.id);
+      // Online time achievements
+      if (newTotal >= 36000) checkAchievement("online_10h");   // 10h
+      if (newTotal >= 360000) checkAchievement("online_100h"); // 100h
+      // Level achievements from time
+      if (newLevel >= 5) checkAchievement("level_5");
+      if (newLevel >= 10) checkAchievement("level_10");
+      if (newLevel >= 20) checkAchievement("level_20");
     }, 30_000);
     return () => clearInterval(check);
   }, [triggerDisconnect, supabase, currentProfile.id]);
@@ -810,6 +822,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
         setTanExpiresAt(expiresAt);
         supabase.from("profiles").update({ tan_level: newLvl, tan_expires_at: expiresAt, solarie_minutes: totalMin }).eq("id", currentProfile.id);
+        if (newLvl >= 1) checkAchievement("solarie_1");
       }
     }, 1000);
 
@@ -865,7 +878,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("virtual_user_wardrobe").select("id, clothing_id, equipped").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyWardrobe(data as UserWardrobeEntry[]);
     });
-    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, tan_level, tan_expires_at, solarie_minutes").eq("id", currentProfile.id).single().then(({ data }) => {
+    // Load achievements catalog + user's earned achievements
+    supabase.from("achievements").select("*").order("sort_order").then(({ data }) => {
+      if (data) setAllAchievements(data as Achievement[]);
+    });
+    supabase.from("user_achievements").select("achievement_id").eq("user_id", currentProfile.id).then(({ data }) => {
+      if (data) setMyAchievements(new Set(data.map((a: { achievement_id: string }) => a.achievement_id)));
+    });
+    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
         // Load tan — reset if expired
@@ -894,6 +914,20 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         coinsRef.current = c; setCoins(c);
         const la = (data as { coins: number; last_coin_award: string }).last_coin_award;
         if (la) lastCoinAwardRef.current = new Date(la);
+        // Load message count
+        if ((data as { message_count?: number }).message_count != null) {
+          messageCountRef.current = (data as { message_count: number }).message_count;
+        }
+        // Daily login streak
+        const today = new Date().toISOString().slice(0, 10);
+        const lastLogin = (data as { last_login_date?: string | null }).last_login_date;
+        const streak = (data as { login_streak?: number }).login_streak ?? 0;
+        let newStreak = streak;
+        if (lastLogin !== today) {
+          const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+          newStreak = lastLogin === yesterday ? streak + 1 : 1;
+          supabase.from("profiles").update({ last_login_date: today, login_streak: newStreak }).eq("id", currentProfile.id);
+        }
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1263,7 +1297,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     setCtxMenu(null);
     if (userId === currentProfile.id) { setRightPanel("profile"); return; }
     const { data } = await supabase.from("profiles").select("*").eq("id", userId).single();
-    if (data) { setProfileView(data as Profile); setRightPanel("userprofile"); }
+    if (data) {
+      setProfileView(data as Profile); setRightPanel("userprofile");
+      supabase.from("user_achievements").select("achievement_id").eq("user_id", userId).then(({ data: ach }) => {
+        setProfileViewAchievements(new Set((ach ?? []).map((a: { achievement_id: string }) => a.achievement_id)));
+      });
+    }
   };
 
   const kickUser = (user: PresenceUser) => {
@@ -1420,6 +1459,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       .upsert({ user_id: currentProfile.id, clothing_id: item.id, equipped: false })
       .select("id, clothing_id, equipped").single();
     if (data) setMyWardrobe(prev => prev.map(w => w.id === tempEntry.id ? data as UserWardrobeEntry : w));
+    checkAchievement("own_clothing_1");
   };
 
   sendDraftRef.current = async () => {
@@ -1460,7 +1500,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     }
     levelRef.current = newLevel;
     xpRef.current = newXp; setXp(newXp); setLevel(newLevel);
-    await supabase.from("profiles").update({ xp: newXp, level: newLevel }).eq("id", currentProfile.id);
+    // Track message count + achievements
+    const newMsgCount = messageCountRef.current + 1;
+    messageCountRef.current = newMsgCount;
+    await supabase.from("profiles").update({ xp: newXp, level: newLevel, message_count: newMsgCount }).eq("id", currentProfile.id);
+    // Check message achievements
+    if (newMsgCount === 1) checkAchievement("first_message");
+    if (newMsgCount === 50) checkAchievement("messages_50");
+    if (newMsgCount === 200) checkAchievement("messages_200");
+    if (newMsgCount === 1000) checkAchievement("messages_1000");
+    // Check level achievements
+    if (newLevel >= 5) checkAchievement("level_5");
+    if (newLevel >= 10) checkAchievement("level_10");
+    if (newLevel >= 20) checkAchievement("level_20");
   };
 
   // ─── Item actions ──────────────────────────────────────────────────────────
@@ -1500,6 +1552,26 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const saveItemName = async (item: RoomItem, name: string) => {
     if (name.trim()) await supabase.from("virtual_room_items").update({ name: name.trim() }).eq("id", item.id);
     setEditItem(null);
+  };
+
+  const checkAchievement = async (achievementId: string) => {
+    if (myAchievements.has(achievementId)) return;
+    const achievement = allAchievements.find(a => a.id === achievementId);
+    if (!achievement) return;
+    const { error } = await supabase.from("user_achievements").insert({ user_id: currentProfile.id, achievement_id: achievementId });
+    if (error) return; // already earned (race condition)
+    setMyAchievements(prev => { const s = new Set(prev); s.add(achievementId); return s; });
+    if (achievement.reward_coins > 0 || achievement.reward_xp > 0) {
+      const newCoins = coinsRef.current + achievement.reward_coins;
+      const newXp = xpRef.current + achievement.reward_xp;
+      const newLevel = Math.max(levelRef.current, Math.floor(newXp / 100) + 1);
+      coinsRef.current = newCoins; setCoins(newCoins);
+      xpRef.current = newXp; setXp(newXp);
+      levelRef.current = newLevel; setLevel(newLevel);
+      await supabase.from("profiles").update({ coins: newCoins, xp: newXp, level: newLevel }).eq("id", currentProfile.id);
+    }
+    setAchievementNotif(achievement);
+    setTimeout(() => setAchievementNotif(null), 4000);
   };
 
   const toggleTileLock = async (gx: number, gy: number) => {
@@ -1830,14 +1902,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           </div>
 
           {/* XP glow bar */}
-          <div className="flex items-center">
+          <div className="flex items-center gap-1.5 px-1">
+            <span className="text-[9px] font-bold tabular-nums flex-shrink-0" style={{ color: "rgba(139,92,246,0.55)" }}>{xp % 100}/100 XP</span>
             <div className="flex-1 h-0.5 bg-white/[0.03] relative overflow-hidden">
               <div
                 className="h-full transition-[width] duration-700"
                 style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 6px rgba(139,92,246,0.8)" }}
               />
             </div>
-            <span className="text-[10px] font-bold px-1.5 flex-shrink-0" style={{ color: "rgba(139,92,246,0.5)" }}>LV {level + 1}</span>
+            <span className="text-[9px] font-bold px-1 flex-shrink-0" style={{ color: "rgba(139,92,246,0.4)" }}>LV {level + 1}</span>
           </div>
           {/* LV + coins row (non-fullscreen only) */}
           {!fullscreen && (
@@ -2301,6 +2374,26 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <div className="text-[13px] font-black uppercase tracking-[0.3em] text-violet-400">Level Up!</div>
                   <div className="text-6xl font-black text-white" style={{ textShadow: "0 0 40px rgba(139,92,246,0.9), 0 0 80px rgba(139,92,246,0.5)" }}>{showLevelUp}</div>
                   <div className="text-[13px] font-semibold text-violet-300 opacity-80">Niveau {showLevelUp} opnået</div>
+                </div>
+              </div>
+            )}
+
+            {/* Achievement earned toast */}
+            {achievementNotif && (
+              <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
+                <div className="flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-[0_8px_32px_rgba(0,0,0,0.8)] animate-level-up"
+                  style={{ background: achievementNotif.badge_color + "22", borderColor: achievementNotif.badge_color + "50", backdropFilter: "blur(16px)" }}>
+                  <span className="text-3xl leading-none">{achievementNotif.badge_emoji}</span>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: achievementNotif.badge_color }}>Bedrift opnået!</p>
+                    <p className="text-[14px] font-black text-white">{achievementNotif.name}</p>
+                    <p className="text-[11px] text-slate-400">{achievementNotif.description}</p>
+                    {(achievementNotif.reward_coins > 0 || achievementNotif.reward_xp > 0) && (
+                      <p className="text-[11px] font-semibold mt-0.5" style={{ color: achievementNotif.badge_color }}>
+                        +{achievementNotif.reward_coins > 0 ? `🪙 ${achievementNotif.reward_coins}` : ""}{achievementNotif.reward_coins > 0 && achievementNotif.reward_xp > 0 ? "  " : ""}{achievementNotif.reward_xp > 0 ? `⚡ ${achievementNotif.reward_xp} XP` : ""}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -2909,72 +3002,126 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {/* Other user profile panel */}
             {rightPanel === "userprofile" && profileView && (() => {
               const isMutedNow = !!(profileView.muted_until && new Date(profileView.muted_until) > new Date());
+              const pvIsAdmin = profileView.role === "admin";
+              const pvEarned = allAchievements.filter(a => profileViewAchievements.has(a.id));
               const updatePV = async (patch: Partial<Profile>) => {
                 const { data } = await supabase.from("profiles").update(patch).eq("id", profileView.id).select().single();
                 if (data) setProfileView(data as Profile);
               };
               return (
                 <>
+                  {/* Header */}
                   <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
-                    <span className="text-[13px] font-bold text-slate-300 tracking-wide truncate">{profileView.display_name}</span>
+                    <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-200 transition-colors flex-shrink-0 flex items-center gap-1.5 text-[12px]">← Tilbage</button>
                     <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
                   </div>
-                  <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-3 border-b border-white/[0.06] bg-gradient-to-b from-violet-500/[0.04] to-transparent">
-                    <svg width="96" height="100" viewBox="-28 -60 56 100">
-                      <ellipse cx="0" cy="38" rx="13" ry="3.5" fill="rgba(0,0,0,0.4)" />
-                      <g transform="scale(1.8)"><PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} /></g>
-                    </svg>
-                    <p className="text-[15px] font-bold text-white mt-1">{profileView.display_name}</p>
-                    <p className="text-[12px] text-slate-500">@{profileView.username}</p>
-                    <div className="flex gap-1 mt-1.5 flex-wrap justify-center">
-                      {profileView.role === "admin" && <span className="text-[11px] font-bold uppercase tracking-wide text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded-full border border-violet-500/20">🛡 MOD</span>}
-                      {profileView.is_banned && <span className="text-[11px] font-bold uppercase tracking-wide text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded-full border border-rose-500/20">Udelukket</span>}
-                      {isMutedNow && <span className="text-[11px] font-bold uppercase tracking-wide text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20">🔇 Muttet</span>}
+
+                  {/* Banner + avatar */}
+                  <div className="flex-shrink-0 relative">
+                    <div className="h-16 w-full" style={{ background: pvIsAdmin ? "linear-gradient(135deg,#1e0a3c,#2d1060,#1a0a2e)" : "linear-gradient(135deg,#050d1f,#0a1628,#060e1c)" }} />
+                    {pvIsAdmin && <div className="absolute inset-0 h-16 opacity-20" style={{ backgroundImage: "repeating-linear-gradient(45deg,#7c3aed 0,#7c3aed 1px,transparent 0,transparent 50%)", backgroundSize: "10px 10px" }} />}
+                    <div className="absolute top-3 left-4 flex items-center gap-1.5">
+                      {pvIsAdmin
+                        ? <span className="text-[10px] font-black uppercase tracking-[0.2em] px-2 py-1 rounded-lg" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", color: "#e0c8ff", boxShadow: "0 0 12px rgba(124,58,237,0.5)" }}>🛡 ADMIN</span>
+                        : <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 bg-white/[0.05] px-2 py-1 rounded-lg border border-white/[0.06]">Bruger</span>
+                      }
+                      {profileView.is_banned && <span className="text-[10px] font-bold uppercase tracking-wide text-rose-400 bg-rose-500/10 px-2 py-1 rounded-lg border border-rose-500/20">Udelukket</span>}
+                      {isMutedNow && <span className="text-[10px] font-bold uppercase tracking-wide text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">🔇 Muttet</span>}
+                    </div>
+                    <div className="flex flex-col items-center -mt-8 pb-3">
+                      <div className="w-16 h-16 rounded-full border-2 flex items-center justify-center" style={{ borderColor: pvIsAdmin ? "#7c3aed" : "#1e293b", background: "#07101c", boxShadow: pvIsAdmin ? "0 0 16px rgba(124,58,237,0.4)" : "0 4px 16px rgba(0,0,0,0.6)" }}>
+                        <svg width="48" height="50" viewBox="-14 -30 28 50">
+                          <PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} glow={pvIsAdmin} />
+                        </svg>
+                      </div>
+                      <p className="text-[16px] font-black text-white mt-2 tracking-tight">{profileView.display_name}</p>
+                      <p className="text-[12px] text-slate-500">@{profileView.username}</p>
+                      {/* Quick stats */}
+                      <div className="flex items-center gap-3 mt-2">
+                        {profileView.level != null && <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20"><span className="text-[11px] font-black text-violet-300">LV {profileView.level}</span></div>}
+                        {profileView.coins != null && <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20"><span className="text-sm">🪙</span><span className="text-[11px] font-black text-amber-300">{profileView.coins.toLocaleString()}</span></div>}
+                        {profileView.xp != null && <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.07]"><span className="text-[11px] font-semibold text-slate-400">{profileView.xp} XP</span></div>}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-                    <div className="grid grid-cols-3 gap-2">
-                      {profileView.level != null && <div className="flex flex-col items-center bg-violet-500/10 border border-violet-500/20 rounded-xl py-2"><span className="text-[15px] font-bold text-violet-300">Lv.{profileView.level}</span><span className="text-[11px] text-slate-500 mt-0.5">Niveau</span></div>}
-                      {profileView.xp != null && <div className="flex flex-col items-center bg-white/[0.04] border border-white/[0.06] rounded-xl py-2"><span className="text-[15px] font-bold text-slate-200">{profileView.xp}</span><span className="text-[11px] text-slate-500 mt-0.5">XP</span></div>}
-                      {profileView.coins != null && <div className="flex flex-col items-center bg-amber-500/10 border border-amber-500/20 rounded-xl py-2"><span className="text-[15px] font-bold text-amber-400">{profileView.coins}</span><span className="text-[11px] text-slate-500 mt-0.5">Mønter</span></div>}
-                    </div>
+
+                  <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                    {/* XP bar */}
                     {profileView.xp != null && (
                       <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                        <div className="flex justify-between text-[11px] text-slate-500 mb-1"><span>{profileView.xp % 100} / 100 XP</span><span>{100 - (profileView.xp % 100)} XP til Lv.{(profileView.level ?? 1) + 1}</span></div>
-                        <div className="w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden"><div className="h-full bg-gradient-to-r from-violet-600 to-violet-400" style={{ width: `${profileView.xp % 100}%` }} /></div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[12px] font-bold text-violet-300">Niveau {profileView.level ?? 1}</span>
+                          <span className="text-[12px] text-slate-500 tabular-nums">{profileView.xp % 100} / 100 XP</span>
+                        </div>
+                        <div className="w-full bg-white/[0.06] rounded-full h-2.5 overflow-hidden">
+                          <div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400" style={{ width: `${profileView.xp % 100}%` }} />
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-1">{100 - (profileView.xp % 100)} XP til niveau {(profileView.level ?? 1) + 1}</p>
                       </div>
                     )}
-                    {profileView.total_online_seconds != null && profileView.total_online_seconds > 0 && (
-                      <div className="flex items-center justify-between bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                        <span className="text-[13px] text-slate-400">Total tid online</span>
-                        <span className="text-[13px] text-slate-200 font-medium">{(() => { const h = Math.floor(profileView.total_online_seconds! / 3600); const m = Math.floor((profileView.total_online_seconds! % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+
+                    {/* Achievements */}
+                    {pvEarned.length > 0 && (
+                      <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2.5">Bedrifter ({pvEarned.length})</p>
+                        <div className="flex flex-wrap gap-2">
+                          {pvEarned.map(a => (
+                            <div key={a.id} title={`${a.name}: ${a.description}`}
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border cursor-default hover:scale-105 transition-transform"
+                              style={{ background: a.badge_color + "15", borderColor: a.badge_color + "35" }}>
+                              <span className="text-base leading-none">{a.badge_emoji}</span>
+                              <span className="text-[11px] font-semibold" style={{ color: a.badge_color }}>{a.name}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
-                    {profileView.bio && <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]"><p className="text-[13px] text-slate-400 leading-relaxed">{profileView.bio}</p></div>}
+
+                    {/* Info */}
+                    {(profileView.total_online_seconds != null || profileView.bio) && (
+                      <div className="bg-white/[0.03] rounded-xl border border-white/[0.05] overflow-hidden">
+                        <div className="px-3 py-2 border-b border-white/[0.05] bg-white/[0.02]">
+                          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Info</p>
+                        </div>
+                        <div className="p-3 space-y-2">
+                          {profileView.total_online_seconds != null && profileView.total_online_seconds > 0 && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-[13px] text-slate-400">⏱ Online tid</span>
+                              <span className="text-[13px] text-slate-200 font-medium">{(() => { const h = Math.floor(profileView.total_online_seconds! / 3600); const m = Math.floor((profileView.total_online_seconds! % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                            </div>
+                          )}
+                          {profileView.bio && <p className="text-[13px] text-slate-400 leading-relaxed pt-1 border-t border-white/[0.05]">{profileView.bio}</p>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Admin tools */}
                     {isAdmin && (
-                      <div className="space-y-2 pt-1 border-t border-white/[0.06]">
-                        <p className="text-[12px] font-bold text-slate-500 uppercase tracking-wide pt-2">Moderator</p>
-                        {isMutedNow ? (
-                          <button onClick={() => updatePV({ muted_until: null }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.delete(profileView.id); return s; }))} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">
-                            <Volume2 className="w-3.5 h-3.5" /> Fjern mute
-                          </button>
-                        ) : (
-                          <div className="grid grid-cols-2 gap-1.5">
-                            {([["15 min", 15], ["1 time", 60], ["24 timer", 1440], ["Permanent", 5256000]] as [string, number][]).map(([l, m]) => (
-                              <button key={l} onClick={() => { const until = new Date(Date.now() + m * 60000).toISOString(); updatePV({ muted_until: until }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.add(profileView.id); return s; })); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"><VolumeX className="w-3 h-3 flex-shrink-0" />{l}</button>
-                            ))}
-                          </div>
-                        )}
-                        {profileView.is_banned ? (
-                          <button onClick={() => updatePV({ is_banned: false })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"><UserCheck className="w-3.5 h-3.5" /> Fjern udelukkelse</button>
-                        ) : (
-                          <button onClick={() => { if (confirm(`Udeluk ${profileView.display_name}?`)) updatePV({ is_banned: true }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors"><Ban className="w-3.5 h-3.5" /> Udeluk bruger</button>
-                        )}
-                        {profileView.role === "admin" ? (
-                          <button onClick={() => { if (confirm(`Fjern admin fra ${profileView.display_name}?`)) updatePV({ role: "user" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"><ShieldOff className="w-3.5 h-3.5" /> Fjern moderator</button>
-                        ) : (
-                          <button onClick={() => { if (confirm(`Gør ${profileView.display_name} til moderator?`)) updatePV({ role: "admin" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-colors"><Shield className="w-3.5 h-3.5" /> Gør til moderator</button>
-                        )}
+                      <div className="bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-hidden">
+                        <div className="px-3 py-2 border-b border-white/[0.05] bg-violet-500/[0.04]">
+                          <p className="text-[11px] font-bold text-violet-500 uppercase tracking-widest">🛡 Moderator</p>
+                        </div>
+                        <div className="p-2 space-y-1.5">
+                          {isMutedNow ? (
+                            <button onClick={() => updatePV({ muted_until: null }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.delete(profileView.id); return s; }))} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">
+                              <Volume2 className="w-3.5 h-3.5" /> Fjern mute
+                            </button>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {([["15 min", 15], ["1 time", 60], ["24 timer", 1440], ["Permanent", 5256000]] as [string, number][]).map(([l, m]) => (
+                                <button key={l} onClick={() => { const until = new Date(Date.now() + m * 60000).toISOString(); updatePV({ muted_until: until }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.add(profileView.id); return s; })); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"><VolumeX className="w-3 h-3 flex-shrink-0" />{l}</button>
+                              ))}
+                            </div>
+                          )}
+                          {profileView.is_banned
+                            ? <button onClick={() => updatePV({ is_banned: false })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"><UserCheck className="w-3.5 h-3.5" /> Fjern udelukkelse</button>
+                            : <button onClick={() => { if (confirm(`Udeluk ${profileView.display_name}?`)) updatePV({ is_banned: true }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors"><Ban className="w-3.5 h-3.5" /> Udeluk bruger</button>
+                          }
+                          {pvIsAdmin
+                            ? <button onClick={() => { if (confirm(`Fjern admin fra ${profileView.display_name}?`)) updatePV({ role: "user" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"><ShieldOff className="w-3.5 h-3.5" /> Fjern moderator</button>
+                            : <button onClick={() => { if (confirm(`Gør ${profileView.display_name} til moderator?`)) updatePV({ role: "admin" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-colors"><Shield className="w-3.5 h-3.5" /> Gør til moderator</button>
+                          }
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2982,63 +3129,104 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               );
             })()}
 
-            {rightPanel === "profile" && (
+            {rightPanel === "profile" && (() => {
+              const earnedAchievements = allAchievements.filter(a => myAchievements.has(a.id));
+              return (
               <>
+                {/* Header */}
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
                   <span className="text-[13px] font-bold text-slate-300 tracking-wide">Min profil</span>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
-                {/* Avatar preview */}
-                <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-3 border-b border-white/[0.06] bg-gradient-to-b from-violet-500/[0.04] to-transparent">
-                  <svg width="96" height="100" viewBox="-28 -60 56 100">
-                    <ellipse cx="0" cy="38" rx="13" ry="3.5" fill="rgba(0,0,0,0.4)" />
-                    <g transform="scale(1.8)">
-                      <PersonAvatar color={myColor} glow={true} mood={myMood} />
-                      {Object.keys(myOutfit).length > 0 && <ClothingOverlay outfit={myOutfit} catalog={clothingCatalog} />}
-                    </g>
-                  </svg>
-                  <p className="text-[15px] font-bold text-white mt-1">{currentProfile.display_name}</p>
-                  <p className="text-[12px] text-slate-500">@{currentProfile.username}</p>
+
+                {/* Banner + avatar */}
+                <div className="flex-shrink-0 relative">
+                  <div className="h-16 w-full" style={{ background: isAdmin ? "linear-gradient(135deg,#1e0a3c,#2d1060,#1a0a2e)" : "linear-gradient(135deg,#050d1f,#0a1628,#060e1c)" }} />
+                  {isAdmin && <div className="absolute inset-0 h-16 opacity-20" style={{ backgroundImage: "repeating-linear-gradient(45deg,#7c3aed 0,#7c3aed 1px,transparent 0,transparent 50%)", backgroundSize: "10px 10px" }} />}
+                  <div className="absolute top-3 left-4">
+                    {isAdmin
+                      ? <span className="text-[10px] font-black uppercase tracking-[0.2em] px-2 py-1 rounded-lg" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", color: "#e0c8ff", boxShadow: "0 0 12px rgba(124,58,237,0.5)" }}>🛡 ADMIN</span>
+                      : <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 bg-white/[0.05] px-2 py-1 rounded-lg border border-white/[0.06]">Bruger</span>
+                    }
+                  </div>
+                  {/* Avatar circle */}
+                  <div className="flex flex-col items-center -mt-8 pb-3">
+                    <div className="w-16 h-16 rounded-full border-2 flex items-center justify-center" style={{ borderColor: isAdmin ? "#7c3aed" : "#1e293b", background: "#07101c", boxShadow: isAdmin ? "0 0 16px rgba(124,58,237,0.4)" : "0 4px 16px rgba(0,0,0,0.6)" }}>
+                      <svg width="48" height="50" viewBox="-14 -30 28 50">
+                        <PersonAvatar color={myColor} glow={isAdmin} mood={myMood} />
+                        {Object.keys(myOutfit).length > 0 && <ClothingOverlay outfit={myOutfit} catalog={clothingCatalog} />}
+                      </svg>
+                    </div>
+                    <p className="text-[16px] font-black text-white mt-2 tracking-tight">{currentProfile.display_name}</p>
+                    <p className="text-[12px] text-slate-500">@{currentProfile.username}</p>
+                    {/* Quick stats row */}
+                    <div className="flex items-center gap-3 mt-2">
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20">
+                        <span className="text-[11px] font-black text-violet-300">LV {level}</span>
+                      </div>
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20">
+                        <span className="text-sm leading-none">🪙</span>
+                        <span className="text-[11px] font-black text-amber-300">{coins.toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.07]">
+                        <span className="text-[11px] font-semibold text-slate-400">{xp} XP</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                {/* Stats */}
-                <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-                  {/* Level + XP */}
+
+                <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                  {/* XP Progress */}
                   <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[12px] font-bold text-violet-300 uppercase tracking-wide">Niveau {level}</span>
-                      <span className="text-[12px] text-slate-500">{xp % 100} / 100 XP</span>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[12px] font-bold text-violet-300">Niveau {level}</span>
+                      <span className="text-[12px] text-slate-500 tabular-nums">{xp % 100} / 100 XP</span>
                     </div>
-                    <div className="w-full bg-white/[0.06] rounded-full h-2 overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all duration-500" style={{ width: `${xp % 100}%` }} />
+                    <div className="w-full bg-white/[0.06] rounded-full h-2.5 overflow-hidden">
+                      <div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all duration-500" style={{ width: `${xp % 100}%` }} />
                     </div>
-                    <p className="text-[11px] text-slate-600 mt-1.5">{100 - (xp % 100)} XP til niveau {level + 1} · {xp} XP i alt</p>
+                    <p className="text-[11px] text-slate-600 mt-1">{100 - (xp % 100)} XP til niveau {level + 1}</p>
                   </div>
-                  {/* Activity stats */}
-                  <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05] space-y-2">
-                    <p className="text-[12px] font-bold text-slate-400 uppercase tracking-wide">Aktivitet</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[13px] text-slate-400">Total tid online</span>
-                      <span className="text-[13px] text-slate-200 font-medium tabular-nums">{(() => { const h = Math.floor(totalSeconds / 3600); const m = Math.floor((totalSeconds % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+
+                  {/* Achievements/badges */}
+                  {earnedAchievements.length > 0 && (
+                    <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2.5">Bedrifter ({earnedAchievements.length})</p>
+                      <div className="flex flex-wrap gap-2">
+                        {earnedAchievements.map(a => (
+                          <div key={a.id} title={`${a.name}: ${a.description}`}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all cursor-default hover:scale-105"
+                            style={{ background: a.badge_color + "15", borderColor: a.badge_color + "35" }}>
+                            <span className="text-base leading-none">{a.badge_emoji}</span>
+                            <span className="text-[11px] font-semibold" style={{ color: a.badge_color }}>{a.name}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[13px] text-slate-400">Denne session</span>
-                      <span className="text-[13px] text-slate-400 font-medium tabular-nums">{(() => { const s = Math.floor((Date.now() - sessionStartRef.current) / 1000); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                  )}
+
+                  {/* Activity */}
+                  <div className="bg-white/[0.03] rounded-xl border border-white/[0.05] overflow-hidden">
+                    <div className="px-3 py-2 border-b border-white/[0.05] bg-white/[0.02]">
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Aktivitet</p>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[13px] text-slate-400">Bekræftede timer</span>
-                      <span className="text-[13px] text-amber-400 font-medium">{confirmedHours}t</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[13px] text-slate-400">Næste belønning om</span>
-                      <span className="text-[13px] text-emerald-400 font-medium tabular-nums">{(() => { const m = Math.floor(timeToNextHour / 60); const s = timeToNextHour % 60; return `${m}:${String(s).padStart(2, "0")}`; })()}</span>
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[13px] text-slate-400">⏱ Total online</span>
+                        <span className="text-[13px] text-slate-200 font-medium tabular-nums">{(() => { const h = Math.floor(totalSeconds / 3600); const m = Math.floor((totalSeconds % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[13px] text-slate-400">💬 Beskeder</span>
+                        <span className="text-[13px] text-slate-200 font-medium tabular-nums">{messageCountRef.current}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[13px] text-slate-400">🪙 Næste bonus om</span>
+                        <span className="text-[13px] text-emerald-400 font-medium tabular-nums">{(() => { const m = Math.floor(timeToNextHour / 60); const s = timeToNextHour % 60; return `${m}:${String(s).padStart(2, "0")}`; })()}</span>
+                      </div>
                     </div>
                   </div>
-                  {/* Coins */}
-                  <div className="flex items-center justify-between bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                    <span className="text-[13px] text-slate-400">Mønter</span>
-                    <span className="text-[14px] text-amber-400 font-bold">🪙 {coins}</span>
-                  </div>
-                  {/* Tan status */}
+
+                  {/* Solarie */}
                   {tanLevel > 0 && (
                     <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 space-y-1.5">
                       <div className="flex items-center justify-between">
@@ -3050,14 +3238,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           ))}
                         </div>
                       </div>
-                      {tanExpiresAt && (
-                        <p className="text-[11px] text-amber-700">Forsvinder om {Math.round((new Date(tanExpiresAt).getTime() - Date.now()) / 3600000)}t</p>
-                      )}
+                      {tanExpiresAt && <p className="text-[11px] text-amber-700">Forsvinder om {Math.round((new Date(tanExpiresAt).getTime() - Date.now()) / 3600000)}t</p>}
                     </div>
                   )}
                 </div>
               </>
-            )}
+              );
+            })()}
 
             {/* Chat log */}
             {rightPanel === "chatlog" && (
