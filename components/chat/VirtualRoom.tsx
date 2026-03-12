@@ -1549,17 +1549,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-700 flex items-center justify-center flex-shrink-0 shadow-[0_0_8px_rgba(139,92,246,0.4)]">
                 <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
               </div>
-              <span className="hidden sm:block text-[11px] font-bold text-white/50 tracking-tight flex-shrink-0">ChatApp</span>
+              <span className="hidden sm:block text-[13px] font-bold text-white/50 tracking-tight flex-shrink-0">ChatApp</span>
               <div className="hidden sm:block w-px h-3.5 bg-white/[0.1] flex-shrink-0" />
               {/* Room */}
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 shadow-[0_0_6px_rgba(52,211,153,0.8)] animate-pulse" />
-                <span className="text-[13px] font-bold text-white tracking-tight truncate">#{activeRoomName}</span>
-                {activeRoomType === "shop" && <span className="hidden sm:flex text-[8px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Shop</span>}
+                <span className="text-[15px] font-bold text-white tracking-tight truncate">#{activeRoomName}</span>
+                {activeRoomType === "shop" && <span className="hidden sm:flex text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Shop</span>}
               </div>
               <div className="hidden sm:flex items-center gap-1 flex-shrink-0">
                 <span className="w-1 h-1 rounded-full bg-emerald-400/60" />
-                <span className="text-[10px] font-semibold text-emerald-500 tabular-nums">{totalUsers}</span>
+                <span className="text-[12px] font-semibold text-emerald-500 tabular-nums">{totalUsers}</span>
               </div>
             </div>
 
@@ -1576,7 +1576,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")}
                     className={`flex items-center gap-1.5 px-3.5 transition-colors h-full ${rightPanel === "profile" ? "bg-violet-500/15" : "hover:bg-white/[0.04]"}`}
                   >
-                    <span className="text-[7px] font-black tracking-[0.2em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
+                    <span className="text-[9px] font-black tracking-[0.2em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
                     <span className="text-[16px] font-black text-white tabular-nums leading-none">{level}</span>
                   </button>
 
@@ -1584,7 +1584,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
                   {/* XP */}
                   <div className="hidden sm:flex items-center px-3.5">
-                    <span className="text-[11px] font-semibold tabular-nums" style={{ color: "rgba(255,255,255,0.22)" }}>
+                    <span className="text-[13px] font-semibold tabular-nums" style={{ color: "rgba(255,255,255,0.22)" }}>
                       <span style={{ color: "#8b5cf6" }}>{xp % 100}</span>/100 xp
                     </span>
                   </div>
@@ -1616,26 +1616,26 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 6px rgba(139,92,246,0.8)" }}
               />
             </div>
-            <span className="text-[8px] font-bold px-1.5 flex-shrink-0" style={{ color: "rgba(139,92,246,0.5)" }}>LV {level + 1}</span>
+            <span className="text-[10px] font-bold px-1.5 flex-shrink-0" style={{ color: "rgba(139,92,246,0.5)" }}>LV {level + 1}</span>
           </div>
           {/* LV + coins row (non-fullscreen only) */}
           {!fullscreen && (
             <div className="flex items-center justify-end gap-3 px-3 py-1">
               <div className="flex items-center gap-1.5">
-                <span className="text-[7px] font-black tracking-[0.18em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
-                <span className="text-[13px] font-black tabular-nums text-white leading-none">{level}</span>
+                <span className="text-[9px] font-black tracking-[0.18em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
+                <span className="text-[15px] font-black tabular-nums text-white leading-none">{level}</span>
               </div>
               <span className="w-px h-3 bg-white/[0.08]" />
               <div className="flex items-center gap-1.5">
                 <span className="text-sm leading-none">🪙</span>
-                <span className="text-[13px] font-black tabular-nums leading-none" style={{ color: "#f59e0b" }}>{coins}</span>
+                <span className="text-[15px] font-black tabular-nums leading-none" style={{ color: "#f59e0b" }}>{coins}</span>
               </div>
             </div>
           )}
           {/* Placing hint */}
           {(movingBotId || placingItem) && (
             <div className="px-4 py-1 bg-violet-600/10 border-t border-violet-500/15 text-center">
-              <span className="text-[10px] text-violet-300 font-semibold animate-pulse">
+              <span className="text-[12px] text-violet-300 font-semibold animate-pulse">
                 {movingBotId ? "Klik på et felt for at placere bot" : isWallItemType(placingItem!.item.item_type) ? "Klik på væggen for at hænge op" : `Klik på et felt · R = roter (${placingItem!.rotation * 90}°)`}
               </span>
             </div>
@@ -2069,9 +2069,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {showLevelUp !== null && (
               <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
                 <div className="animate-level-up flex flex-col items-center gap-2">
-                  <div className="text-[11px] font-black uppercase tracking-[0.3em] text-violet-400">Level Up!</div>
+                  <div className="text-[13px] font-black uppercase tracking-[0.3em] text-violet-400">Level Up!</div>
                   <div className="text-6xl font-black text-white" style={{ textShadow: "0 0 40px rgba(139,92,246,0.9), 0 0 80px rgba(139,92,246,0.5)" }}>{showLevelUp}</div>
-                  <div className="text-[11px] font-semibold text-violet-300 opacity-80">Niveau {showLevelUp} opnået</div>
+                  <div className="text-[13px] font-semibold text-violet-300 opacity-80">Niveau {showLevelUp} opnået</div>
                 </div>
               </div>
             )}
@@ -2097,7 +2097,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     ))}
                   </div>
                   {/* Current level label */}
-                  <span className="text-[11px] font-bold text-amber-300">
+                  <span className="text-[13px] font-bold text-amber-300">
                     {tanLevel > 0 ? TAN_LEVELS[tanLevel]!.label : "Solarier…"}
                   </span>
                   {/* Countdown to next level */}
@@ -2105,14 +2105,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <>
                       <div className="w-px h-3 bg-amber-800/40" />
                       <div className="flex flex-col items-center">
-                        <span className="text-[8px] text-amber-700 uppercase tracking-wider leading-none mb-0.5">næste niveau</span>
-                        <span className="text-[11px] font-black text-amber-400 tabular-nums leading-none">
+                        <span className="text-[10px] text-amber-700 uppercase tracking-wider leading-none mb-0.5">næste niveau</span>
+                        <span className="text-[13px] font-black text-amber-400 tabular-nums leading-none">
                           {displayMin > 0 ? `${displayMin}m ` : ""}{displaySec}s
                         </span>
                       </div>
                     </>
                   )}
-                  {tanLevel === 4 && <span className="text-[10px] text-amber-500 font-semibold">Max brunet 🔥</span>}
+                  {tanLevel === 4 && <span className="text-[12px] text-amber-500 font-semibold">Max brunet 🔥</span>}
                 </div>
               );
             })()}
@@ -2120,11 +2120,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {/* Visit request incoming */}
             {visitRequest && (
               <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-3 px-5 py-4 bg-[#070f1e]/98 backdrop-blur-xl rounded-2xl border border-violet-500/30 shadow-[0_16px_48px_rgba(0,0,0,0.8)] w-72">
-                <div className="flex items-center gap-2"><Rocket className="w-4 h-4 text-violet-400" /><span className="text-[13px] font-bold text-white">Besøgsanmodning</span></div>
-                <p className="text-[12px] text-slate-300 text-center"><span className="text-violet-300 font-semibold">{visitRequest.from_name}</span> vil besøge dit rumskib</p>
+                <div className="flex items-center gap-2"><Rocket className="w-4 h-4 text-violet-400" /><span className="text-[15px] font-bold text-white">Besøgsanmodning</span></div>
+                <p className="text-[14px] text-slate-300 text-center"><span className="text-violet-300 font-semibold">{visitRequest.from_name}</span> vil besøge dit rumskib</p>
                 <div className="flex gap-2 w-full">
-                  <button onClick={() => { channelRef.current?.send({ type: "broadcast", event: "spaceship_invite", payload: { to_id: visitRequest.from_id, accepted: true, spaceship_room_id: visitRequest.spaceship_room_id, spaceship_room_name: visitRequest.spaceship_room_name, cols: mySpaceship?.cols, rows: mySpaceship?.rows, theme_key: mySpaceship?.theme_key, floor_pattern: mySpaceship?.floor_pattern } }); setVisitRequest(null); }} className="flex-1 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[12px] font-semibold transition-colors">Accepter</button>
-                  <button onClick={() => { channelRef.current?.send({ type: "broadcast", event: "spaceship_invite", payload: { to_id: visitRequest.from_id, accepted: false } }); setVisitRequest(null); }} className="flex-1 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-slate-300 text-[12px] font-semibold transition-colors">Afvis</button>
+                  <button onClick={() => { channelRef.current?.send({ type: "broadcast", event: "spaceship_invite", payload: { to_id: visitRequest.from_id, accepted: true, spaceship_room_id: visitRequest.spaceship_room_id, spaceship_room_name: visitRequest.spaceship_room_name, cols: mySpaceship?.cols, rows: mySpaceship?.rows, theme_key: mySpaceship?.theme_key, floor_pattern: mySpaceship?.floor_pattern } }); setVisitRequest(null); }} className="flex-1 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[14px] font-semibold transition-colors">Accepter</button>
+                  <button onClick={() => { channelRef.current?.send({ type: "broadcast", event: "spaceship_invite", payload: { to_id: visitRequest.from_id, accepted: false } }); setVisitRequest(null); }} className="flex-1 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-slate-300 text-[14px] font-semibold transition-colors">Afvis</button>
                 </div>
               </div>
             )}
@@ -2132,7 +2132,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {awaitingVisit && (
               <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-3 bg-[#070f1e]/98 backdrop-blur-xl rounded-2xl border border-violet-500/20 shadow-[0_12px_40px_rgba(0,0,0,0.7)]">
                 <Rocket className="w-4 h-4 text-violet-400 animate-pulse" />
-                <span className="text-[12px] text-slate-300">Venter på svar...</span>
+                <span className="text-[14px] text-slate-300">Venter på svar...</span>
                 <button onClick={() => setAwaitingVisit(false)} className="text-slate-600 hover:text-slate-400 ml-1"><X className="w-3.5 h-3.5" /></button>
               </div>
             )}
@@ -2140,17 +2140,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {/* Spam cooldown indicator */}
             {cooldownSec > 0 && (
               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2.5 bg-rose-950/95 backdrop-blur-xl rounded-2xl border border-rose-500/30 shadow-[0_12px_40px_rgba(0,0,0,0.7)]">
-                <span className="text-rose-400 text-[13px]">⛔</span>
-                <span className="text-[12px] font-semibold text-rose-300">Vent {cooldownSec}s — for mange beskeder</span>
+                <span className="text-rose-400 text-[15px]">⛔</span>
+                <span className="text-[14px] font-semibold text-rose-300">Vent {cooldownSec}s — for mange beskeder</span>
               </div>
             )}
 
             {/* Floating draft bubble */}
             {draft && cooldownSec === 0 && (
               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2.5 bg-[#040c19]/98 backdrop-blur-xl rounded-2xl border border-white/[0.12] shadow-[0_12px_40px_rgba(0,0,0,0.7)] max-w-[340px]">
-                <span className="text-[13px] text-slate-200 flex-1 truncate font-medium">{draft}</span>
-                <span className="text-[10px] text-slate-600 tabular-nums flex-shrink-0">{draft.length}/40</span>
-                <kbd className="text-[9px] text-slate-500 flex-shrink-0 bg-white/[0.07] border border-white/[0.08] px-1.5 py-0.5 rounded-md font-mono">↵</kbd>
+                <span className="text-[15px] text-slate-200 flex-1 truncate font-medium">{draft}</span>
+                <span className="text-[12px] text-slate-600 tabular-nums flex-shrink-0">{draft.length}/40</span>
+                <kbd className="text-[11px] text-slate-500 flex-shrink-0 bg-white/[0.07] border border-white/[0.08] px-1.5 py-0.5 rounded-md font-mono">↵</kbd>
                 <button onClick={() => { draftRef.current = ""; setDraft(""); }} className="text-slate-600 hover:text-rose-400 flex-shrink-0 transition-colors ml-0.5"><X className="w-3.5 h-3.5" /></button>
               </div>
             )}
@@ -2162,21 +2162,21 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <button onClick={() => setRightPanel(p => p === "chatlog" ? "hidden" : "chatlog")} className={`p-2 rounded-xl transition-all ${rightPanel === "chatlog" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Chatlog"><MessageSquare className="w-[18px] h-[18px]" /></button>
               <button onClick={() => setRightPanel(p => p === "online" ? "hidden" : "online")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
                 <Users className="w-[18px] h-[18px]" />
-                {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
+                {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
               </button>
               <button onClick={() => { setRightPanel(p => p === "wardrobe" ? "hidden" : "wardrobe"); setWardrobeActiveSlot(null); setWardrobePreviewId(null); }} className={`p-2 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
                 <Shirt className="w-[18px] h-[18px]" />
               </button>
               <button onClick={() => setRightPanel(p => p === "inventory" ? "hidden" : "inventory")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rygsæk">
                 <Package className="w-[18px] h-[18px]" />
-                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
+                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
               </button>
               <button onClick={() => setRightPanel(p => p === "rooms" ? "hidden" : "rooms")} className={`p-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rum"><Hash className="w-[18px] h-[18px]" /></button>
               {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "hidden" : "admin")} className={`p-2 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Admin"><Wrench className="w-[18px] h-[18px]" /></button>}
               <button onClick={() => setRightPanel(p => p === "settings" ? "hidden" : "settings")} className={`p-2 rounded-xl transition-all ${rightPanel === "settings" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Indstillinger"><Settings className="w-[18px] h-[18px]" /></button>
               <div className="w-px h-5 bg-white/[0.08] mx-1" />
               <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ind"><ZoomIn className="w-[18px] h-[18px]" /></button>
-              <span className="text-[10px] text-slate-600 w-7 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+              <span className="text-[12px] text-slate-600 w-7 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
               <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ud"><ZoomOut className="w-[18px] h-[18px]" /></button>
             </div>
           </div>
@@ -2184,12 +2184,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         </div>
         {/* Extension panel - appears to the right of window */}
         {extensionOpen && (
-          <div className={`${fullscreen ? "absolute right-4 top-14 bottom-4 z-30 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl" : "absolute right-0 top-0 translate-x-full h-full rounded-r-2xl border border-l-0 border-white/[0.1] shadow-[16px_0_40px_rgba(0,0,0,0.6)] max-sm:hidden"} ${rightPanel === "wardrobe" ? "w-[420px]" : "w-72"} flex flex-col bg-[#030912]/98 overflow-hidden`}>
+          <div className={`${fullscreen ? "absolute right-4 top-14 bottom-4 z-30 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl" : "absolute right-0 top-0 translate-x-full h-full rounded-r-2xl border border-l-0 border-white/[0.1] shadow-[16px_0_40px_rgba(0,0,0,0.6)] max-sm:hidden"} w-[420px] flex flex-col bg-[#030912]/98 overflow-hidden`}>
             {/* Online users */}
             {rightPanel === "online" && (
               <>
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60">
-                  <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span className="text-[11px] font-bold text-slate-300 tracking-wide">Online — {globalUsers.size}</span></div>
+                  <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span className="text-[13px] font-bold text-slate-300 tracking-wide">Online — {globalUsers.size}</span></div>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
                 <div className="flex-1 overflow-y-auto py-1">
@@ -2203,10 +2203,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-[#07101c]" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[12px] text-slate-300 truncate">{isMe ? `${u.display_name} (dig)` : u.display_name}</p>
-                          <p className={`text-[10px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</p>
+                          <p className="text-[14px] text-slate-300 truncate">{isMe ? `${u.display_name} (dig)` : u.display_name}</p>
+                          <p className={`text-[12px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</p>
                         </div>
-                        {!inSameRoom && !isMe && <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id); }} className="text-[10px] text-slate-500 hover:text-violet-400 flex-shrink-0">Gå til</button>}
+                        {!inSameRoom && !isMe && <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id); }} className="text-[12px] text-slate-500 hover:text-violet-400 flex-shrink-0">Gå til</button>}
                       </div>
                     );
                   })}
@@ -2221,8 +2221,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <>
                 <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Butik</span>
-                    <span className="text-[11px] text-amber-400 font-semibold">🪙 {coins}</span>
+                    <span className="text-[12px] font-semibold text-slate-500 uppercase tracking-widest">Butik</span>
+                    <span className="text-[13px] text-amber-400 font-semibold">🪙 {coins}</span>
                   </div>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
                 </div>
@@ -2234,7 +2234,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       <div key={slot.id} className="border-b border-white/[0.04]">
                         <div className="px-3 py-1.5 flex items-center gap-1.5">
                           <span className="text-sm">{slot.emoji}</span>
-                          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{slot.label}</span>
+                          <span className="text-[12px] font-semibold text-slate-500 uppercase tracking-wide">{slot.label}</span>
                         </div>
                         {slotItems.map(item => {
                           const owned = myWardrobe.some(w => w.clothing_id === item.id);
@@ -2242,10 +2242,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           return (
                             <div key={item.id} className="px-3 py-1.5 flex items-center gap-2">
                               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
-                              <span className={`text-[11px] flex-1 truncate ${owned ? "text-violet-300" : canAfford ? "text-slate-300" : "text-slate-600"}`}>{item.name}</span>
+                              <span className={`text-[13px] flex-1 truncate ${owned ? "text-violet-300" : canAfford ? "text-slate-300" : "text-slate-600"}`}>{item.name}</span>
                               {owned
-                                ? <span className="text-[9px] text-emerald-500 flex-shrink-0">Ejet</span>
-                                : <button onClick={() => buyItem(item)} disabled={!canAfford} className={`text-[9px] flex-shrink-0 px-1.5 py-0.5 rounded font-semibold transition-colors ${canAfford ? "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30" : "text-slate-700 cursor-not-allowed"}`}>
+                                ? <span className="text-[11px] text-emerald-500 flex-shrink-0">Ejet</span>
+                                : <button onClick={() => buyItem(item)} disabled={!canAfford} className={`text-[11px] flex-shrink-0 px-1.5 py-0.5 rounded font-semibold transition-colors ${canAfford ? "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30" : "text-slate-700 cursor-not-allowed"}`}>
                                     🪙 {item.price}
                                   </button>
                               }
@@ -2266,7 +2266,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <Hash className="w-4 h-4 text-violet-400" />
-                    <span className="text-[12px] font-bold text-slate-200 tracking-wide">Skift rum</span>
+                    <span className="text-[14px] font-bold text-slate-200 tracking-wide">Skift rum</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8, room_type: "normal", theme_key: "blue", floor_pattern: "standard" })} className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all" title="Opret rum"><Plus className="w-3.5 h-3.5" /></button>}
@@ -2282,19 +2282,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     : (v: typeof form) => setCreateRoomForm(v as typeof createRoomForm);
                   return (
                     <div className="px-3 py-2.5 border-b border-white/[0.06] bg-violet-500/[0.04] flex-shrink-0 overflow-y-auto max-h-[70%]">
-                      <p className="text-[10px] font-bold text-slate-400 mb-2">{isEdit ? "Rediger rum" : "Nyt rum"}</p>
-                      <input autoFocus value={form.name} onChange={e => set({ ...form, name: e.target.value })} onKeyDown={e => { if (e.key === "Escape") { isEdit ? setEditRoomForm(null) : setCreateRoomForm(null); } }} placeholder="Rum navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-2 py-1.5 text-[11px] text-slate-100 outline-none mb-2 focus:border-violet-500/50" />
+                      <p className="text-[12px] font-bold text-slate-400 mb-2">{isEdit ? "Rediger rum" : "Nyt rum"}</p>
+                      <input autoFocus value={form.name} onChange={e => set({ ...form, name: e.target.value })} onKeyDown={e => { if (e.key === "Escape") { isEdit ? setEditRoomForm(null) : setCreateRoomForm(null); } }} placeholder="Rum navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-2 py-1.5 text-[13px] text-slate-100 outline-none mb-2 focus:border-violet-500/50" />
                       <div className="flex gap-1.5 mb-2">
-                        <div className="flex-1"><p className="text-[9px] text-slate-500 mb-0.5">Bredde</p><input type="number" min={4} max={20} value={form.cols} onChange={e => set({ ...form, cols: Math.max(4, Math.min(20, parseInt(e.target.value) || 10)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-violet-500/50" /></div>
-                        <div className="flex-1"><p className="text-[9px] text-slate-500 mb-0.5">Dybde</p><input type="number" min={4} max={16} value={form.rows} onChange={e => set({ ...form, rows: Math.max(4, Math.min(16, parseInt(e.target.value) || 8)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-violet-500/50" /></div>
+                        <div className="flex-1"><p className="text-[11px] text-slate-500 mb-0.5">Bredde</p><input type="number" min={4} max={20} value={form.cols} onChange={e => set({ ...form, cols: Math.max(4, Math.min(20, parseInt(e.target.value) || 10)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-violet-500/50" /></div>
+                        <div className="flex-1"><p className="text-[11px] text-slate-500 mb-0.5">Dybde</p><input type="number" min={4} max={16} value={form.rows} onChange={e => set({ ...form, rows: Math.max(4, Math.min(16, parseInt(e.target.value) || 8)) })} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-violet-500/50" /></div>
                       </div>
-                      <p className="text-[9px] text-slate-500 mb-0.5">Type</p>
-                      <select value={form.room_type} onChange={e => set({ ...form, room_type: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none mb-2">
+                      <p className="text-[11px] text-slate-500 mb-0.5">Type</p>
+                      <select value={form.room_type} onChange={e => set({ ...form, room_type: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-300 outline-none mb-2">
                         <option value="normal">Normal</option>
                         <option value="shop">Butik</option>
                         <option value="solarie">☀️ Solarie</option>
                       </select>
-                      <p className="text-[9px] text-slate-500 mb-1">Farvetema</p>
+                      <p className="text-[11px] text-slate-500 mb-1">Farvetema</p>
                       <div className="grid grid-cols-5 gap-1.5 mb-2">
                         {ROOM_THEMES.map(t => (
                           <button key={t.id} onClick={() => set({ ...form, theme_key: t.id })} title={t.label}
@@ -2302,19 +2302,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                             style={{ backgroundColor: t.color }} />
                         ))}
                       </div>
-                      <p className="text-[9px] text-slate-500 mb-1">Gulvmønster</p>
+                      <p className="text-[11px] text-slate-500 mb-1">Gulvmønster</p>
                       <div className="grid grid-cols-2 gap-1 mb-2.5">
                         {FLOOR_PATTERNS.map(p => (
                           <button key={p.id} onClick={() => set({ ...form, floor_pattern: p.id })}
-                            className={`py-1 rounded-lg text-[10px] font-medium transition-all ${form.floor_pattern === p.id ? "bg-violet-500/30 text-violet-200 border border-violet-500/50" : "bg-white/[0.04] text-slate-400 border border-transparent hover:border-white/10"}`}>
+                            className={`py-1 rounded-lg text-[12px] font-medium transition-all ${form.floor_pattern === p.id ? "bg-violet-500/30 text-violet-200 border border-violet-500/50" : "bg-white/[0.04] text-slate-400 border border-transparent hover:border-white/10"}`}>
                             {p.label}
                           </button>
                         ))}
                       </div>
-                      <p className="text-[9px] text-slate-600 mb-2">{form.cols * form.rows} felter</p>
+                      <p className="text-[11px] text-slate-600 mb-2">{form.cols * form.rows} felter</p>
                       <div className="flex gap-1">
-                        <button onClick={isEdit ? updateRoom : createRoom} className="flex-1 py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[10px] font-semibold text-white transition-colors">{isEdit ? "Gem" : "Opret"}</button>
-                        <button onClick={() => { isEdit ? setEditRoomForm(null) : setCreateRoomForm(null); }} className="flex-1 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] rounded-lg text-[10px] text-slate-300 transition-colors">Annuller</button>
+                        <button onClick={isEdit ? updateRoom : createRoom} className="flex-1 py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[12px] font-semibold text-white transition-colors">{isEdit ? "Gem" : "Opret"}</button>
+                        <button onClick={() => { isEdit ? setEditRoomForm(null) : setCreateRoomForm(null); }} className="flex-1 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] rounded-lg text-[12px] text-slate-300 transition-colors">Annuller</button>
                       </div>
                     </div>
                   );
@@ -2330,7 +2330,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         {normalRooms.length > 0 && (
                           <>
                             <div className="px-4 pt-3.5 pb-1.5">
-                              <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">Rum</span>
+                              <span className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Rum</span>
                             </div>
                             {normalRooms.map((r, i) => {
                               const occ = roomOccupancy.get(r.id) ?? 0;
@@ -2344,10 +2344,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                                   onMouseLeave={() => { setHoveredRoomId(null); setTooltipPos(null); }}
                                   onClick={() => switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id)}
                                 >
-                                  <span className="text-[10px] font-bold text-slate-700 w-4 text-right flex-shrink-0 tabular-nums">{i + 1}</span>
+                                  <span className="text-[12px] font-bold text-slate-700 w-4 text-right flex-shrink-0 tabular-nums">{i + 1}</span>
                                   <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-[0_0_6px_currentColor]" style={{ backgroundColor: rtheme?.color ?? "#475569", color: rtheme?.color ?? "#475569" }} />
-                                  <span className={`flex-1 text-[13px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</span>
-                                  {occ > 0 && <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
+                                  <span className={`flex-1 text-[15px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</span>
+                                  {occ > 0 && <span className="text-[12px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
                                   {isAdmin && <button onClick={e => { e.stopPropagation(); setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-600 hover:text-violet-400 flex-shrink-0 transition-all" title="Rediger rum"><Pencil className="w-3 h-3" /></button>}
                                 </div>
                               );
@@ -2358,8 +2358,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         {spaceshipRooms.length > 0 && (
                           <>
                             <div className="px-4 pt-3.5 pb-1.5 flex items-center gap-2">
-                              <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">🚀 Rumskibe</span>
-                              <span className="text-[8px] text-slate-700">({spaceshipRooms.length})</span>
+                              <span className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">🚀 Rumskibe</span>
+                              <span className="text-[10px] text-slate-700">({spaceshipRooms.length})</span>
                             </div>
                             {spaceshipRooms.map(r => {
                               const occ = roomOccupancy.get(r.id) ?? 0;
@@ -2391,11 +2391,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                                 >
                                   <span className="text-base leading-none flex-shrink-0">🚀</span>
                                   <div className="flex-1 min-w-0">
-                                    <p className={`text-[13px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</p>
-                                    <p className="text-[9px] truncate mt-0.5" style={{ color: rtheme?.color ?? "#475569", opacity: 0.7 }}>{isOwn ? "Dit rumskib" : hasPasscode ? "Kodeord påkrævet" : ownerOnline ? "Anmod om adgang" : "Ejeren er offline"}</p>
+                                    <p className={`text-[15px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</p>
+                                    <p className="text-[11px] truncate mt-0.5" style={{ color: rtheme?.color ?? "#475569", opacity: 0.7 }}>{isOwn ? "Dit rumskib" : hasPasscode ? "Kodeord påkrævet" : ownerOnline ? "Anmod om adgang" : "Ejeren er offline"}</p>
                                   </div>
-                                  <span className="text-[11px] flex-shrink-0 leading-none" title={hasPasscode ? "Kodelåst" : "Åbent for anmodninger"}>{hasPasscode ? "🔒" : "🔓"}</span>
-                                  {occ > 0 && <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
+                                  <span className="text-[13px] flex-shrink-0 leading-none" title={hasPasscode ? "Kodelåst" : "Åbent for anmodninger"}>{hasPasscode ? "🔒" : "🔓"}</span>
+                                  {occ > 0 && <span className="text-[12px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
                                 </div>
                               );
                             })}
@@ -2412,21 +2412,21 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {rightPanel === "inventory" && (
               <>
                 <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Rygsæk ({myInventory.length})</span>
+                  <span className="text-[12px] font-semibold text-slate-500 uppercase tracking-widest">Rygsæk ({myInventory.length})</span>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
                 </div>
                 <div className="flex-1 overflow-y-auto py-1">
-                  {myInventory.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen genstande</p>}
+                  {myInventory.length === 0 && <p className="text-[13px] text-slate-600 text-center mt-4">Ingen genstande</p>}
                   {myInventory.map(item => {
                     const meta = ITEM_TYPES.find(t => t.type === item.item_type);
                     return (
                       <div key={item.id} className={`px-3 py-2 flex items-center gap-2 hover:bg-white/[0.03] ${placingItem?.item.id === item.id ? "bg-violet-500/10" : ""}`}>
                         <div className="w-8 h-8 rounded bg-white/[0.05] flex items-center justify-center flex-shrink-0"><svg width="24" height="24" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg></div>
-                        <div className="flex-1 min-w-0"><p className="text-[12px] text-slate-300 truncate">{item.name}</p><p className="text-[10px]" style={{ color: meta?.color ?? "#6b7280" }}>{meta?.label ?? item.item_type}</p></div>
+                        <div className="flex-1 min-w-0"><p className="text-[14px] text-slate-300 truncate">{item.name}</p><p className="text-[12px]" style={{ color: meta?.color ?? "#6b7280" }}>{meta?.label ?? item.item_type}</p></div>
                         {placingItem?.item.id === item.id
                           ? <button onClick={() => setPlacingItem(null)} className="p-1 rounded text-violet-400 hover:text-rose-400" title="Annuller"><X className="w-3 h-3" /></button>
                           : <>
-                              <button onClick={() => setPlacingItem({ item, rotation: 0 })} className="px-1.5 py-0.5 rounded text-[9px] font-semibold text-violet-300 bg-violet-500/15 hover:bg-violet-500/25 transition-colors" title={isWallItemType(item.item_type) ? "Klik på væggen" : "Klik på et felt"}>Placer</button>
+                              <button onClick={() => setPlacingItem({ item, rotation: 0 })} className="px-1.5 py-0.5 rounded text-[11px] font-semibold text-violet-300 bg-violet-500/15 hover:bg-violet-500/25 transition-colors" title={isWallItemType(item.item_type) ? "Klik på væggen" : "Klik på et felt"}>Placer</button>
                             </>
                         }
                       </div>
@@ -2441,8 +2441,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <>
                 <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
                   <div className="flex gap-1">
-                    <button onClick={() => setAdminTab("items")} className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${adminTab === "items" ? "bg-violet-500/20 text-violet-300" : "text-slate-500 hover:text-slate-300"}`}>Ting</button>
-                    <button onClick={() => setAdminTab("bots")} className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${adminTab === "bots" ? "bg-violet-500/20 text-violet-300" : "text-slate-500 hover:text-slate-300"}`}>Bots</button>
+                    <button onClick={() => setAdminTab("items")} className={`px-2 py-0.5 rounded text-[12px] font-semibold transition-colors ${adminTab === "items" ? "bg-violet-500/20 text-violet-300" : "text-slate-500 hover:text-slate-300"}`}>Ting</button>
+                    <button onClick={() => setAdminTab("bots")} className={`px-2 py-0.5 rounded text-[12px] font-semibold transition-colors ${adminTab === "bots" ? "bg-violet-500/20 text-violet-300" : "text-slate-500 hover:text-slate-300"}`}>Bots</button>
                   </div>
                   <div className="flex items-center gap-1">
                     {adminTab === "items" && <button onClick={() => setCreateForm({ name: "", item_type: "flower" })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3 h-3" /></button>}
@@ -2456,19 +2456,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <>
                     {createForm && (
                       <div className="px-3 py-2 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0">
-                        <p className="text-[10px] font-semibold text-slate-500 mb-1.5">Ny genstand</p>
-                        <input autoFocus value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} onKeyDown={e => { if (e.key === "Enter") createItem(); if (e.key === "Escape") setCreateForm(null); }} placeholder="Navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50" />
-                        <select value={createForm.item_type} onChange={e => setCreateForm({ ...createForm, item_type: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none mb-1.5">
+                        <p className="text-[12px] font-semibold text-slate-500 mb-1.5">Ny genstand</p>
+                        <input autoFocus value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} onKeyDown={e => { if (e.key === "Enter") createItem(); if (e.key === "Escape") setCreateForm(null); }} placeholder="Navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50" />
+                        <select value={createForm.item_type} onChange={e => setCreateForm({ ...createForm, item_type: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-300 outline-none mb-1.5">
                           {ITEM_TYPES.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
                         </select>
                         <div className="flex gap-1">
-                          <button onClick={createItem} className="flex-1 py-1 bg-violet-600 hover:bg-violet-500 rounded text-[10px] text-white">Opret</button>
-                          <button onClick={() => setCreateForm(null)} className="flex-1 py-1 bg-white/[0.06] hover:bg-white/[0.1] rounded text-[10px] text-slate-300">Annuller</button>
+                          <button onClick={createItem} className="flex-1 py-1 bg-violet-600 hover:bg-violet-500 rounded text-[12px] text-white">Opret</button>
+                          <button onClick={() => setCreateForm(null)} className="flex-1 py-1 bg-white/[0.06] hover:bg-white/[0.1] rounded text-[12px] text-slate-300">Annuller</button>
                         </div>
                       </div>
                     )}
                     <div className="flex-1 overflow-y-auto py-1">
-                      {items.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen genstande</p>}
+                      {items.length === 0 && <p className="text-[13px] text-slate-600 text-center mt-4">Ingen genstande</p>}
                       {items.map(item => {
                         const meta = ITEM_TYPES.find(t => t.type === item.item_type);
                         const loc = item.owner_id ? "Inventar" : item.gx !== null ? `(${item.gx},${item.gy})` : "?";
@@ -2478,8 +2478,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                             <div className="flex items-center gap-1.5">
                               <div className="w-6 h-6 rounded bg-white/[0.05] flex items-center justify-center flex-shrink-0"><svg width="18" height="18" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg></div>
                               {editItem?.id === item.id
-                                ? <input autoFocus value={editItem.name} onChange={e => setEditItem({ ...editItem, name: e.target.value })} onBlur={() => saveItemName(item, editItem.name)} onKeyDown={e => { if (e.key === "Enter") saveItemName(item, editItem.name); if (e.key === "Escape") setEditItem(null); }} className="flex-1 bg-white/[0.06] border border-violet-500/50 rounded px-1 py-0.5 text-[11px] text-slate-100 outline-none" />
-                                : <div className="flex-1 min-w-0"><p className="text-[11px] text-slate-300 truncate">{item.name}</p><p className="text-[9px] text-slate-600">{meta?.label} · {loc}</p></div>
+                                ? <input autoFocus value={editItem.name} onChange={e => setEditItem({ ...editItem, name: e.target.value })} onBlur={() => saveItemName(item, editItem.name)} onKeyDown={e => { if (e.key === "Enter") saveItemName(item, editItem.name); if (e.key === "Escape") setEditItem(null); }} className="flex-1 bg-white/[0.06] border border-violet-500/50 rounded px-1 py-0.5 text-[13px] text-slate-100 outline-none" />
+                                : <div className="flex-1 min-w-0"><p className="text-[13px] text-slate-300 truncate">{item.name}</p><p className="text-[11px] text-slate-600">{meta?.label} · {loc}</p></div>
                               }
                               <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button onClick={() => setEditItem(item)} className="p-0.5 text-slate-500 hover:text-blue-400"><Pencil className="w-2.5 h-2.5" /></button>
@@ -2488,7 +2488,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                             </div>
                             <div className="flex items-center gap-1 mt-1 pl-7">
                               <button onClick={() => updateItemScale(item, -0.2)} className="w-5 h-5 rounded bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-400"><Minus className="w-2.5 h-2.5" /></button>
-                              <span className="text-[9px] text-slate-500 w-8 text-center">{Math.round(scale * 100)}%</span>
+                              <span className="text-[11px] text-slate-500 w-8 text-center">{Math.round(scale * 100)}%</span>
                               <button onClick={() => updateItemScale(item, 0.2)} className="w-5 h-5 rounded bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-400"><Plus className="w-2.5 h-2.5" /></button>
                             </div>
                           </div>
@@ -2503,40 +2503,40 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <>
                     {createBotForm && (
                       <div className="px-3 py-2 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0">
-                        <p className="text-[10px] font-semibold text-slate-500 mb-1.5">Ny bot</p>
-                        <input autoFocus value={createBotForm.name} onChange={e => setCreateBotForm({ ...createBotForm, name: e.target.value })} onKeyDown={e => { if (e.key === "Escape") setCreateBotForm(null); }} placeholder="Navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50" />
+                        <p className="text-[12px] font-semibold text-slate-500 mb-1.5">Ny bot</p>
+                        <input autoFocus value={createBotForm.name} onChange={e => setCreateBotForm({ ...createBotForm, name: e.target.value })} onKeyDown={e => { if (e.key === "Escape") setCreateBotForm(null); }} placeholder="Navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50" />
                         <div className="flex items-center gap-2 mb-1.5">
-                          <label className="text-[9px] text-slate-500">Farve</label>
+                          <label className="text-[11px] text-slate-500">Farve</label>
                           <input type="color" value={createBotForm.color} onChange={e => setCreateBotForm({ ...createBotForm, color: e.target.value })} className="w-8 h-6 rounded cursor-pointer bg-transparent border border-white/[0.08]" />
                         </div>
-                        <textarea value={createBotForm.message} onChange={e => setCreateBotForm({ ...createBotForm, message: e.target.value })} placeholder={"Beskeder (én per linje, valgfri)\nBrug {navn} for brugerens navn"} rows={3} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50 resize-none" />
+                        <textarea value={createBotForm.message} onChange={e => setCreateBotForm({ ...createBotForm, message: e.target.value })} placeholder={"Beskeder (én per linje, valgfri)\nBrug {navn} for brugerens navn"} rows={3} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50 resize-none" />
                         <div className="flex items-center gap-2 mb-1.5">
                           <input type="checkbox" id="bot-moves" checked={createBotForm.moves_randomly} onChange={e => setCreateBotForm({ ...createBotForm, moves_randomly: e.target.checked })} className="rounded" />
-                          <label htmlFor="bot-moves" className="text-[10px] text-slate-400">Bevæger sig tilfældigt</label>
+                          <label htmlFor="bot-moves" className="text-[12px] text-slate-400">Bevæger sig tilfældigt</label>
                         </div>
-                        <select value={createBotForm.gives_clothing_id} onChange={e => setCreateBotForm({ ...createBotForm, gives_clothing_id: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none mb-1.5">
+                        <select value={createBotForm.gives_clothing_id} onChange={e => setCreateBotForm({ ...createBotForm, gives_clothing_id: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-300 outline-none mb-1.5">
                           <option value="">Giver intet</option>
                           {clothingCatalog.map(c => <option key={c.id} value={c.id}>{c.name} ({CLOTHING_SLOTS.find(s => s.id === c.slot)?.label})</option>)}
                         </select>
                         <div className="flex gap-1">
-                          <button onClick={createBot} className="flex-1 py-1 bg-violet-600 hover:bg-violet-500 rounded text-[10px] text-white">Opret</button>
-                          <button onClick={() => setCreateBotForm(null)} className="flex-1 py-1 bg-white/[0.06] hover:bg-white/[0.1] rounded text-[10px] text-slate-300">Annuller</button>
+                          <button onClick={createBot} className="flex-1 py-1 bg-violet-600 hover:bg-violet-500 rounded text-[12px] text-white">Opret</button>
+                          <button onClick={() => setCreateBotForm(null)} className="flex-1 py-1 bg-white/[0.06] hover:bg-white/[0.1] rounded text-[12px] text-slate-300">Annuller</button>
                         </div>
                       </div>
                     )}
                     <div className="flex-1 overflow-y-auto py-1">
-                      {bots.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen bots</p>}
+                      {bots.length === 0 && <p className="text-[13px] text-slate-600 text-center mt-4">Ingen bots</p>}
                       {bots.map(bot => {
                         const givesItem = clothingCatalog.find(c => c.id === bot.gives_clothing_id);
                         return (
                           <div key={bot.id} className="px-2 py-1.5 hover:bg-white/[0.03] group flex items-center gap-1.5">
                             <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: bot.color }} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-[11px] text-slate-300 truncate">{bot.name}</p>
-                              <p className="text-[9px] text-slate-600">{bot.moves_randomly ? "Bevæger sig · " : ""}{givesItem ? `🎁 ${givesItem.name}` : "Ingen gave"}</p>
+                              <p className="text-[13px] text-slate-300 truncate">{bot.name}</p>
+                              <p className="text-[11px] text-slate-600">{bot.moves_randomly ? "Bevæger sig · " : ""}{givesItem ? `🎁 ${givesItem.name}` : "Ingen gave"}</p>
                             </div>
                             <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => { setMovingBotId(bot.id); setCtxMenu(null); }} className="p-0.5 text-slate-500 hover:text-amber-400 text-[8px]">Flyt</button>
+                              <button onClick={() => { setMovingBotId(bot.id); setCtxMenu(null); }} className="p-0.5 text-slate-500 hover:text-amber-400 text-[10px]">Flyt</button>
                               <button onClick={() => deleteBot(bot.id)} className="p-0.5 text-slate-500 hover:text-rose-400"><Trash2 className="w-2.5 h-2.5" /></button>
                             </div>
                           </div>
@@ -2553,13 +2553,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {rightPanel === "settings" && (
               <>
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
-                  <span className="text-[11px] font-bold text-slate-300 tracking-wide">Indstillinger</span>
+                  <span className="text-[13px] font-bold text-slate-300 tracking-wide">Indstillinger</span>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
                 {/* Tabs */}
                 <div className="flex border-b border-white/[0.06] flex-shrink-0">
                   {(["shop", "profil"] as const).map(tab => (
-                    <button key={tab} onClick={() => setSettingsTab(tab)} className={`flex-1 py-2 text-[11px] font-semibold capitalize transition-colors ${settingsTab === tab ? "text-violet-300 border-b-2 border-violet-500" : "text-slate-500 hover:text-slate-300"}`}>
+                    <button key={tab} onClick={() => setSettingsTab(tab)} className={`flex-1 py-2 text-[13px] font-semibold capitalize transition-colors ${settingsTab === tab ? "text-violet-300 border-b-2 border-violet-500" : "text-slate-500 hover:text-slate-300"}`}>
                       {tab === "shop" ? "🛒 Butik" : "👤 Profil"}
                     </button>
                   ))}
@@ -2567,15 +2567,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <div className="flex-1 overflow-y-auto p-3 space-y-3">
                   {settingsTab === "profil" && (
                     <>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Rigtigt navn</p>
+                      <p className="text-[12px] font-bold text-slate-500 uppercase tracking-wide">Rigtigt navn</p>
                       <form onSubmit={async e => { e.preventDefault(); const v = (e.currentTarget.elements.namedItem("rn") as HTMLInputElement).value.trim(); if (!v) return; await supabase.from("profiles").update({ real_name: v }).eq("id", currentProfile.id); }} className="space-y-2">
-                        <input name="rn" defaultValue={(currentProfile as Profile & { real_name?: string }).real_name ?? ""} placeholder="Dit rigtige navn..." maxLength={60} className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg px-3 py-1.5 text-[12px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
-                        <button type="submit" className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[11px] text-white font-semibold transition-colors">Gem navn</button>
+                        <input name="rn" defaultValue={(currentProfile as Profile & { real_name?: string }).real_name ?? ""} placeholder="Dit rigtige navn..." maxLength={60} className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg px-3 py-1.5 text-[14px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
+                        <button type="submit" className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[13px] text-white font-semibold transition-colors">Gem navn</button>
                       </form>
                       <div className="border-t border-white/[0.06] pt-3">
                         <div className="flex items-center justify-between mb-2">
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Alien farve</p>
-                          <span className="text-[9px] font-bold text-amber-400">25 🪙</span>
+                          <p className="text-[12px] font-bold text-slate-500 uppercase tracking-wide">Alien farve</p>
+                          <span className="text-[11px] font-bold text-amber-400">25 🪙</span>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           {/* Default / standard gray */}
@@ -2589,7 +2589,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                               setMyColor("none"); currentProfile.avatar_color = "none";
                               await supabase.from("profiles").update({ avatar_color: "none", coins: nc }).eq("id", currentProfile.id);
                             }}
-                            className="w-7 h-7 rounded-full transition-all border-2 flex-shrink-0 disabled:cursor-default flex items-center justify-center text-[8px] font-bold"
+                            className="w-7 h-7 rounded-full transition-all border-2 flex-shrink-0 disabled:cursor-default flex items-center justify-center text-[10px] font-bold"
                             style={{ background: "linear-gradient(135deg,#6b7280,#9ca3af)", borderColor: (myColor === "none" || myColor === "") ? "white" : "transparent", boxShadow: (myColor === "none" || myColor === "") ? "0 0 8px #9ca3af" : "none", opacity: coins < 25 && myColor !== "none" ? 0.4 : 1 }}
                             title="Standard (grå)"
                           />
@@ -2610,7 +2610,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                             />
                           ))}
                         </div>
-                        <p className="text-[9px] text-slate-600 mt-1.5">{coins < 25 ? "Ikke nok mønter" : "Klik en farve for at skifte · 25 🪙 · Grå = standard"}</p>
+                        <p className="text-[11px] text-slate-600 mt-1.5">{coins < 25 ? "Ikke nok mønter" : "Klik en farve for at skifte · 25 🪙 · Grå = standard"}</p>
                       </div>
                     </>
                   )}
@@ -2619,25 +2619,25 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       {/* Name change */}
                       <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05] space-y-2">
                         <div className="flex items-center justify-between">
-                          <div><p className="text-[12px] font-bold text-slate-200">Navneændring</p><p className="text-[10px] text-slate-500">Skift dit visningsnavn</p></div>
-                          <span className="text-[11px] font-bold text-amber-400">500 🪙</span>
+                          <div><p className="text-[14px] font-bold text-slate-200">Navneændring</p><p className="text-[12px] text-slate-500">Skift dit visningsnavn</p></div>
+                          <span className="text-[13px] font-bold text-amber-400">500 🪙</span>
                         </div>
                         <form onSubmit={async e => { e.preventDefault(); const v = (e.currentTarget.elements.namedItem("dn") as HTMLInputElement).value.trim(); if (!v || coins < 500) return; const nc = coins - 500; coinsRef.current = nc; setCoins(nc); await supabase.from("profiles").update({ display_name: v, coins: nc }).eq("id", currentProfile.id); currentProfile.display_name = v; }} className="flex gap-2">
-                          <input name="dn" placeholder="Nyt navn..." maxLength={50} className="flex-1 bg-white/[0.05] border border-white/[0.07] rounded-lg px-2 py-1.5 text-[11px] text-slate-200 placeholder-slate-600 outline-none focus:border-amber-500/50 transition-all" />
-                          <button type="submit" disabled={coins < 500} className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 rounded-lg text-[11px] text-white font-semibold transition-colors flex-shrink-0">Køb</button>
+                          <input name="dn" placeholder="Nyt navn..." maxLength={50} className="flex-1 bg-white/[0.05] border border-white/[0.07] rounded-lg px-2 py-1.5 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-amber-500/50 transition-all" />
+                          <button type="submit" disabled={coins < 500} className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 rounded-lg text-[13px] text-white font-semibold transition-colors flex-shrink-0">Køb</button>
                         </form>
                       </div>
                       {/* Divider */}
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide pt-1">🚀 Rumskibe</p>
+                      <p className="text-[12px] font-bold text-slate-500 uppercase tracking-wide pt-1">🚀 Rumskibe</p>
                       {mySpaceship ? (
                         <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-3 space-y-2">
                           <div className="flex items-center gap-2">
                             <Rocket className="w-4 h-4 text-violet-400" />
-                            <div><p className="text-[12px] font-bold text-violet-300">{mySpaceship.name}</p><p className="text-[10px] text-slate-500">Dit rumskib · {mySpaceship.cols}×{mySpaceship.rows} tiles</p></div>
+                            <div><p className="text-[14px] font-bold text-violet-300">{mySpaceship.name}</p><p className="text-[12px] text-slate-500">Dit rumskib · {mySpaceship.cols}×{mySpaceship.rows} tiles</p></div>
                           </div>
-                          <button onClick={() => switchRoom(mySpaceship.id, mySpaceship.name, mySpaceship.cols, mySpaceship.rows, "spaceship", mySpaceship.theme_key, mySpaceship.floor_pattern, mySpaceship.owner_id)} className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[11px] text-white font-semibold transition-colors">Gå til mit rumskib</button>
+                          <button onClick={() => switchRoom(mySpaceship.id, mySpaceship.name, mySpaceship.cols, mySpaceship.rows, "spaceship", mySpaceship.theme_key, mySpaceship.floor_pattern, mySpaceship.owner_id)} className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[13px] text-white font-semibold transition-colors">Gå til mit rumskib</button>
                           <div className="border-t border-white/[0.06] pt-2.5 mt-1">
-                            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Adgangskode</p>
+                            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Adgangskode</p>
                             <form onSubmit={async e => {
                               e.preventDefault();
                               const v = (e.currentTarget.elements.namedItem("pc") as HTMLInputElement).value.trim();
@@ -2645,18 +2645,18 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                               setMySpaceship(prev => prev ? { ...prev, spaceship_passcode: v || null } : prev);
                               setRooms(prev => prev.map(r => r.id === mySpaceship!.id ? { ...r, spaceship_passcode: v || null } : r));
                             }} className="flex gap-1.5">
-                              <input name="pc" type="text" defaultValue={mySpaceship.spaceship_passcode ?? ""} placeholder="Ingen kode sat..." maxLength={20} className="flex-1 bg-white/[0.05] border border-white/[0.07] rounded-lg px-2 py-1.5 text-[11px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
-                              <button type="submit" className="px-2.5 py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[10px] text-white font-semibold transition-colors flex-shrink-0">Gem</button>
+                              <input name="pc" type="text" defaultValue={mySpaceship.spaceship_passcode ?? ""} placeholder="Ingen kode sat..." maxLength={20} className="flex-1 bg-white/[0.05] border border-white/[0.07] rounded-lg px-2 py-1.5 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
+                              <button type="submit" className="px-2.5 py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[12px] text-white font-semibold transition-colors flex-shrink-0">Gem</button>
                             </form>
-                            <p className="text-[9px] text-slate-600 mt-1">{mySpaceship.spaceship_passcode ? "🔒 Kodelåst" : "🔓 Kræver ejeracceptering"}</p>
+                            <p className="text-[11px] text-slate-600 mt-1">{mySpaceship.spaceship_passcode ? "🔒 Kodelåst" : "🔓 Kræver ejeracceptering"}</p>
                           </div>
                         </div>
                       ) : (
                         SPACESHIP_VARIANTS.map(v => (
                           <div key={v.id} className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05] space-y-2">
                             <div className="flex items-center justify-between">
-                              <div><p className="text-[12px] font-bold text-slate-200">{v.emoji} {v.name}</p><p className="text-[10px] text-slate-500">{v.desc} · {v.cols}×{v.rows}</p></div>
-                              <span className="text-[11px] font-bold text-amber-400 flex-shrink-0">{v.price.toLocaleString()} 🪙</span>
+                              <div><p className="text-[14px] font-bold text-slate-200">{v.emoji} {v.name}</p><p className="text-[12px] text-slate-500">{v.desc} · {v.cols}×{v.rows}</p></div>
+                              <span className="text-[13px] font-bold text-amber-400 flex-shrink-0">{v.price.toLocaleString()} 🪙</span>
                             </div>
                             <button disabled={coins < v.price} onClick={async () => {
                               if (coins < v.price) return;
@@ -2666,7 +2666,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                               const { data: newRoom } = await supabase.from("chat_rooms").insert({ name: roomName, cols: v.cols, rows: v.rows, room_type: "spaceship", theme_key: v.theme, floor_pattern: "grid", owner_id: currentProfile.id, spaceship_design: v.id }).select("*").single();
                               await supabase.from("profiles").update({ coins: nc }).eq("id", currentProfile.id);
                               if (newRoom) { setMySpaceship(newRoom as ChatRoom); setRooms(prev => [...prev, newRoom as ChatRoom]); }
-                            }} className="w-full py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-40 rounded-lg text-[11px] text-white font-semibold transition-all">
+                            }} className="w-full py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-40 rounded-lg text-[13px] text-white font-semibold transition-all">
                               {coins < v.price ? `Mangler ${(v.price - coins).toLocaleString()} 🪙` : "Køb rumskib"}
                             </button>
                           </div>
@@ -2688,7 +2688,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               return (
                 <>
                   <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
-                    <span className="text-[11px] font-bold text-slate-300 tracking-wide truncate">{profileView.display_name}</span>
+                    <span className="text-[13px] font-bold text-slate-300 tracking-wide truncate">{profileView.display_name}</span>
                     <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
                   </div>
                   <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-3 border-b border-white/[0.06] bg-gradient-to-b from-violet-500/[0.04] to-transparent">
@@ -2696,56 +2696,56 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       <ellipse cx="0" cy="38" rx="13" ry="3.5" fill="rgba(0,0,0,0.4)" />
                       <g transform="scale(1.8)"><PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} /></g>
                     </svg>
-                    <p className="text-[13px] font-bold text-white mt-1">{profileView.display_name}</p>
-                    <p className="text-[10px] text-slate-500">@{profileView.username}</p>
+                    <p className="text-[15px] font-bold text-white mt-1">{profileView.display_name}</p>
+                    <p className="text-[12px] text-slate-500">@{profileView.username}</p>
                     <div className="flex gap-1 mt-1.5 flex-wrap justify-center">
-                      {profileView.role === "admin" && <span className="text-[9px] font-bold uppercase tracking-wide text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded-full border border-violet-500/20">🛡 MOD</span>}
-                      {profileView.is_banned && <span className="text-[9px] font-bold uppercase tracking-wide text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded-full border border-rose-500/20">Udelukket</span>}
-                      {isMutedNow && <span className="text-[9px] font-bold uppercase tracking-wide text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20">🔇 Muttet</span>}
+                      {profileView.role === "admin" && <span className="text-[11px] font-bold uppercase tracking-wide text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded-full border border-violet-500/20">🛡 MOD</span>}
+                      {profileView.is_banned && <span className="text-[11px] font-bold uppercase tracking-wide text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded-full border border-rose-500/20">Udelukket</span>}
+                      {isMutedNow && <span className="text-[11px] font-bold uppercase tracking-wide text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20">🔇 Muttet</span>}
                     </div>
                   </div>
                   <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
                     <div className="grid grid-cols-3 gap-2">
-                      {profileView.level != null && <div className="flex flex-col items-center bg-violet-500/10 border border-violet-500/20 rounded-xl py-2"><span className="text-[13px] font-bold text-violet-300">Lv.{profileView.level}</span><span className="text-[9px] text-slate-500 mt-0.5">Niveau</span></div>}
-                      {profileView.xp != null && <div className="flex flex-col items-center bg-white/[0.04] border border-white/[0.06] rounded-xl py-2"><span className="text-[13px] font-bold text-slate-200">{profileView.xp}</span><span className="text-[9px] text-slate-500 mt-0.5">XP</span></div>}
-                      {profileView.coins != null && <div className="flex flex-col items-center bg-amber-500/10 border border-amber-500/20 rounded-xl py-2"><span className="text-[13px] font-bold text-amber-400">{profileView.coins}</span><span className="text-[9px] text-slate-500 mt-0.5">Mønter</span></div>}
+                      {profileView.level != null && <div className="flex flex-col items-center bg-violet-500/10 border border-violet-500/20 rounded-xl py-2"><span className="text-[15px] font-bold text-violet-300">Lv.{profileView.level}</span><span className="text-[11px] text-slate-500 mt-0.5">Niveau</span></div>}
+                      {profileView.xp != null && <div className="flex flex-col items-center bg-white/[0.04] border border-white/[0.06] rounded-xl py-2"><span className="text-[15px] font-bold text-slate-200">{profileView.xp}</span><span className="text-[11px] text-slate-500 mt-0.5">XP</span></div>}
+                      {profileView.coins != null && <div className="flex flex-col items-center bg-amber-500/10 border border-amber-500/20 rounded-xl py-2"><span className="text-[15px] font-bold text-amber-400">{profileView.coins}</span><span className="text-[11px] text-slate-500 mt-0.5">Mønter</span></div>}
                     </div>
                     {profileView.xp != null && (
                       <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                        <div className="flex justify-between text-[9px] text-slate-500 mb-1"><span>{profileView.xp % 100} / 100 XP</span><span>{100 - (profileView.xp % 100)} XP til Lv.{(profileView.level ?? 1) + 1}</span></div>
+                        <div className="flex justify-between text-[11px] text-slate-500 mb-1"><span>{profileView.xp % 100} / 100 XP</span><span>{100 - (profileView.xp % 100)} XP til Lv.{(profileView.level ?? 1) + 1}</span></div>
                         <div className="w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden"><div className="h-full bg-gradient-to-r from-violet-600 to-violet-400" style={{ width: `${profileView.xp % 100}%` }} /></div>
                       </div>
                     )}
                     {profileView.total_online_seconds != null && profileView.total_online_seconds > 0 && (
                       <div className="flex items-center justify-between bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                        <span className="text-[11px] text-slate-400">Total tid online</span>
-                        <span className="text-[11px] text-slate-200 font-medium">{(() => { const h = Math.floor(profileView.total_online_seconds! / 3600); const m = Math.floor((profileView.total_online_seconds! % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                        <span className="text-[13px] text-slate-400">Total tid online</span>
+                        <span className="text-[13px] text-slate-200 font-medium">{(() => { const h = Math.floor(profileView.total_online_seconds! / 3600); const m = Math.floor((profileView.total_online_seconds! % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
                       </div>
                     )}
-                    {profileView.bio && <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]"><p className="text-[11px] text-slate-400 leading-relaxed">{profileView.bio}</p></div>}
+                    {profileView.bio && <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]"><p className="text-[13px] text-slate-400 leading-relaxed">{profileView.bio}</p></div>}
                     {isAdmin && (
                       <div className="space-y-2 pt-1 border-t border-white/[0.06]">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide pt-2">Moderator</p>
+                        <p className="text-[12px] font-bold text-slate-500 uppercase tracking-wide pt-2">Moderator</p>
                         {isMutedNow ? (
-                          <button onClick={() => updatePV({ muted_until: null }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.delete(profileView.id); return s; }))} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">
+                          <button onClick={() => updatePV({ muted_until: null }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.delete(profileView.id); return s; }))} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">
                             <Volume2 className="w-3.5 h-3.5" /> Fjern mute
                           </button>
                         ) : (
                           <div className="grid grid-cols-2 gap-1.5">
                             {([["15 min", 15], ["1 time", 60], ["24 timer", 1440], ["Permanent", 5256000]] as [string, number][]).map(([l, m]) => (
-                              <button key={l} onClick={() => { const until = new Date(Date.now() + m * 60000).toISOString(); updatePV({ muted_until: until }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.add(profileView.id); return s; })); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"><VolumeX className="w-3 h-3 flex-shrink-0" />{l}</button>
+                              <button key={l} onClick={() => { const until = new Date(Date.now() + m * 60000).toISOString(); updatePV({ muted_until: until }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.add(profileView.id); return s; })); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"><VolumeX className="w-3 h-3 flex-shrink-0" />{l}</button>
                             ))}
                           </div>
                         )}
                         {profileView.is_banned ? (
-                          <button onClick={() => updatePV({ is_banned: false })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"><UserCheck className="w-3.5 h-3.5" /> Fjern udelukkelse</button>
+                          <button onClick={() => updatePV({ is_banned: false })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"><UserCheck className="w-3.5 h-3.5" /> Fjern udelukkelse</button>
                         ) : (
-                          <button onClick={() => { if (confirm(`Udeluk ${profileView.display_name}?`)) updatePV({ is_banned: true }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors"><Ban className="w-3.5 h-3.5" /> Udeluk bruger</button>
+                          <button onClick={() => { if (confirm(`Udeluk ${profileView.display_name}?`)) updatePV({ is_banned: true }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors"><Ban className="w-3.5 h-3.5" /> Udeluk bruger</button>
                         )}
                         {profileView.role === "admin" ? (
-                          <button onClick={() => { if (confirm(`Fjern admin fra ${profileView.display_name}?`)) updatePV({ role: "user" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"><ShieldOff className="w-3.5 h-3.5" /> Fjern moderator</button>
+                          <button onClick={() => { if (confirm(`Fjern admin fra ${profileView.display_name}?`)) updatePV({ role: "user" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"><ShieldOff className="w-3.5 h-3.5" /> Fjern moderator</button>
                         ) : (
-                          <button onClick={() => { if (confirm(`Gør ${profileView.display_name} til moderator?`)) updatePV({ role: "admin" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-colors"><Shield className="w-3.5 h-3.5" /> Gør til moderator</button>
+                          <button onClick={() => { if (confirm(`Gør ${profileView.display_name} til moderator?`)) updatePV({ role: "admin" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-colors"><Shield className="w-3.5 h-3.5" /> Gør til moderator</button>
                         )}
                       </div>
                     )}
@@ -2757,7 +2757,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {rightPanel === "profile" && (
               <>
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
-                  <span className="text-[11px] font-bold text-slate-300 tracking-wide">Min profil</span>
+                  <span className="text-[13px] font-bold text-slate-300 tracking-wide">Min profil</span>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
                 {/* Avatar preview */}
@@ -2769,52 +2769,52 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       {Object.keys(myOutfit).length > 0 && <ClothingOverlay outfit={myOutfit} catalog={clothingCatalog} />}
                     </g>
                   </svg>
-                  <p className="text-[13px] font-bold text-white mt-1">{currentProfile.display_name}</p>
-                  <p className="text-[10px] text-slate-500">@{currentProfile.username}</p>
+                  <p className="text-[15px] font-bold text-white mt-1">{currentProfile.display_name}</p>
+                  <p className="text-[12px] text-slate-500">@{currentProfile.username}</p>
                 </div>
                 {/* Stats */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
                   {/* Level + XP */}
                   <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold text-violet-300 uppercase tracking-wide">Niveau {level}</span>
-                      <span className="text-[10px] text-slate-500">{xp % 100} / 100 XP</span>
+                      <span className="text-[12px] font-bold text-violet-300 uppercase tracking-wide">Niveau {level}</span>
+                      <span className="text-[12px] text-slate-500">{xp % 100} / 100 XP</span>
                     </div>
                     <div className="w-full bg-white/[0.06] rounded-full h-2 overflow-hidden">
                       <div className="h-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all duration-500" style={{ width: `${xp % 100}%` }} />
                     </div>
-                    <p className="text-[9px] text-slate-600 mt-1.5">{100 - (xp % 100)} XP til niveau {level + 1} · {xp} XP i alt</p>
+                    <p className="text-[11px] text-slate-600 mt-1.5">{100 - (xp % 100)} XP til niveau {level + 1} · {xp} XP i alt</p>
                   </div>
                   {/* Activity stats */}
                   <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05] space-y-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Aktivitet</p>
+                    <p className="text-[12px] font-bold text-slate-400 uppercase tracking-wide">Aktivitet</p>
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400">Total tid online</span>
-                      <span className="text-[11px] text-slate-200 font-medium tabular-nums">{(() => { const h = Math.floor(totalSeconds / 3600); const m = Math.floor((totalSeconds % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                      <span className="text-[13px] text-slate-400">Total tid online</span>
+                      <span className="text-[13px] text-slate-200 font-medium tabular-nums">{(() => { const h = Math.floor(totalSeconds / 3600); const m = Math.floor((totalSeconds % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400">Denne session</span>
-                      <span className="text-[11px] text-slate-400 font-medium tabular-nums">{(() => { const s = Math.floor((Date.now() - sessionStartRef.current) / 1000); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                      <span className="text-[13px] text-slate-400">Denne session</span>
+                      <span className="text-[13px] text-slate-400 font-medium tabular-nums">{(() => { const s = Math.floor((Date.now() - sessionStartRef.current) / 1000); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400">Bekræftede timer</span>
-                      <span className="text-[11px] text-amber-400 font-medium">{confirmedHours}t</span>
+                      <span className="text-[13px] text-slate-400">Bekræftede timer</span>
+                      <span className="text-[13px] text-amber-400 font-medium">{confirmedHours}t</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400">Næste belønning om</span>
-                      <span className="text-[11px] text-emerald-400 font-medium tabular-nums">{(() => { const m = Math.floor(timeToNextHour / 60); const s = timeToNextHour % 60; return `${m}:${String(s).padStart(2, "0")}`; })()}</span>
+                      <span className="text-[13px] text-slate-400">Næste belønning om</span>
+                      <span className="text-[13px] text-emerald-400 font-medium tabular-nums">{(() => { const m = Math.floor(timeToNextHour / 60); const s = timeToNextHour % 60; return `${m}:${String(s).padStart(2, "0")}`; })()}</span>
                     </div>
                   </div>
                   {/* Coins */}
                   <div className="flex items-center justify-between bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                    <span className="text-[11px] text-slate-400">Mønter</span>
-                    <span className="text-[12px] text-amber-400 font-bold">🪙 {coins}</span>
+                    <span className="text-[13px] text-slate-400">Mønter</span>
+                    <span className="text-[14px] text-amber-400 font-bold">🪙 {coins}</span>
                   </div>
                   {/* Tan status */}
                   {tanLevel > 0 && (
                     <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] text-amber-300 font-semibold">☀️ {TAN_LEVELS[tanLevel]!.label}</span>
+                        <span className="text-[13px] text-amber-300 font-semibold">☀️ {TAN_LEVELS[tanLevel]!.label}</span>
                         <div className="flex gap-0.5">
                           {TAN_LEVELS.slice(1).map((t, i) => (
                             <div key={i + 1} className="w-2.5 h-2.5 rounded-full border border-amber-800/50"
@@ -2823,7 +2823,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         </div>
                       </div>
                       {tanExpiresAt && (
-                        <p className="text-[9px] text-amber-700">Forsvinder om {Math.round((new Date(tanExpiresAt).getTime() - Date.now()) / 3600000)}t</p>
+                        <p className="text-[11px] text-amber-700">Forsvinder om {Math.round((new Date(tanExpiresAt).getTime() - Date.now()) / 3600000)}t</p>
                       )}
                     </div>
                   )}
@@ -2835,16 +2835,16 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {rightPanel === "chatlog" && (
               <>
                 <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60">
-                  <span className="text-[11px] font-bold text-slate-300 tracking-wide">Chatlog</span>
+                  <span className="text-[13px] font-bold text-slate-300 tracking-wide">Chatlog</span>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
                 <div ref={chatLogRef} className="flex-1 overflow-y-auto px-2.5 py-2 space-y-1.5">
-                  {logMessages.length === 0 && <p className="text-[11px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>}
+                  {logMessages.length === 0 && <p className="text-[13px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>}
                   {logMessages.map(msg => {
                     const p = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
                     const isMe = msg.user_id === currentProfile.id;
                     return (
-                      <div key={msg.id} className="text-[11px] leading-snug">
+                      <div key={msg.id} className="text-[13px] leading-snug">
                         <span className="font-semibold" style={{ color: p?.avatar_color ?? "#8b5cf6" }}>{isMe ? "Du" : (p?.display_name ?? "?")}: </span>
                         <span className="text-slate-300 break-words">{msg.content}</span>
                       </div>
@@ -2861,8 +2861,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <Shirt className="w-4 h-4 text-violet-400" />
-                    <span className="text-[12px] font-bold text-slate-200 tracking-wide">Garderobe</span>
-                    <span className="text-[9px] font-bold text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full">{Object.keys(myOutfit).length}/{CLOTHING_SLOTS.length} udstyret</span>
+                    <span className="text-[14px] font-bold text-slate-200 tracking-wide">Garderobe</span>
+                    <span className="text-[11px] font-bold text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full">{Object.keys(myOutfit).length}/{CLOTHING_SLOTS.length} udstyret</span>
                   </div>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
@@ -2878,8 +2878,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         {Object.keys(previewOutfit).length > 0 && <ClothingOverlay outfit={previewOutfit} catalog={clothingCatalog} />}
                       </g>
                     </svg>
-                    <p className="text-[11px] font-semibold text-slate-300 truncate max-w-[120px] text-center">{currentProfile.display_name}</p>
-                    <p className="text-[10px] text-violet-400 h-4 truncate max-w-[120px] text-center">{wardrobePreviewId ? (clothingCatalog.find(c => c.id === wardrobePreviewId)?.name ?? "\u00a0") : "\u00a0"}</p>
+                    <p className="text-[13px] font-semibold text-slate-300 truncate max-w-[120px] text-center">{currentProfile.display_name}</p>
+                    <p className="text-[12px] text-violet-400 h-4 truncate max-w-[120px] text-center">{wardrobePreviewId ? (clothingCatalog.find(c => c.id === wardrobePreviewId)?.name ?? "\u00a0") : "\u00a0"}</p>
                   </div>
                   {/* Slot list */}
                   <div className="flex-1 flex flex-col justify-center py-3 pr-4 gap-0.5 overflow-y-auto" style={{ maxHeight: 210 }}>
@@ -2893,9 +2893,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                           onClick={() => { setWardrobeActiveSlot(s => s === slot.id ? null : slot.id); setWardrobePreviewId(null); }}
                           className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-left ${isActive ? "bg-violet-500/15 border border-violet-500/30" : "hover:bg-white/[0.04] border border-transparent"}`}
                         >
-                          <span className="text-[13px] leading-none flex-shrink-0">{slot.emoji}</span>
+                          <span className="text-[15px] leading-none flex-shrink-0">{slot.emoji}</span>
                           <div className="flex-1 min-w-0">
-                            <p className={`text-[11px] font-semibold truncate ${equippedItem ? (isActive ? "text-violet-300" : "text-slate-300") : "text-slate-600"}`}>
+                            <p className={`text-[13px] font-semibold truncate ${equippedItem ? (isActive ? "text-violet-300" : "text-slate-300") : "text-slate-600"}`}>
                               {equippedItem ? equippedItem.name : <span className="italic">{slot.label}</span>}
                             </p>
                           </div>
@@ -2920,7 +2920,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         className={`relative flex flex-col items-center gap-1 px-4 py-3 transition-all flex-shrink-0 ${isActive ? "text-violet-300" : "text-slate-600 hover:text-slate-400"}`}
                       >
                         <span className="text-lg leading-none">{slot.emoji}</span>
-                        <span className="text-[8px] font-bold uppercase tracking-widest leading-none">{slot.label}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-widest leading-none">{slot.label}</span>
                         {isActive && <div className="absolute bottom-0 left-3 right-3 h-0.5 rounded-t-full bg-gradient-to-r from-violet-500 to-indigo-400" />}
                         {hasOwned && !isActive && <div className="absolute top-2 right-2.5 w-1.5 h-1.5 rounded-full bg-violet-500 opacity-70" />}
                       </button>
@@ -2933,7 +2933,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   {!wardrobeActiveSlot && (
                     <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
                       <Shirt className="w-10 h-10 text-slate-700" />
-                      <p className="text-[12px] text-slate-500 max-w-[220px]">
+                      <p className="text-[14px] text-slate-500 max-w-[220px]">
                         {myWardrobe.length === 0 ? "Ingen tøj endnu. Find en bot med 🎁 for at få tøj." : "Vælg en kategori ovenfor for at se dit tøj"}
                       </p>
                     </div>
@@ -2945,7 +2945,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     if (slotItems.length === 0) {
                       return (
                         <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
-                          <p className="text-[12px] text-slate-600">Intet tøj i denne kategori endnu.</p>
+                          <p className="text-[14px] text-slate-600">Intet tøj i denne kategori endnu.</p>
                         </div>
                       );
                     }
@@ -2973,7 +2973,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                             <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: `linear-gradient(135deg,${item.color}33,${item.color}11)`, border: `1.5px solid ${item.color}55` }}>
                               <div className="w-9 h-9 rounded-xl" style={{ backgroundColor: item.color, boxShadow: `0 4px 16px ${item.color}70` }} />
                             </div>
-                            <span className={`text-[11px] font-semibold text-center leading-tight w-full ${w.equipped ? "text-teal-300" : "text-slate-400"}`}>{item.name}</span>
+                            <span className={`text-[13px] font-semibold text-center leading-tight w-full ${w.equipped ? "text-teal-300" : "text-slate-400"}`}>{item.name}</span>
                           </button>
                         ))}
                       </div>
@@ -2991,10 +2991,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           <div className="absolute inset-0 z-[90] flex flex-col items-center justify-center bg-[#04090f]/96 backdrop-blur-sm">
             <div className="text-4xl mb-4">🔌</div>
             <p className="text-[17px] font-bold text-white mb-2 text-center px-6">{disconnectMsg}</p>
-            <p className="text-[12px] text-slate-500 mb-6 text-center px-8">Tryk på genindlæs-knappen for at genopret forbindelsen</p>
+            <p className="text-[14px] text-slate-500 mb-6 text-center px-8">Tryk på genindlæs-knappen for at genopret forbindelsen</p>
             <button
               onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); reloadChat(); }}
-              className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-[13px] font-semibold text-white transition-colors"
+              className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-[15px] font-semibold text-white transition-colors"
             >
               <RefreshCw className="w-4 h-4" /> Genopret forbindelse
             </button>
@@ -3007,14 +3007,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <div className="bg-[#0d1526] border border-violet-500/30 rounded-2xl p-6 max-w-[320px] w-[90%] shadow-2xl text-center">
               <div className="text-3xl mb-3">⏰</div>
               <p className="text-[15px] font-bold text-white mb-1.5">Er du stadig her?</p>
-              <p className="text-[12px] text-slate-400 mb-4">Bekræft din tilstedeværelse for at forblive tilkoblet og modtage <span className="text-amber-400 font-semibold">🪙 100 mønter</span>.</p>
+              <p className="text-[14px] text-slate-400 mb-4">Bekræft din tilstedeværelse for at forblive tilkoblet og modtage <span className="text-amber-400 font-semibold">🪙 100 mønter</span>.</p>
               <div className="w-full bg-white/[0.06] rounded-full h-1.5 mb-4 overflow-hidden">
                 <div className="h-full bg-violet-500 transition-all duration-1000" style={{ width: `${(confirmCountdown / 120) * 100}%` }} />
               </div>
-              <p className="text-[11px] text-slate-500 mb-5">{confirmCountdown}s tilbage</p>
+              <p className="text-[13px] text-slate-500 mb-5">{confirmCountdown}s tilbage</p>
               <button
                 onClick={confirmPresence}
-                className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-[13px] font-bold text-white transition-colors"
+                className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-[15px] font-bold text-white transition-colors"
               >
                 Ja, jeg er her! 👋
               </button>
@@ -3033,7 +3033,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <>
               <button className="w-full text-left px-3 py-2.5 text-sm text-violet-300 hover:bg-violet-500/10 border-b border-white/[0.06]" onClick={() => { setCtxMenu(null); setRightPanel("profile"); }}>Se min profil</button>
               <div className="px-3 py-2 border-b border-white/[0.06]">
-                <p className="text-[10px] font-semibold text-slate-500 mb-2">Ansigtsudtryk</p>
+                <p className="text-[12px] font-semibold text-slate-500 mb-2">Ansigtsudtryk</p>
                 <div className="flex gap-1">
                   {MOODS.map(m => (
                     <button key={m.id} onClick={() => { changeMood(m.id); setCtxMenu(null); }}
@@ -3102,7 +3102,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 )}
                 {theirItems.length > 0 && (
                   <div className="border-t border-white/[0.06]">
-                    <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Bærer ({theirItems.length})</p>
+                    <p className="px-3 pt-2 pb-1 text-[12px] font-semibold text-slate-500 uppercase tracking-wide">Bærer ({theirItems.length})</p>
                     {theirItems.map(item => (
                       <div key={item.id} className="px-3 py-1.5 flex items-center gap-2 text-sm text-slate-400">
                         <svg width="14" height="14" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
@@ -3120,7 +3120,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <>
                     {myInventory.length > 0 && (
                       <div className="border-t border-white/[0.06]">
-                        <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Giv genstand</p>
+                        <p className="px-3 pt-2 pb-1 text-[12px] font-semibold text-slate-500 uppercase tracking-wide">Giv genstand</p>
                         {myInventory.map(item => (
                           <button key={item.id} onClick={() => giveItem(item, ctxMenu.user!.user_id)} className="w-full text-left px-3 py-1.5 text-sm text-slate-300 hover:bg-white/[0.06] flex items-center gap-2">
                             <svg width="14" height="14" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
@@ -3152,43 +3152,43 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <svg width="44" height="44" viewBox="-18 -18 36 36"><ItemSVG type={ci.item_type} /></svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-bold text-white truncate">{ci.name}</p>
-                    <span className="inline-flex mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ color: meta?.color ?? "#6b7280", backgroundColor: `${meta?.color ?? "#6b7280"}22` }}>
+                    <p className="text-[15px] font-bold text-white truncate">{ci.name}</p>
+                    <span className="inline-flex mt-1 text-[12px] font-semibold px-2 py-0.5 rounded-full" style={{ color: meta?.color ?? "#6b7280", backgroundColor: `${meta?.color ?? "#6b7280"}22` }}>
                       {meta?.label ?? ci.item_type}{isWall ? " · Væg" : ""}
                     </span>
                   </div>
                 </div>
                 {/* Stats */}
                 <div className="px-3 py-2.5 border-b border-white/[0.06] space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center justify-between text-[13px]">
                     <span className="text-slate-500">Værdi</span>
                     <span className="text-amber-400 font-semibold">🪙 {meta?.value ?? "—"}</span>
                   </div>
-                  <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center justify-between text-[13px]">
                     <span className="text-slate-500">Størrelse</span>
                     <span className="text-slate-200 font-medium">{Math.round((ci.item_scale ?? 1) * 100)}%</span>
                   </div>
                   {!isWall && (
-                    <div className="flex items-center justify-between text-[11px]">
+                    <div className="flex items-center justify-between text-[13px]">
                       <span className="text-slate-500">Rotation</span>
                       <span className="text-slate-200 font-medium">{(ci.rotation ?? 0) * 90}°</span>
                     </div>
                   )}
-                  <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center justify-between text-[13px]">
                     <span className="text-slate-500">Antal i rummet</span>
                     <span className="text-slate-200 font-medium">{roomCountOfType}</span>
                   </div>
-                  <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center justify-between text-[13px]">
                     <span className="text-slate-500">Du ejer</span>
                     <span className="text-slate-200 font-medium">{myCountOfType}</span>
                   </div>
                 </div>
                 {/* Actions */}
                 {!isWall && (
-                  <button className="w-full text-left px-3 py-2 text-[12px] text-slate-300 hover:bg-white/[0.06]" onClick={() => rotateItem(ci)}>Roter (R)</button>
+                  <button className="w-full text-left px-3 py-2 text-[14px] text-slate-300 hover:bg-white/[0.06]" onClick={() => rotateItem(ci)}>Roter (R)</button>
                 )}
-                <button className="w-full text-left px-3 py-2 text-[12px] text-slate-300 hover:bg-white/[0.06]" onClick={() => pickupItem(ci)}>Tag op til inventar</button>
-                {isAdmin && <button className="w-full text-left px-3 py-2 text-[12px] text-rose-400 hover:bg-rose-500/10" onClick={() => deleteItem(ci.id)}>Slet genstand</button>}
+                <button className="w-full text-left px-3 py-2 text-[14px] text-slate-300 hover:bg-white/[0.06]" onClick={() => pickupItem(ci)}>Tag op til inventar</button>
+                {isAdmin && <button className="w-full text-left px-3 py-2 text-[14px] text-rose-400 hover:bg-rose-500/10" onClick={() => deleteItem(ci.id)}>Slet genstand</button>}
               </>
             );
           })()}
@@ -3211,10 +3211,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             </div>
             <div className="px-3 py-2 flex items-center justify-between" style={{ background: "rgba(4,9,18,0.95)" }}>
               <div>
-                <p className="text-[12px] font-bold text-slate-200 truncate">{hRoom.name}</p>
-                <p className="text-[9px] text-slate-500 mt-0.5">{hRoom.cols}×{hRoom.rows} felter</p>
+                <p className="text-[14px] font-bold text-slate-200 truncate">{hRoom.name}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">{hRoom.cols}×{hRoom.rows} felter</p>
               </div>
-              <span className={`text-[10px] font-bold flex-shrink-0 ${(roomOccupancy.get(hRoom.id) ?? 0) > 0 ? "text-emerald-400" : "text-slate-600"}`}>{roomOccupancy.get(hRoom.id) ?? 0} online</span>
+              <span className={`text-[12px] font-bold flex-shrink-0 ${(roomOccupancy.get(hRoom.id) ?? 0) > 0 ? "text-emerald-400" : "text-slate-600"}`}>{roomOccupancy.get(hRoom.id) ?? 0} online</span>
             </div>
           </div>
         );
@@ -3228,7 +3228,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <div className="w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center text-xl flex-shrink-0">🔒</div>
               <div>
                 <p className="text-[14px] font-bold text-white">Kodelåst rumskib</p>
-                <p className="text-[11px] text-slate-500 truncate">{passcodePrompt.room.name}</p>
+                <p className="text-[13px] text-slate-500 truncate">{passcodePrompt.room.name}</p>
               </div>
             </div>
             <input
@@ -3238,12 +3238,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               onChange={e => { setPasscodeInput(e.target.value); setPasscodeError(false); }}
               onKeyDown={e => e.key === "Enter" && verifyPasscode()}
               placeholder="Indtast adgangskode..."
-              className={`w-full bg-white/[0.05] border rounded-xl px-4 py-3 text-[13px] text-slate-200 placeholder-slate-600 outline-none transition-all mb-3 ${passcodeError ? "border-rose-500/50 focus:border-rose-500/70" : "border-white/[0.08] focus:border-violet-500/50"}`}
+              className={`w-full bg-white/[0.05] border rounded-xl px-4 py-3 text-[15px] text-slate-200 placeholder-slate-600 outline-none transition-all mb-3 ${passcodeError ? "border-rose-500/50 focus:border-rose-500/70" : "border-white/[0.08] focus:border-violet-500/50"}`}
             />
-            {passcodeError && <p className="text-[11px] text-rose-400 mb-3 flex items-center gap-1.5"><span>⚠️</span>Forkert adgangskode</p>}
+            {passcodeError && <p className="text-[13px] text-rose-400 mb-3 flex items-center gap-1.5"><span>⚠️</span>Forkert adgangskode</p>}
             <div className="flex gap-2">
-              <button onClick={() => setPasscodePrompt(null)} className="flex-1 py-2.5 bg-white/[0.05] rounded-xl text-slate-400 text-[12px] font-semibold hover:bg-white/[0.09] transition-colors border border-white/[0.06]">Annuller</button>
-              <button onClick={verifyPasscode} className="flex-1 py-2.5 rounded-xl text-white text-[12px] font-bold transition-all shadow-[0_4px_20px_rgba(124,58,237,0.3)]" style={{ background: "linear-gradient(135deg,#6d28d9,#4f46e5)" }}>Gå ind 🚀</button>
+              <button onClick={() => setPasscodePrompt(null)} className="flex-1 py-2.5 bg-white/[0.05] rounded-xl text-slate-400 text-[14px] font-semibold hover:bg-white/[0.09] transition-colors border border-white/[0.06]">Annuller</button>
+              <button onClick={verifyPasscode} className="flex-1 py-2.5 rounded-xl text-white text-[14px] font-bold transition-all shadow-[0_4px_20px_rgba(124,58,237,0.3)]" style={{ background: "linear-gradient(135deg,#6d28d9,#4f46e5)" }}>Gå ind 🚀</button>
             </div>
           </div>
         </div>
