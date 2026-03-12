@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck, Settings, Rocket } from "lucide-react";
+import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck, Settings, Rocket, Trophy, Mail, Send, ChevronLeft, Check, CheckCheck } from "lucide-react";
 import type { Profile, Achievement } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -439,7 +439,25 @@ interface VirtualRoomProps {
   currentProfile: Profile;
   onClose: () => void;
 }
-type RightPanel = "chatlog" | "hidden" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile" | "userprofile" | "settings";
+type RightPanel = "chatlog" | "hidden" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile" | "userprofile" | "settings" | "achievements" | "dms" | "dm_chat";
+
+interface DmConversation {
+  id: string;
+  partner_id: string;
+  partner_name: string;
+  partner_color: string;
+  last_message_at: string;
+  unread_count: number;
+  last_preview: string;
+}
+interface DmMessage {
+  id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+  delivered_at: string | null;
+  read_at: string | null;
+}
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: VirtualRoomProps) {
@@ -537,6 +555,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [myAchievements, setMyAchievements] = useState<Set<string>>(new Set());
   const messageCountRef = useRef(0);
   const [achievementNotif, setAchievementNotif] = useState<Achievement | null>(null);
+  // ─── DM state ───────────────────────────────────────────────────────────
+  const [dmConversations, setDmConversations] = useState<DmConversation[]>([]);
+  const [activeDmConvId, setActiveDmConvId] = useState<string | null>(null);
+  const [dmMessages, setDmMessages] = useState<DmMessage[]>([]);
+  const [dmDraft, setDmDraft] = useState("");
+  const [dmUnread, setDmUnread] = useState(0);
+  const [dmEmojiOpen, setDmEmojiOpen] = useState(false);
+  const activeDmConvIdRef = useRef<string | null>(null);
+  const dmEndRef = useRef<HTMLDivElement | null>(null);
   const [botMsgTick, setBotMsgTick] = useState(0);
   const [passcodePrompt, setPasscodePrompt] = useState<{ room: ChatRoom } | null>(null);
   const [passcodeInput, setPasscodeInput] = useState("");
@@ -1017,6 +1044,131 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     globalChannelRef.current?.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId, activeRoomName]);
+
+  // ─── DM: load conversations + realtime new-message subscription ───────────
+  useEffect(() => {
+    const loadConvs = async () => {
+      const { data: convs } = await supabase
+        .from("private_conversations")
+        .select("id, user1_id, user2_id, last_message_at")
+        .or(`user1_id.eq.${currentProfile.id},user2_id.eq.${currentProfile.id}`)
+        .order("last_message_at", { ascending: false });
+      if (!convs) return;
+      const partnerIds = convs.map(c => c.user1_id === currentProfile.id ? c.user2_id : c.user1_id);
+      const { data: profiles } = await supabase.from("profiles").select("id, display_name, avatar_color").in("id", partnerIds);
+      const profileMap = new Map((profiles ?? []).map((p: { id: string; display_name: string; avatar_color: string }) => [p.id, p]));
+      // Load last message + unread count for each conversation
+      const convList: DmConversation[] = await Promise.all(convs.map(async c => {
+        const partnerId = c.user1_id === currentProfile.id ? c.user2_id : c.user1_id;
+        const partner = profileMap.get(partnerId) ?? { display_name: "?", avatar_color: "#8b5cf6" };
+        const { data: msgs } = await supabase.from("private_messages")
+          .select("id, content, sender_id, read_at")
+          .eq("conversation_id", c.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const { count: unread } = await supabase.from("private_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("conversation_id", c.id)
+          .neq("sender_id", currentProfile.id)
+          .is("read_at", null);
+        return {
+          id: c.id,
+          partner_id: partnerId,
+          partner_name: partner.display_name,
+          partner_color: partner.avatar_color,
+          last_message_at: c.last_message_at,
+          unread_count: unread ?? 0,
+          last_preview: msgs?.[0]?.content?.slice(0, 60) ?? "",
+        };
+      }));
+      setDmConversations(convList);
+      setDmUnread(convList.reduce((s, c) => s + c.unread_count, 0));
+    };
+    loadConvs();
+    // Realtime: new private messages → update conversations list + unread
+    const dmCh = supabase.channel("dm-inbox")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "private_messages" }, async (payload) => {
+        const msg = payload.new as { id: string; conversation_id: string; sender_id: string; content: string; created_at: string };
+        if (msg.sender_id === currentProfile.id) return;
+        // Mark as delivered
+        await supabase.from("private_messages").update({ delivered_at: new Date().toISOString() }).eq("id", msg.id);
+        // If currently viewing this conversation → mark as read too
+        if (activeDmConvIdRef.current === msg.conversation_id) {
+          await supabase.from("private_messages").update({ read_at: new Date().toISOString() }).eq("id", msg.id);
+          setDmMessages(prev => [...prev, { id: msg.id, sender_id: msg.sender_id, content: msg.content, created_at: msg.created_at, delivered_at: new Date().toISOString(), read_at: new Date().toISOString() }]);
+          setTimeout(() => dmEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+        } else {
+          setDmUnread(n => n + 1);
+          setDmConversations(prev => prev.map(c => c.id === msg.conversation_id
+            ? { ...c, unread_count: c.unread_count + 1, last_preview: msg.content.slice(0, 60), last_message_at: msg.created_at }
+            : c).sort((a, b) => b.last_message_at.localeCompare(a.last_message_at)));
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(dmCh); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ─── DM helpers ─────────────────────────────────────────────────────────
+  const openDmConversation = async (convId: string) => {
+    activeDmConvIdRef.current = convId;
+    setActiveDmConvId(convId);
+    setRightPanel("dm_chat");
+    const { data } = await supabase.from("private_messages")
+      .select("id, sender_id, content, created_at, delivered_at, read_at")
+      .eq("conversation_id", convId)
+      .order("created_at", { ascending: true })
+      .limit(100);
+    setDmMessages((data ?? []) as DmMessage[]);
+    setTimeout(() => dmEndRef.current?.scrollIntoView({ behavior: "instant" }), 50);
+    // Mark all unread as read
+    await supabase.from("private_messages")
+      .update({ read_at: new Date().toISOString() })
+      .eq("conversation_id", convId)
+      .neq("sender_id", currentProfile.id)
+      .is("read_at", null);
+    setDmConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c));
+    setDmUnread(prev => Math.max(0, prev - (dmConversations.find(c => c.id === convId)?.unread_count ?? 0)));
+  };
+
+  const startDmWith = async (partnerId: string, partnerName: string, partnerColor: string) => {
+    setCtxMenu(null);
+    // Find or create conversation (canonical: smaller uuid is user1)
+    const [u1, u2] = [currentProfile.id, partnerId].sort();
+    const { data: existing } = await supabase.from("private_conversations")
+      .select("id").eq("user1_id", u1).eq("user2_id", u2).single();
+    let convId = existing?.id;
+    if (!convId) {
+      const { data: created } = await supabase.from("private_conversations")
+        .insert({ user1_id: u1, user2_id: u2 }).select("id").single();
+      convId = created?.id;
+    }
+    if (!convId) return;
+    // Ensure conversation is in local list
+    setDmConversations(prev => {
+      if (prev.some(c => c.id === convId)) return prev;
+      return [{ id: convId!, partner_id: partnerId, partner_name: partnerName, partner_color: partnerColor, last_message_at: new Date().toISOString(), unread_count: 0, last_preview: "" }, ...prev];
+    });
+    openDmConversation(convId);
+  };
+
+  const sendDmMessage = async () => {
+    const text = dmDraft.trim();
+    if (!text || !activeDmConvId) return;
+    setDmDraft("");
+    setDmEmojiOpen(false);
+    const { data } = await supabase.from("private_messages")
+      .insert({ conversation_id: activeDmConvId, sender_id: currentProfile.id, content: text })
+      .select("id, sender_id, content, created_at, delivered_at, read_at").single();
+    if (data) {
+      setDmMessages(prev => [...prev, data as DmMessage]);
+      setTimeout(() => dmEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    }
+    await supabase.from("private_conversations")
+      .update({ last_message_at: new Date().toISOString() })
+      .eq("id", activeDmConvId);
+    setDmConversations(prev => prev.map(c => c.id === activeDmConvId ? { ...c, last_preview: text.slice(0, 60), last_message_at: new Date().toISOString() } : c).sort((a, b) => b.last_message_at.localeCompare(a.last_message_at)));
+  };
 
   // Load locked tiles from DB whenever room changes + relocate if spawned on one
   useEffect(() => {
@@ -2521,6 +2673,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               <button onClick={() => setRightPanel(p => p === "rooms" ? "hidden" : "rooms")} className={`p-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rum"><Hash className="w-[18px] h-[18px]" /></button>
               {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "hidden" : "admin")} className={`p-2 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Admin"><Wrench className="w-[18px] h-[18px]" /></button>}
               <button onClick={() => setRightPanel(p => p === "settings" ? "hidden" : "settings")} className={`p-2 rounded-xl transition-all ${rightPanel === "settings" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Indstillinger"><Settings className="w-[18px] h-[18px]" /></button>
+              <button onClick={() => setRightPanel(p => p === "achievements" ? "hidden" : "achievements")} className={`p-2 rounded-xl transition-all ${rightPanel === "achievements" ? "text-amber-400 bg-amber-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Bedrifter"><Trophy className="w-[18px] h-[18px]" /></button>
+              <button onClick={() => setRightPanel(p => p === "dms" || p === "dm_chat" ? "hidden" : "dms")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "dms" || rightPanel === "dm_chat" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Beskeder">
+                <Mail className="w-[18px] h-[18px]" />
+                {dmUnread > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{dmUnread}</span>}
+              </button>
               <div className="w-px h-5 bg-white/[0.08] mx-1" />
               <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ind"><ZoomIn className="w-[18px] h-[18px]" /></button>
               <span className="text-[12px] text-slate-600 w-7 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
@@ -3120,6 +3277,16 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       </div>
                     )}
 
+                    {/* Send privat besked */}
+                    {profileView.id !== currentProfile.id && (
+                      <button
+                        onClick={() => startDmWith(profileView.id, profileView.display_name, profileView.avatar_color ?? "#8b5cf6")}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[14px] font-semibold text-white bg-violet-600 hover:bg-violet-500 transition-colors border border-violet-500/40"
+                      >
+                        <Mail className="w-4 h-4" /> Send privat besked
+                      </button>
+                    )}
+
                     {/* Admin tools */}
                     {isAdmin && (
                       <div className="bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-hidden">
@@ -3422,6 +3589,129 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 </div>
               </>
             )}
+
+            {/* Achievements panel */}
+            {rightPanel === "achievements" && (
+              <>
+                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
+                  <div className="flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /><span className="text-[14px] font-bold text-slate-200 tracking-wide">Bedrifter</span><span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">{myAchievements.size}/{allAchievements.length}</span></div>
+                  <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {allAchievements.map(a => {
+                    const earned = myAchievements.has(a.id);
+                    return (
+                      <div key={a.id} className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${earned ? "border-white/[0.08] bg-white/[0.03]" : "border-white/[0.04] bg-white/[0.01] opacity-60"}`}>
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl" style={{ background: earned ? a.badge_color + "22" : "rgba(255,255,255,0.03)", border: `1.5px solid ${earned ? a.badge_color + "44" : "rgba(255,255,255,0.06)"}` }}>
+                          {earned ? a.badge_emoji : "🔒"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className={`text-[13px] font-bold truncate ${earned ? "text-slate-200" : "text-slate-500"}`} style={earned ? { color: a.badge_color } : {}}>{a.name}</p>
+                            {earned && <span className="text-[10px] text-emerald-400 font-bold flex-shrink-0">✓ Opnået</span>}
+                          </div>
+                          <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">{a.description}</p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            {a.reward_coins > 0 && <span className="text-[11px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">+{a.reward_coins} 🪙</span>}
+                            {a.reward_xp > 0 && <span className="text-[11px] text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full border border-violet-500/20">+{a.reward_xp} XP</span>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* DM conversations list */}
+            {rightPanel === "dms" && (
+              <>
+                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
+                  <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-violet-400" /><span className="text-[14px] font-bold text-slate-200 tracking-wide">Beskeder</span>{dmUnread > 0 && <span className="text-[11px] font-bold text-white bg-violet-500 px-1.5 py-0.5 rounded-full">{dmUnread}</span>}</div>
+                  <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {dmConversations.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
+                      <Mail className="w-10 h-10 text-slate-700" />
+                      <p className="text-[14px] text-slate-500">Ingen samtaler endnu</p>
+                      <p className="text-[12px] text-slate-600">Højreklik på en bruger og vælg "Send privat besked" for at starte.</p>
+                    </div>
+                  ) : dmConversations.map(c => (
+                    <button key={c.id} onClick={() => openDmConversation(c.id)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] border-b border-white/[0.04] text-left transition-colors">
+                      <div className="relative flex-shrink-0">
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-[13px]" style={{ backgroundColor: c.partner_color }}>{c.partner_name[0]?.toUpperCase()}</div>
+                        {c.unread_count > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{c.unread_count}</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[13px] font-semibold text-slate-200 truncate">{c.partner_name}</p>
+                          <p className="text-[11px] text-slate-600 flex-shrink-0 ml-2">{new Date(c.last_message_at).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" })}</p>
+                        </div>
+                        <p className={`text-[12px] truncate mt-0.5 ${c.unread_count > 0 ? "text-slate-300 font-medium" : "text-slate-600"}`}>{c.last_preview || "Start en samtale..."}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* DM chat */}
+            {rightPanel === "dm_chat" && activeDmConvId && (() => {
+              const conv = dmConversations.find(c => c.id === activeDmConvId);
+              return (
+                <>
+                  <div className="px-3 py-3 border-b border-white/[0.06] flex items-center gap-2 bg-[#030912]/60 flex-shrink-0">
+                    <button onClick={() => setRightPanel("dms")} className="text-slate-500 hover:text-slate-200 transition-colors p-1"><ChevronLeft className="w-4 h-4" /></button>
+                    {conv && <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[12px] font-bold" style={{ backgroundColor: conv.partner_color }}>{conv.partner_name[0]?.toUpperCase()}</div>}
+                    <span className="text-[14px] font-bold text-slate-200 flex-1 truncate">{conv?.partner_name ?? "Privat besked"}</span>
+                    <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
+                    {dmMessages.map((msg, i) => {
+                      const isMe = msg.sender_id === currentProfile.id;
+                      const showTime = i === 0 || (new Date(msg.created_at).getTime() - new Date(dmMessages[i-1].created_at).getTime()) > 5 * 60000;
+                      return (
+                        <div key={msg.id}>
+                          {showTime && <p className="text-center text-[11px] text-slate-600 my-2">{new Date(msg.created_at).toLocaleString("da-DK", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</p>}
+                          <div className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                            <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed ${isMe ? "bg-violet-600 text-white rounded-br-sm" : "bg-white/[0.08] text-slate-200 rounded-bl-sm"}`}>
+                              {msg.content}
+                              {isMe && (
+                                <span className="ml-2 inline-flex items-center text-white/50">
+                                  {msg.read_at ? <CheckCheck className="w-3 h-3 text-teal-300" /> : msg.delivered_at ? <CheckCheck className="w-3 h-3" /> : <Check className="w-3 h-3" />}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={dmEndRef} />
+                  </div>
+                  <div className="px-3 pb-3 pt-2 border-t border-white/[0.06] flex-shrink-0">
+                    {dmEmojiOpen && (
+                      <div className="mb-2 grid grid-cols-8 gap-1 p-2 bg-white/[0.04] rounded-xl border border-white/[0.06]">
+                        {["😀","😂","🥰","😎","😭","😡","🤔","👍","👎","❤️","🔥","💯","🎉","😏","🙈","💀"].map(e => (
+                          <button key={e} onClick={() => setDmDraft(d => d + e)} className="text-lg hover:scale-125 transition-transform">{e}</button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setDmEmojiOpen(o => !o)} className={`p-2 rounded-xl transition-colors ${dmEmojiOpen ? "text-amber-400 bg-amber-500/10" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.06]"}`}>😊</button>
+                      <input
+                        value={dmDraft}
+                        onChange={e => setDmDraft(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDmMessage(); } }}
+                        placeholder="Skriv en besked..."
+                        className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/40"
+                      />
+                      <button onClick={sendDmMessage} disabled={!dmDraft.trim()} className="p-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"><Send className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
 
           </div>
         )}
@@ -3750,6 +4040,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <span className="text-xs font-semibold text-slate-200 truncate">{ctxMenu.user.display_name}</span>
                 </div>
                 <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06]" onClick={() => openProfile(ctxMenu.user!.user_id)}>Se profil</button>
+                <button className="w-full text-left px-3 py-2.5 text-sm text-violet-300 hover:bg-violet-500/10 flex items-center gap-2" onClick={() => startDmWith(ctxMenu.user!.user_id, ctxMenu.user!.display_name, ctxMenu.user!.color)}>
+                  <Mail className="w-3.5 h-3.5" /> Send privat besked
+                </button>
                 <button className="w-full text-left px-3 py-2.5 text-sm text-teal-300 hover:bg-teal-500/10 flex items-center gap-2" onClick={() => startTrade(ctxMenu.user!)}>
                   <span>🔄</span> Byt
                 </button>
