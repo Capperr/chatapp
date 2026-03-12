@@ -426,10 +426,10 @@ interface TradeSession {
 interface TradeRequest { from_id: string; from_name: string; from_color: string; trade_id: string; }
 
 const SPACESHIP_VARIANTS: { id: string; name: string; emoji: string; desc: string; cols: number; rows: number; theme: string; price: number }[] = [
-  { id: "scout",    name: "Scout",    emoji: "🛸", desc: "Kompakt og hurtigt",      cols: 8,  rows: 6,  theme: "void",    price: 2000  },
-  { id: "cruiser",  name: "Cruiser",  emoji: "🚀", desc: "Komfortabelt og rummeligt", cols: 10, rows: 8,  theme: "plasma",  price: 4500  },
-  { id: "flagship", name: "Flagship", emoji: "🌌", desc: "Massivt og imponerende",   cols: 12, rows: 10, theme: "nebula",  price: 9000  },
-  { id: "titan",    name: "Titan",    emoji: "⚡", desc: "Det ultimative rumskib",   cols: 14, rows: 12, theme: "stealth", price: 18000 },
+  { id: "scout",    name: "Scout",    emoji: "🛸", desc: "Kompakt og hurtigt",      cols: 8,  rows: 6,  theme: "blue",   price: 2000  },
+  { id: "cruiser",  name: "Cruiser",  emoji: "🚀", desc: "Komfortabelt og rummeligt", cols: 10, rows: 8,  theme: "cyan",   price: 4500  },
+  { id: "flagship", name: "Flagship", emoji: "🌌", desc: "Massivt og imponerende",   cols: 12, rows: 10, theme: "purple", price: 9000  },
+  { id: "titan",    name: "Titan",    emoji: "⚡", desc: "Det ultimative rumskib",   cols: 14, rows: 12, theme: "dark",   price: 18000 },
 ];
 interface VirtualRoomProps {
   roomId: string;
@@ -1122,7 +1122,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         if (p.to_id !== currentProfile.id) return;
         setAwaitingVisit(false);
         if (p.accepted && p.spaceship_room_id) {
-          switchRoom(p.spaceship_room_id, p.spaceship_room_name ?? "Rumskib", p.cols, p.rows, "spaceship", p.theme_key, p.floor_pattern);
+          // Always fetch latest room data from DB so theme is always correct
+          supabase.from("chat_rooms").select("*").eq("id", p.spaceship_room_id).single().then(({ data }) => {
+            const r = data as ChatRoom | null;
+            switchRoom(p.spaceship_room_id!, r?.name ?? p.spaceship_room_name ?? "Rumskib", r?.cols ?? p.cols, r?.rows ?? p.rows, "spaceship", r?.theme_key ?? p.theme_key, r?.floor_pattern ?? p.floor_pattern, r?.owner_id);
+          });
         }
       })
       .on("broadcast", { event: "spaceship_kick" }, ({ payload }) => {
