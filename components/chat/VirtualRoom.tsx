@@ -3870,8 +3870,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       return (
                         <div key={msg.id}>
                           {showTime && <p className="text-center text-[11px] text-slate-600 my-3">{new Date(msg.created_at).toLocaleString("da-DK", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</p>}
-                          <div className={`flex items-end gap-1.5 ${isMe ? "justify-end flex-row-reverse" : "justify-start"}`}>
-                            {avatarSlot}
+                          <div className={`flex items-end gap-1.5 ${isMe ? "justify-end" : "justify-start"}`}>
+                            {!isMe && avatarSlot}
                             <div className={`max-w-[72%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed ${isMe ? "bg-violet-600 text-white rounded-br-sm" : "bg-white/[0.09] text-slate-200 rounded-bl-sm"}`}>
                               {msg.content}
                               {isMe && (
@@ -3880,6 +3880,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                                 </span>
                               )}
                             </div>
+                            {isMe && avatarSlot}
                           </div>
                         </div>
                       );
