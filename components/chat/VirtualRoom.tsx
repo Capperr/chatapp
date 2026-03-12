@@ -416,6 +416,14 @@ interface ChatRoom {
   spaceship_passcode?: string | null;
 }
 interface VisitRequest { from_id: string; from_name: string; spaceship_room_id: string; spaceship_room_name: string; }
+interface TradeOffer { coins: number; clothing_ids: string[]; item_ids: string[]; }
+interface TradeSession {
+  trade_id: string;
+  partner_id: string; partner_name: string; partner_color: string;
+  my_offer: TradeOffer; their_offer: TradeOffer;
+  my_confirmed: boolean; their_confirmed: boolean;
+}
+interface TradeRequest { from_id: string; from_name: string; from_color: string; trade_id: string; }
 
 const SPACESHIP_VARIANTS: { id: string; name: string; emoji: string; desc: string; cols: number; rows: number; theme: string; price: number }[] = [
   { id: "scout",    name: "Scout",    emoji: "🛸", desc: "Kompakt og hurtigt",      cols: 8,  rows: 6,  theme: "void",    price: 2000  },
@@ -479,6 +487,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [spaceshipOf, setSpaceshipOf] = useState<Map<string, { id: string; name: string }>>(new Map());
   const [visitRequest, setVisitRequest] = useState<VisitRequest | null>(null);
   const [awaitingVisit, setAwaitingVisit] = useState(false);
+  const [tradeRequest, setTradeRequest] = useState<TradeRequest | null>(null);
+  const [tradeSession, setTradeSession] = useState<TradeSession | null>(null);
+  const [partnerWardrobe, setPartnerWardrobe] = useState<{ id: string; clothing_id: string }[]>([]);
+  const [partnerInventory, setPartnerInventory] = useState<{ id: string; name: string; item_type: string }[]>([]);
+  const [tradeTooltip, setTradeTooltip] = useState<{ x: number; y: number; item_id: string; is_clothing: boolean } | null>(null);
+  const tradeSessionRef = useRef<TradeSession | null>(null);
   const [settingsTab, setSettingsTab] = useState<"shop" | "profil">("shop");
   const levelRef = useRef(1);
   const [tanLevel, setTanLevel] = useState(0);
@@ -891,14 +905,63 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   useEffect(() => {
     const globalCh = supabase.channel("virtual-global", { config: { presence: { key: currentProfile.id } } });
     globalChannelRef.current = globalCh;
-    globalCh.on("presence", { event: "sync" }, () => {
-      const state = globalCh.presenceState<GlobalUser>();
-      const all = new Map<string, GlobalUser>();
-      for (const arr of Object.values(state)) { const p = arr[0] as GlobalUser; if (p?.user_id) all.set(p.user_id, p); }
-      setGlobalUsers(all);
-    }).subscribe(() => {
-      globalCh.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
-    });
+    globalCh
+      .on("presence", { event: "sync" }, () => {
+        const state = globalCh.presenceState<GlobalUser>();
+        const all = new Map<string, GlobalUser>();
+        for (const arr of Object.values(state)) { const p = arr[0] as GlobalUser; if (p?.user_id) all.set(p.user_id, p); }
+        setGlobalUsers(all);
+      })
+      .on("broadcast", { event: "trade_request" }, ({ payload }) => {
+        const p = payload as TradeRequest & { to_id: string };
+        if (p.to_id !== currentProfile.id) return;
+        setTradeRequest({ from_id: p.from_id, from_name: p.from_name, from_color: p.from_color, trade_id: p.trade_id });
+      })
+      .on("broadcast", { event: "trade_response" }, ({ payload }) => {
+        const p = payload as { to_id: string; trade_id: string; accepted: boolean };
+        if (p.to_id !== currentProfile.id) return;
+        if (!p.accepted) { setTradeSession(null); tradeSessionRef.current = null; return; }
+        // Partner accepted — fetch their wardrobe and inventory, then open trade
+        (async () => {
+          const sess = tradeSessionRef.current;
+          if (!sess || sess.trade_id !== p.trade_id) return;
+          const [{ data: wData }, { data: iData }] = await Promise.all([
+            supabase.from("player_wardrobe").select("id, clothing_id").eq("profile_id", sess.partner_id),
+            supabase.from("virtual_room_items").select("id, name, item_type").eq("owner_id", sess.partner_id).is("room_id", null).limit(50),
+          ]);
+          setPartnerWardrobe(wData ?? []);
+          setPartnerInventory(iData ?? []);
+        })();
+      })
+      .on("broadcast", { event: "trade_offer_update" }, ({ payload }) => {
+        const p = payload as { to_id: string; trade_id: string; offer: TradeOffer };
+        if (p.to_id !== currentProfile.id) return;
+        setTradeSession(prev => {
+          if (!prev || prev.trade_id !== p.trade_id) return prev;
+          const next = { ...prev, their_offer: p.offer };
+          tradeSessionRef.current = next;
+          return next;
+        });
+      })
+      .on("broadcast", { event: "trade_confirm" }, ({ payload }) => {
+        const p = payload as { to_id: string; trade_id: string };
+        if (p.to_id !== currentProfile.id) return;
+        setTradeSession(prev => {
+          if (!prev || prev.trade_id !== p.trade_id) return prev;
+          const next = { ...prev, their_confirmed: true };
+          tradeSessionRef.current = next;
+          return next;
+        });
+      })
+      .on("broadcast", { event: "trade_cancel" }, ({ payload }) => {
+        const p = payload as { to_id: string; trade_id: string };
+        if (p.to_id !== currentProfile.id) return;
+        setTradeSession(null); tradeSessionRef.current = null;
+        setTradeRequest(null);
+      })
+      .subscribe(() => {
+        globalCh.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
+      });
     return () => { supabase.removeChannel(globalCh); globalChannelRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1176,6 +1239,118 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     if (!normalRoom) return;
     channelRef.current?.send({ type: "broadcast", event: "spaceship_kick", payload: { user_id: user.user_id, redirect_room_id: normalRoom.id, redirect_room_name: normalRoom.name, redirect_cols: normalRoom.cols, redirect_rows: normalRoom.rows, redirect_type: normalRoom.room_type, redirect_theme: normalRoom.theme_key, redirect_floor: normalRoom.floor_pattern } });
   };
+
+  const startTrade = (user: PresenceUser) => {
+    setCtxMenu(null);
+    const trade_id = `${currentProfile.id}-${Date.now()}`;
+    const sess: TradeSession = {
+      trade_id,
+      partner_id: user.user_id, partner_name: user.display_name, partner_color: user.color,
+      my_offer: { coins: 0, clothing_ids: [], item_ids: [] },
+      their_offer: { coins: 0, clothing_ids: [], item_ids: [] },
+      my_confirmed: false, their_confirmed: false,
+    };
+    setTradeSession(sess);
+    tradeSessionRef.current = sess;
+    globalChannelRef.current?.send({ type: "broadcast", event: "trade_request", payload: { to_id: user.user_id, from_id: currentProfile.id, from_name: currentProfile.display_name, from_color: myColor, trade_id } });
+  };
+
+  const respondTrade = async (accepted: boolean) => {
+    const req = tradeRequest;
+    if (!req) return;
+    setTradeRequest(null);
+    globalChannelRef.current?.send({ type: "broadcast", event: "trade_response", payload: { to_id: req.from_id, trade_id: req.trade_id, accepted } });
+    if (!accepted) return;
+    // Open trade session as acceptor
+    const [{ data: wData }, { data: iData }] = await Promise.all([
+      supabase.from("player_wardrobe").select("id, clothing_id").eq("profile_id", req.from_id),
+      supabase.from("virtual_room_items").select("id, name, item_type").eq("owner_id", req.from_id).is("room_id", null).limit(50),
+    ]);
+    setPartnerWardrobe(wData ?? []);
+    setPartnerInventory(iData ?? []);
+    const sess: TradeSession = {
+      trade_id: req.trade_id,
+      partner_id: req.from_id, partner_name: req.from_name, partner_color: req.from_color,
+      my_offer: { coins: 0, clothing_ids: [], item_ids: [] },
+      their_offer: { coins: 0, clothing_ids: [], item_ids: [] },
+      my_confirmed: false, their_confirmed: false,
+    };
+    setTradeSession(sess);
+    tradeSessionRef.current = sess;
+  };
+
+  const updateMyOffer = (offer: TradeOffer) => {
+    setTradeSession(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, my_offer: offer, my_confirmed: false };
+      tradeSessionRef.current = next;
+      // broadcast to partner
+      globalChannelRef.current?.send({ type: "broadcast", event: "trade_offer_update", payload: { to_id: prev.partner_id, trade_id: prev.trade_id, offer } });
+      return next;
+    });
+  };
+
+  const confirmTrade = async () => {
+    setTradeSession(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, my_confirmed: true };
+      tradeSessionRef.current = next;
+      globalChannelRef.current?.send({ type: "broadcast", event: "trade_confirm", payload: { to_id: prev.partner_id, trade_id: prev.trade_id } });
+      return next;
+    });
+  };
+
+  const cancelTrade = () => {
+    const sess = tradeSessionRef.current;
+    if (sess) globalChannelRef.current?.send({ type: "broadcast", event: "trade_cancel", payload: { to_id: sess.partner_id, trade_id: sess.trade_id } });
+    setTradeSession(null); tradeSessionRef.current = null;
+    setTradeRequest(null);
+  };
+
+  const executeTrade = async () => {
+    const sess = tradeSessionRef.current;
+    if (!sess || !sess.my_confirmed || !sess.their_confirmed) return;
+    const { my_offer, their_offer, partner_id } = sess;
+    // Coins
+    if (my_offer.coins > 0 || their_offer.coins > 0) {
+      const myNew = coinsRef.current - my_offer.coins + their_offer.coins;
+      await supabase.from("profiles").update({ coins: myNew }).eq("id", currentProfile.id);
+      coinsRef.current = myNew; setCoins(myNew);
+    }
+    // Clothing I give away
+    for (const cid of my_offer.clothing_ids) {
+      await supabase.from("player_wardrobe").update({ profile_id: partner_id, equipped: false }).eq("clothing_id", cid).eq("profile_id", currentProfile.id);
+    }
+    // Clothing I receive
+    for (const cid of their_offer.clothing_ids) {
+      const existing = await supabase.from("player_wardrobe").select("id").eq("clothing_id", cid).eq("profile_id", currentProfile.id).maybeSingle();
+      if (!existing.data) {
+        await supabase.from("player_wardrobe").update({ profile_id: currentProfile.id, equipped: false }).eq("clothing_id", cid).eq("profile_id", partner_id);
+      }
+    }
+    // Items I give away
+    for (const iid of my_offer.item_ids) {
+      await supabase.from("virtual_room_items").update({ owner_id: partner_id }).eq("id", iid);
+    }
+    // Refresh wardrobe
+    const { data: wNew } = await supabase.from("player_wardrobe").select("id, clothing_id, equipped").eq("profile_id", currentProfile.id);
+    if (wNew) setMyWardrobe(wNew as UserWardrobeEntry[]);
+    // Refresh items (myInventory is derived from items)
+    const { data: iNew } = await supabase.from("virtual_room_items").select("*").eq("owner_id", currentProfile.id).is("room_id", null);
+    if (iNew) setItems(prev => {
+      const m = new Map(prev.map(i => [i.id, i]));
+      (iNew as RoomItem[]).forEach(i => m.set(i.id, i));
+      return Array.from(m.values());
+    });
+    setTradeSession(null); tradeSessionRef.current = null;
+  };
+
+  useEffect(() => {
+    if (tradeSession?.my_confirmed && tradeSession?.their_confirmed) {
+      executeTrade();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradeSession?.my_confirmed, tradeSession?.their_confirmed]);
 
   const switchRoom = (id: string, name: string, cols?: number, rows?: number, roomType?: string, themeKey?: string, floorPattern?: string, ownerId?: string | null) => {
     const nc = cols ?? roomColsRef.current; const nr = rows ?? roomRowsRef.current;
@@ -2986,6 +3161,225 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           </div>
         )}
 
+        {/* ── Trade request toast ── */}
+        {tradeRequest && (
+          <div className="absolute inset-0 z-[85] flex items-center justify-center pointer-events-none">
+            <div className="pointer-events-auto bg-[#0d1526] border border-teal-500/40 rounded-2xl p-5 max-w-[320px] w-[90%] shadow-[0_8px_32px_rgba(0,0,0,0.8)] text-center animate-in fade-in slide-in-from-top-4 duration-300">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <div className="w-6 h-6 rounded-full" style={{ backgroundColor: tradeRequest.from_color }} />
+                <span className="text-[15px] font-bold text-white">{tradeRequest.from_name}</span>
+              </div>
+              <p className="text-[13px] text-slate-400 mb-4">anmoder om byttehandel</p>
+              <div className="flex gap-2 justify-center">
+                <button onClick={() => respondTrade(true)} className="px-5 py-2 bg-teal-600 hover:bg-teal-500 rounded-xl text-[14px] font-bold text-white transition-colors">Ja</button>
+                <button onClick={() => respondTrade(false)} className="px-5 py-2 bg-white/[0.08] hover:bg-white/[0.14] rounded-xl text-[14px] font-bold text-slate-300 transition-colors">Nej</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Trade modal ── */}
+        {tradeSession && (
+          <div className="absolute inset-0 z-[86] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-[#080f1e] border border-white/[0.12] rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.9)] w-[min(780px,96vw)] max-h-[85vh] flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.08] flex-shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-lg">🔄</span>
+                  <span className="text-[15px] font-bold text-white">Byttehandel med </span>
+                  <div className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: tradeSession.partner_color }} />
+                  <span className="text-[15px] font-bold" style={{ color: tradeSession.partner_color }}>{tradeSession.partner_name}</span>
+                </div>
+                <button onClick={cancelTrade} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.06] transition-all"><X className="w-4 h-4" /></button>
+              </div>
+
+              {/* Two-column body */}
+              <div className="flex flex-1 overflow-hidden divide-x divide-white/[0.06]">
+                {/* My offer */}
+                <div className="flex-1 flex flex-col p-4 gap-3 overflow-y-auto">
+                  <p className="text-[13px] font-bold text-slate-400 uppercase tracking-widest">Dit tilbud</p>
+
+                  {/* Coins */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px]">🪙</span>
+                    <input
+                      type="number" min={0} max={coins} value={tradeSession.my_offer.coins}
+                      onChange={e => updateMyOffer({ ...tradeSession.my_offer, coins: Math.max(0, Math.min(coins, parseInt(e.target.value) || 0)) })}
+                      className="w-28 bg-white/[0.06] border border-white/[0.10] rounded-lg px-3 py-1.5 text-[14px] text-white outline-none focus:border-teal-500/50"
+                      placeholder="0"
+                    />
+                    <span className="text-[12px] text-slate-500">af {coins} valuta</span>
+                  </div>
+
+                  {/* My clothing to offer */}
+                  {myWardrobe.length > 0 && (
+                    <div>
+                      <p className="text-[12px] text-slate-500 mb-1.5">Tøj</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {myWardrobe.map(w => {
+                          const item = clothingCatalog.find(c => c.id === w.clothing_id);
+                          if (!item) return null;
+                          const inOffer = tradeSession.my_offer.clothing_ids.includes(w.clothing_id);
+                          return (
+                            <button
+                              key={w.id}
+                              onClick={() => updateMyOffer({ ...tradeSession.my_offer, clothing_ids: inOffer ? tradeSession.my_offer.clothing_ids.filter(id => id !== w.clothing_id) : [...tradeSession.my_offer.clothing_ids, w.clothing_id] })}
+                              onMouseEnter={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setTradeTooltip({ x: r.left + r.width / 2, y: r.top, item_id: w.clothing_id, is_clothing: true }); }}
+                              onMouseLeave={() => setTradeTooltip(null)}
+                              className={`px-2.5 py-1.5 rounded-lg text-[13px] font-medium transition-all border ${inOffer ? "border-teal-500/60 bg-teal-500/15 text-teal-300" : "border-white/[0.08] bg-white/[0.04] text-slate-400 hover:border-white/20"}`}
+                            >
+                              {item.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* My inventory items to offer */}
+                  {myInventory.length > 0 && (
+                    <div>
+                      <p className="text-[12px] text-slate-500 mb-1.5">Genstande</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {myInventory.map(item => {
+                          const inOffer = tradeSession.my_offer.item_ids.includes(item.id);
+                          return (
+                            <button
+                              key={item.id}
+                              onClick={() => updateMyOffer({ ...tradeSession.my_offer, item_ids: inOffer ? tradeSession.my_offer.item_ids.filter(id => id !== item.id) : [...tradeSession.my_offer.item_ids, item.id] })}
+                              onMouseEnter={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setTradeTooltip({ x: r.left + r.width / 2, y: r.top, item_id: item.id, is_clothing: false }); }}
+                              onMouseLeave={() => setTradeTooltip(null)}
+                              className={`px-2.5 py-1.5 rounded-lg text-[13px] font-medium transition-all border ${inOffer ? "border-teal-500/60 bg-teal-500/15 text-teal-300" : "border-white/[0.08] bg-white/[0.04] text-slate-400 hover:border-white/20"}`}
+                            >
+                              {item.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {tradeSession.my_offer.coins === 0 && tradeSession.my_offer.clothing_ids.length === 0 && tradeSession.my_offer.item_ids.length === 0 && (
+                    <p className="text-[13px] text-slate-600 italic">Intet tilbudt endnu</p>
+                  )}
+                </div>
+
+                {/* Their offer */}
+                <div className="flex-1 flex flex-col p-4 gap-3 overflow-y-auto" style={{ background: "rgba(0,255,200,0.01)" }}>
+                  <p className="text-[13px] font-bold text-slate-400 uppercase tracking-widest">{tradeSession.partner_name}s tilbud</p>
+
+                  {/* Their coins */}
+                  {tradeSession.their_offer.coins > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span>🪙</span>
+                      <span className="text-[14px] font-semibold text-amber-300">{tradeSession.their_offer.coins} valuta</span>
+                    </div>
+                  )}
+
+                  {/* Their clothing */}
+                  {tradeSession.their_offer.clothing_ids.length > 0 && (
+                    <div>
+                      <p className="text-[12px] text-slate-500 mb-1.5">Tøj</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {tradeSession.their_offer.clothing_ids.map(cid => {
+                          const item = clothingCatalog.find(c => c.id === cid);
+                          if (!item) return null;
+                          return (
+                            <span
+                              key={cid}
+                              onMouseEnter={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setTradeTooltip({ x: r.left + r.width / 2, y: r.top, item_id: cid, is_clothing: true }); }}
+                              onMouseLeave={() => setTradeTooltip(null)}
+                              className="px-2.5 py-1.5 rounded-lg text-[13px] font-medium border border-violet-500/40 bg-violet-500/10 text-violet-300 cursor-default"
+                            >
+                              {item.name}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Their items */}
+                  {tradeSession.their_offer.item_ids.length > 0 && (
+                    <div>
+                      <p className="text-[12px] text-slate-500 mb-1.5">Genstande</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {tradeSession.their_offer.item_ids.map(iid => {
+                          const item = [...partnerInventory].find(i => i.id === iid);
+                          return (
+                            <span
+                              key={iid}
+                              onMouseEnter={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setTradeTooltip({ x: r.left + r.width / 2, y: r.top, item_id: iid, is_clothing: false }); }}
+                              onMouseLeave={() => setTradeTooltip(null)}
+                              className="px-2.5 py-1.5 rounded-lg text-[13px] font-medium border border-violet-500/40 bg-violet-500/10 text-violet-300 cursor-default"
+                            >
+                              {item?.name ?? iid}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {tradeSession.their_offer.coins === 0 && tradeSession.their_offer.clothing_ids.length === 0 && tradeSession.their_offer.item_ids.length === 0 && (
+                    <p className="text-[13px] text-slate-600 italic">Afventer tilbud...</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-t border-white/[0.08] flex-shrink-0 bg-[#04090f]/60">
+                <button onClick={cancelTrade} className="px-4 py-2 rounded-xl text-[14px] text-slate-500 hover:text-slate-300 hover:bg-white/[0.06] transition-all">Annuller</button>
+                <div className="flex items-center gap-3">
+                  {tradeSession.their_confirmed && !tradeSession.my_confirmed && (
+                    <span className="text-[13px] text-teal-400 flex items-center gap-1">✓ {tradeSession.partner_name} har bekræftet</span>
+                  )}
+                  <button
+                    onClick={confirmTrade}
+                    disabled={tradeSession.my_confirmed}
+                    className={`px-5 py-2 rounded-xl text-[14px] font-bold transition-all ${tradeSession.my_confirmed ? "bg-teal-600/40 text-teal-400/60 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-500 text-white shadow-[0_0_16px_rgba(20,184,166,0.3)]"}`}
+                  >
+                    {tradeSession.my_confirmed ? "✓ Bekræftet" : "Bekræft handel"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Trade item tooltip ── */}
+        {tradeTooltip && (() => {
+          if (tradeTooltip.is_clothing) {
+            const item = clothingCatalog.find(c => c.id === tradeTooltip.item_id);
+            if (!item) return null;
+            return (
+              <div className="fixed z-[9999] pointer-events-none" style={{ left: tradeTooltip.x, top: tradeTooltip.y - 8, transform: "translate(-50%, -100%)" }}>
+                <div className="bg-[#0d1526] border border-white/[0.14] rounded-xl px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.8)] min-w-[120px]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: item.color }} />
+                    <span className="text-[13px] font-bold text-white">{item.name}</span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 capitalize">{item.slot}</span>
+                </div>
+              </div>
+            );
+          } else {
+            const item = [...myInventory, ...partnerInventory].find(i => i.id === tradeTooltip.item_id);
+            if (!item) return null;
+            return (
+              <div className="fixed z-[9999] pointer-events-none" style={{ left: tradeTooltip.x, top: tradeTooltip.y - 8, transform: "translate(-50%, -100%)" }}>
+                <div className="bg-[#0d1526] border border-white/[0.14] rounded-xl px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.8)] min-w-[120px]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <svg width="16" height="16" viewBox="-16 -16 32 32" className="flex-shrink-0"><ItemSVG type={item.item_type} /></svg>
+                    <span className="text-[13px] font-bold text-white">{item.name}</span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 capitalize">{item.item_type}</span>
+                </div>
+              </div>
+            );
+          }
+        })()}
+
         {/* ── Disconnect overlay ── */}
         {disconnected && (
           <div className="absolute inset-0 z-[90] flex flex-col items-center justify-center bg-[#04090f]/96 backdrop-blur-sm">
@@ -3089,6 +3483,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                   <span className="text-xs font-semibold text-slate-200 truncate">{ctxMenu.user.display_name}</span>
                 </div>
                 <button className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06]" onClick={() => openProfile(ctxMenu.user!.user_id)}>Se profil</button>
+                <button className="w-full text-left px-3 py-2.5 text-sm text-teal-300 hover:bg-teal-500/10 flex items-center gap-2" onClick={() => startTrade(ctxMenu.user!)}>
+                  <span>🔄</span> Byt
+                </button>
                 {spaceshipOf.has(ctxMenu.user.user_id) && activeRoomId !== spaceshipOf.get(ctxMenu.user.user_id)?.id && (
                   <button className="w-full text-left px-3 py-2.5 text-sm text-violet-300 hover:bg-violet-500/10 flex items-center gap-2" onClick={() => {
                     const ship = spaceshipOf.get(ctxMenu.user!.user_id)!;
