@@ -2689,33 +2689,33 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             )}
 
             {/* Floating toolbar dock */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-2.5 py-2 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
-              <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); setReconnectKey(k => k + 1); reloadChat(); }} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs / Genopret forbindelse"><RefreshCw className="w-[18px] h-[18px]" /></button>
-              <div className="w-px h-5 bg-white/[0.08] mx-1" />
-              <button onClick={() => setRightPanel(p => p === "chatlog" ? "hidden" : "chatlog")} className={`p-2 rounded-xl transition-all ${rightPanel === "chatlog" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Chatlog"><MessageSquare className="w-[18px] h-[18px]" /></button>
-              <button onClick={() => setRightPanel(p => p === "online" ? "hidden" : "online")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
-                <Users className="w-[18px] h-[18px]" />
-                {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-3 py-2.5 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
+              <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); setReconnectKey(k => k + 1); reloadChat(); }} className="p-2.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs / Genopret forbindelse"><RefreshCw className="w-[22px] h-[22px]" /></button>
+              <div className="w-px h-6 bg-white/[0.08] mx-1" />
+              <button onClick={() => setRightPanel(p => p === "chatlog" ? "hidden" : "chatlog")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "chatlog" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Chatlog"><MessageSquare className="w-[22px] h-[22px]" /></button>
+              <button onClick={() => setRightPanel(p => p === "online" ? "hidden" : "online")} className={`p-2.5 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
+                <Users className="w-[22px] h-[22px]" />
+                {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-emerald-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
               </button>
-              <button onClick={() => { setRightPanel(p => p === "wardrobe" ? "hidden" : "wardrobe"); setWardrobeActiveSlot(null); setWardrobePreviewId(null); }} className={`p-2 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
-                <Shirt className="w-[18px] h-[18px]" />
+              <button onClick={() => { setRightPanel(p => p === "wardrobe" ? "hidden" : "wardrobe"); setWardrobeActiveSlot(null); setWardrobePreviewId(null); }} className={`p-2.5 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
+                <Shirt className="w-[22px] h-[22px]" />
               </button>
-              <button onClick={() => setRightPanel(p => p === "inventory" ? "hidden" : "inventory")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rygsæk">
-                <Package className="w-[18px] h-[18px]" />
-                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
+              <button onClick={() => setRightPanel(p => p === "inventory" ? "hidden" : "inventory")} className={`p-2.5 rounded-xl transition-all relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rygsæk">
+                <Package className="w-[22px] h-[22px]" />
+                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
               </button>
-              <button onClick={() => setRightPanel(p => p === "rooms" ? "hidden" : "rooms")} className={`p-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rum"><Hash className="w-[18px] h-[18px]" /></button>
-              {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "hidden" : "admin")} className={`p-2 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Admin"><Wrench className="w-[18px] h-[18px]" /></button>}
-              <button onClick={() => setRightPanel(p => p === "settings" ? "hidden" : "settings")} className={`p-2 rounded-xl transition-all ${rightPanel === "settings" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Indstillinger"><Settings className="w-[18px] h-[18px]" /></button>
-              <button onClick={() => setRightPanel(p => p === "achievements" ? "hidden" : "achievements")} className={`p-2 rounded-xl transition-all ${rightPanel === "achievements" ? "text-amber-400 bg-amber-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Bedrifter"><Trophy className="w-[18px] h-[18px]" /></button>
-              <button onClick={() => setRightPanel(p => p === "dms" || p === "dm_chat" ? "hidden" : "dms")} className={`p-2 rounded-xl transition-all relative ${rightPanel === "dms" || rightPanel === "dm_chat" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Beskeder">
-                <Mail className="w-[18px] h-[18px]" />
-                {dmUnread > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{dmUnread}</span>}
+              <button onClick={() => setRightPanel(p => p === "rooms" ? "hidden" : "rooms")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rum"><Hash className="w-[22px] h-[22px]" /></button>
+              {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "hidden" : "admin")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Admin"><Wrench className="w-[22px] h-[22px]" /></button>}
+              <button onClick={() => setRightPanel(p => p === "settings" ? "hidden" : "settings")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "settings" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Indstillinger"><Settings className="w-[22px] h-[22px]" /></button>
+              <button onClick={() => setRightPanel(p => p === "achievements" ? "hidden" : "achievements")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "achievements" ? "text-amber-400 bg-amber-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Bedrifter"><Trophy className="w-[22px] h-[22px]" /></button>
+              <button onClick={() => setRightPanel(p => p === "dms" || p === "dm_chat" ? "hidden" : "dms")} className={`p-2.5 rounded-xl transition-all relative ${rightPanel === "dms" || rightPanel === "dm_chat" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Beskeder">
+                <Mail className="w-[22px] h-[22px]" />
+                {dmUnread > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{dmUnread}</span>}
               </button>
-              <div className="w-px h-5 bg-white/[0.08] mx-1" />
-              <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ind"><ZoomIn className="w-[18px] h-[18px]" /></button>
-              <span className="text-[12px] text-slate-600 w-7 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ud"><ZoomOut className="w-[18px] h-[18px]" /></button>
+              <div className="w-px h-6 bg-white/[0.08] mx-1" />
+              <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ind"><ZoomIn className="w-[22px] h-[22px]" /></button>
+              <span className="text-[12px] text-slate-600 w-8 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="p-2.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ud"><ZoomOut className="w-[22px] h-[22px]" /></button>
             </div>
           </div>
 
@@ -3705,19 +3705,39 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       <p className="text-[12px] text-slate-600">Højreklik på en bruger og vælg "Send privat besked" for at starte.</p>
                     </div>
                   ) : dmConversations.map(c => (
-                    <button key={c.id} onClick={() => openDmConversation(c.id)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] border-b border-white/[0.04] text-left transition-colors">
-                      <div className="relative flex-shrink-0">
-                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-[13px]" style={{ backgroundColor: c.partner_color }}>{c.partner_name[0]?.toUpperCase()}</div>
+                    <div key={c.id} className="group flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] border-b border-white/[0.04] transition-colors">
+                      {/* Mini avatar figure */}
+                      <button onClick={() => openDmConversation(c.id)} className="relative flex-shrink-0">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden" style={{ backgroundColor: c.partner_color + "22", border: `1.5px solid ${c.partner_color}55` }}>
+                          <svg width="32" height="34" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                            <PersonAvatar color={c.partner_color} glow={false} />
+                          </svg>
+                        </div>
                         {c.unread_count > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{c.unread_count}</span>}
-                      </div>
-                      <div className="flex-1 min-w-0">
+                      </button>
+                      {/* Text */}
+                      <button onClick={() => openDmConversation(c.id)} className="flex-1 min-w-0 text-left">
                         <div className="flex items-center justify-between">
                           <p className="text-[13px] font-semibold text-slate-200 truncate">{c.partner_name}</p>
                           <p className="text-[11px] text-slate-600 flex-shrink-0 ml-2">{new Date(c.last_message_at).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" })}</p>
                         </div>
                         <p className={`text-[12px] truncate mt-0.5 ${c.unread_count > 0 ? "text-slate-300 font-medium" : "text-slate-600"}`}>{c.last_preview || "Start en samtale..."}</p>
-                      </div>
-                    </button>
+                      </button>
+                      {/* Delete */}
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Slet samtale med ${c.partner_name}?`)) return;
+                          await supabase.from("private_conversations").delete().eq("id", c.id);
+                          setDmConversations(prev => prev.filter(x => x.id !== c.id));
+                          if (activeDmConvId === c.id) { setActiveDmConvId(null); setDmMessages([]); setRightPanel("dms"); }
+                          setDmUnread(prev => Math.max(0, prev - c.unread_count));
+                        }}
+                        className="flex-shrink-0 p-1.5 rounded-lg text-slate-700 hover:text-rose-400 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Slet samtale"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </>
@@ -3730,7 +3750,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 <>
                   <div className="px-3 py-3 border-b border-white/[0.06] flex items-center gap-2 bg-[#030912]/60 flex-shrink-0">
                     <button onClick={() => setRightPanel("dms")} className="text-slate-500 hover:text-slate-200 transition-colors p-1"><ChevronLeft className="w-4 h-4" /></button>
-                    {conv && <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[12px] font-bold" style={{ backgroundColor: conv.partner_color }}>{conv.partner_name[0]?.toUpperCase()}</div>}
+                    {conv && (
+                      <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden" style={{ backgroundColor: conv.partner_color + "22", border: `1.5px solid ${conv.partner_color}55` }}>
+                        <svg width="26" height="28" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                          <PersonAvatar color={conv.partner_color} glow={false} />
+                        </svg>
+                      </div>
+                    )}
                     <span className="text-[14px] font-bold text-slate-200 flex-1 truncate">{conv?.partner_name ?? "Privat besked"}</span>
                     <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                   </div>
