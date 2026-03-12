@@ -1018,11 +1018,27 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId, activeRoomName]);
 
-  // Load locked tiles from DB whenever room changes
+  // Load locked tiles from DB whenever room changes + relocate if spawned on one
   useEffect(() => {
     supabase.from("chat_rooms").select("locked_tiles").eq("id", activeRoomId).single().then(({ data }) => {
-      if (data?.locked_tiles) setLockedTiles(new Set(data.locked_tiles as string[]));
-      else setLockedTiles(new Set());
+      const newSet: Set<string> = new Set(data?.locked_tiles as string[] ?? []);
+      setLockedTiles(newSet);
+      // Non-admins must not stand on locked tiles after reload/room switch
+      if (!isAdmin && newSet.size > 0) {
+        const posKey = `${myPosRef.current.gx},${myPosRef.current.gy}`;
+        if (newSet.has(posKey)) {
+          const cols = roomColsRef.current; const rows = roomRowsRef.current;
+          outer: for (let gx = 0; gx < cols; gx++) {
+            for (let gy = 0; gy < rows; gy++) {
+              if (!newSet.has(`${gx},${gy}`)) {
+                moveMyPos(gx, gy);
+                if (channelRef.current) broadcastMove(gx, gy);
+                break outer;
+              }
+            }
+          }
+        }
+      }
     });
   }, [activeRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1110,7 +1126,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   useEffect(() => { if (chatLogRef.current) chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight; }, [logMessages]);
 
   const broadcastMove = useCallback((gx: number, gy: number) => {
-    channelRef.current?.send({ type: "broadcast", event: "move", payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current } satisfies PresenceUser });
+    const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current };
+    channelRef.current?.send({ type: "broadcast", event: "move", payload });
+    // Also re-track presence so joining users always see the current position
+    channelRef.current?.track(payload);
   }, [currentProfile.id, currentProfile.display_name, myColor]);
 
   // Main presence/broadcast channel
@@ -1127,7 +1146,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         for (const arr of Object.values(state)) { const p = arr[0] as PresenceUser; if (p?.user_id && p.user_id !== currentProfile.id) others.push(p); }
         setUsers(prev => {
           const next = new Map(prev);
-          for (const p of others) { if (!next.has(p.user_id)) next.set(p.user_id, p); }
+          // Update ALL presence users (not just new ones) so position is always current
+          for (const p of others) { next.set(p.user_id, p); }
           const activeIds = new Set(others.map(p => p.user_id));
           for (const uid of Array.from(next.keys())) { if (!activeIds.has(uid)) next.delete(uid); }
           return next;
@@ -2237,8 +2257,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     style={{ cursor: isFloorPlacing ? "crosshair" : cellBot || hasUser ? "default" : movingBotId ? "crosshair" : "pointer" }}>
                     <polygon points={tilePts(x, y)} fill={tileFill} stroke={tileStroke} strokeWidth={isMyTile || isPlaceTarget ? 1.5 : 0.7} />
                     {isHov && !hasUser && !cellBot && !movingBotId && !isFloorPlacing && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
-                    {/* Locked tile — admin-only red overlay */}
-                    {isLocked && isAdmin && <polygon points={tilePts(x, y)} fill="rgba(239,68,68,0.13)" stroke="rgba(239,68,68,0.35)" strokeWidth={0.8} />}
+                    {/* Locked tile overlay */}
+                    {isLocked && (
+                      <polygon points={tilePts(x, y)}
+                        fill={isAdmin ? "rgba(239,68,68,0.13)" : "rgba(160,160,160,0.09)"}
+                        stroke={isAdmin ? "rgba(239,68,68,0.35)" : "rgba(160,160,160,0.18)"}
+                        strokeWidth={0.8} />
+                    )}
                     {isLocked && isAdmin && (
                       <text x={x} y={y + 3} textAnchor="middle" fontSize={7} fill="rgba(239,68,68,0.7)" style={{ pointerEvents: "none", userSelect: "none" }}>🔒</text>
                     )}
