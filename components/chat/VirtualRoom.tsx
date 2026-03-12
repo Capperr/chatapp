@@ -509,11 +509,13 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
   const [otherLevelUps, setOtherLevelUps] = useState<Map<string, number>>(new Map());
   const [mutedUsers, setMutedUsers] = useState<Set<string>>(new Set());
+  const [myMutedUntil, setMyMutedUntil] = useState<string | null>(null);
   const [mySpaceship, setMySpaceship] = useState<ChatRoom | null>(null);
   const [spaceshipOf, setSpaceshipOf] = useState<Map<string, { id: string; name: string }>>(new Map());
   const [visitRequest, setVisitRequest] = useState<VisitRequest | null>(null);
   const [awaitingVisit, setAwaitingVisit] = useState(false);
   const [tradeRequest, setTradeRequest] = useState<TradeRequest | null>(null);
+  const [tradePendingPartner, setTradePendingPartner] = useState<{ partner_id: string; partner_name: string; partner_color: string; trade_id: string } | null>(null);
   const [tradeSession, setTradeSession] = useState<TradeSession | null>(null);
   const [partnerWardrobe, setPartnerWardrobe] = useState<{ id: string; clothing_id: string }[]>([]);
   const [partnerInventory, setPartnerInventory] = useState<{ id: string; name: string; item_type: string }[]>([]);
@@ -926,7 +928,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("user_achievements").select("achievement_id").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyAchievements(new Set(data.map((a: { achievement_id: string }) => a.achievement_id)));
     });
-    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, last_hour_confirm_at, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending").eq("id", currentProfile.id).single().then(({ data }) => {
+    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, last_hour_confirm_at, muted_until, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
         // Load tan — reset if expired
@@ -955,6 +957,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         coinsRef.current = c; setCoins(c);
         const la = (data as { coins: number; last_coin_award: string }).last_coin_award;
         if (la) lastCoinAwardRef.current = new Date(la);
+        // Load own mute status
+        const mu = (data as { muted_until?: string | null }).muted_until;
+        if (mu && new Date(mu) > new Date()) setMyMutedUntil(mu);
         // Load message count
         const mc = (data as { message_count?: number }).message_count ?? 0;
         messageCountRef.current = mc;
@@ -1033,8 +1038,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       .on("broadcast", { event: "trade_response" }, ({ payload }) => {
         const p = payload as { to_id: string; trade_id: string; accepted: boolean };
         if (p.to_id !== currentProfile.id) return;
+        setTradePendingPartner(null);
         if (!p.accepted) { setTradeSession(null); tradeSessionRef.current = null; return; }
-        // Partner accepted — fetch their wardrobe and inventory, then open trade
+        // Partner accepted — fetch their wardrobe and inventory, then open trade box
         (async () => {
           const sess = tradeSessionRef.current;
           if (!sess || sess.trade_id !== p.trade_id) return;
@@ -1044,6 +1050,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           ]);
           setPartnerWardrobe(wData ?? []);
           setPartnerInventory(iData ?? []);
+          setTradeSession(sess);
         })();
       })
       .on("broadcast", { event: "trade_offer_update" }, ({ payload }) => {
@@ -1070,7 +1077,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         const p = payload as { to_id: string; trade_id: string };
         if (p.to_id !== currentProfile.id) return;
         setTradeSession(null); tradeSessionRef.current = null;
-        setTradeRequest(null);
+        setTradeRequest(null); setTradePendingPartner(null);
       })
       .subscribe(() => {
         globalCh.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
@@ -1234,6 +1241,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const sendDmMessage = async () => {
     const text = dmDraft.trim();
     if (!text || !activeDmConvId) return;
+    if (myMutedUntil && new Date(myMutedUntil) > new Date()) return;
     setDmDraft("");
     setDmEmojiOpen(false);
     const { data } = await supabase.from("private_messages")
@@ -1462,6 +1470,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      if (myMutedUntil && new Date(myMutedUntil) > new Date()) return;
       if (e.key === "Enter") { sendDraftRef.current(); return; }
       if (e.key === "Escape") {
         if (placingItem) { setPlacingItem(null); return; }
@@ -1571,15 +1580,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const startTrade = (user: PresenceUser) => {
     setCtxMenu(null);
     const trade_id = `${currentProfile.id}-${Date.now()}`;
-    const sess: TradeSession = {
+    // Store a minimal pending session ref so trade_response can match the trade_id
+    tradeSessionRef.current = {
       trade_id,
       partner_id: user.user_id, partner_name: user.display_name, partner_color: user.color,
       my_offer: { coins: 0, clothing_ids: [], item_ids: [] },
       their_offer: { coins: 0, clothing_ids: [], item_ids: [] },
       my_confirmed: false, their_confirmed: false,
     };
-    setTradeSession(sess);
-    tradeSessionRef.current = sess;
+    // Show "waiting for response" banner — do NOT open the trade box yet
+    setTradePendingPartner({ partner_id: user.user_id, partner_name: user.display_name, partner_color: user.color, trade_id });
+    setTimeout(() => setTradePendingPartner(prev => prev?.trade_id === trade_id ? null : prev), 30000);
     globalChannelRef.current?.send({ type: "broadcast", event: "trade_request", payload: { to_id: user.user_id, from_id: currentProfile.id, from_name: currentProfile.display_name, from_color: myColor, trade_id } });
   };
 
@@ -1715,6 +1726,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   sendDraftRef.current = async () => {
     const t = draftRef.current.trim(); if (!t) return;
+    if (myMutedUntil && new Date(myMutedUntil) > new Date()) return;
     // /gå NUMMER command
     if (/^\/gå\s+\d+$/i.test(t)) {
       const num = parseInt(t.split(/\s+/)[1]);
@@ -2716,6 +2728,21 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
               </div>
             )}
 
+            {/* Awaiting trade response */}
+            {tradePendingPartner && (
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-3 bg-[#070f1e]/98 backdrop-blur-xl rounded-2xl border border-amber-500/20 shadow-[0_12px_40px_rgba(0,0,0,0.7)]">
+                <span className="text-amber-400 animate-pulse">⇄</span>
+                <span className="text-[14px] text-slate-300">Venter på svar fra <span className="font-semibold" style={{ color: tradePendingPartner.partner_color }}>{tradePendingPartner.partner_name}</span>...</span>
+                <button onClick={() => { setTradePendingPartner(null); tradeSessionRef.current = null; }} className="text-slate-600 hover:text-slate-400 ml-1"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
+            {/* Muted indicator */}
+            {myMutedUntil && new Date(myMutedUntil) > new Date() && (
+              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2.5 bg-amber-950/95 backdrop-blur-xl rounded-2xl border border-amber-500/30 shadow-[0_12px_40px_rgba(0,0,0,0.7)]">
+                <span className="text-amber-400 text-[15px]">🔇</span>
+                <span className="text-[14px] font-semibold text-amber-300">Du er muttet indtil {new Date(myMutedUntil).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" })}</span>
+              </div>
+            )}
             {/* Spam cooldown indicator */}
             {cooldownSec > 0 && (
               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2.5 bg-rose-950/95 backdrop-blur-xl rounded-2xl border border-rose-500/30 shadow-[0_12px_40px_rgba(0,0,0,0.7)]">
@@ -3870,14 +3897,20 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     )}
                     <div className="flex items-center gap-2">
                       <button onClick={() => setDmEmojiOpen(o => !o)} className={`p-2 rounded-xl transition-colors ${dmEmojiOpen ? "text-amber-400 bg-amber-500/10" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.06]"}`}>😊</button>
-                      <input
-                        value={dmDraft}
-                        onChange={e => setDmDraft(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDmMessage(); } }}
-                        placeholder="Skriv en besked..."
-                        className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/40"
-                      />
-                      <button onClick={sendDmMessage} disabled={!dmDraft.trim()} className="p-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"><Send className="w-4 h-4" /></button>
+                      {myMutedUntil && new Date(myMutedUntil) > new Date() ? (
+                        <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-amber-950/40 border border-amber-500/20 rounded-xl">
+                          <span className="text-[13px] text-amber-400">🔇 Du er muttet</span>
+                        </div>
+                      ) : (
+                        <input
+                          value={dmDraft}
+                          onChange={e => setDmDraft(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDmMessage(); } }}
+                          placeholder="Skriv en besked..."
+                          className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/40"
+                        />
+                      )}
+                      <button onClick={sendDmMessage} disabled={!dmDraft.trim() || !!(myMutedUntil && new Date(myMutedUntil) > new Date())} className="p-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"><Send className="w-4 h-4" /></button>
                     </div>
                   </div>
                 </>
