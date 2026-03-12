@@ -570,6 +570,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [dmDraft, setDmDraft] = useState("");
   const [dmUnread, setDmUnread] = useState(0);
   const [dmEmojiOpen, setDmEmojiOpen] = useState(false);
+  const [dmPartnerOutfit, setDmPartnerOutfit] = useState<Record<string, string>>({});
   const activeDmConvIdRef = useRef<string | null>(null);
   const dmEndRef = useRef<HTMLDivElement | null>(null);
   const [botMsgTick, setBotMsgTick] = useState(0);
@@ -671,7 +672,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     coinsRef.current = newCoins; setCoins(newCoins);
     const newXp = xpRef.current + 50; // 50 XP bonus for hourly confirmation
     xpRef.current = newXp; setXp(newXp);
-    await supabase.from("profiles").update({ coins: newCoins, xp: newXp, confirm_pending: false }).eq("id", currentProfile.id);
+    await supabase.from("profiles").update({ coins: newCoins, xp: newXp, confirm_pending: false, last_hour_confirm_at: new Date().toISOString() }).eq("id", currentProfile.id);
   }, [supabase, currentProfile.id]);
 
   // Inactivity + hourly check (every 30s)
@@ -712,7 +713,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         setLevel(newLevel);
         channelRef.current?.send({ type: "broadcast", event: "level_up", payload: { user_id: currentProfile.id, level: newLevel } });
       }
-      supabase.from("profiles").update({ total_online_seconds: newTotal, level: newLevel }).eq("id", currentProfile.id);
+      supabase.from("profiles").update({ total_online_seconds: newTotal }).eq("id", currentProfile.id);
       // Online time achievements
       if (newTotal >= 36000) checkAchievement("online_10h");   // 10h
       if (newTotal >= 360000) checkAchievement("online_100h"); // 100h
@@ -925,7 +926,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     supabase.from("user_achievements").select("achievement_id").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyAchievements(new Set(data.map((a: { achievement_id: string }) => a.achievement_id)));
     });
-    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending").eq("id", currentProfile.id).single().then(({ data }) => {
+    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, last_hour_confirm_at, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
         // Load tan — reset if expired
@@ -969,6 +970,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           supabase.from("profiles").update({ last_login_date: today, login_streak: newStreak }).eq("id", currentProfile.id);
         }
         setLoginStreak(newStreak);
+        // Restore last hour confirm time from DB so the countdown survives refreshes
+        const lhca = (data as { last_hour_confirm_at?: string | null }).last_hour_confirm_at;
+        if (lhca) {
+          lastHourConfirmRef.current = new Date(lhca).getTime();
+        }
         // Pending hourly confirmation — move lastHourConfirmRef so modal shows in 1-3 min
         if ((data as { confirm_pending?: boolean }).confirm_pending) {
           const delay = (60 + Math.random() * 120) * 1000;
@@ -1166,12 +1172,33 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     activeDmConvIdRef.current = convId;
     setActiveDmConvId(convId);
     setRightPanel("dm_chat");
-    const { data } = await supabase.from("private_messages")
-      .select("id, sender_id, content, created_at, delivered_at, read_at")
-      .eq("conversation_id", convId)
-      .order("created_at", { ascending: true })
-      .limit(100);
-    setDmMessages((data ?? []) as DmMessage[]);
+    // Load messages + partner outfit in parallel
+    const conv = dmConversations.find(c => c.id === convId);
+    const [messagesResult, wardrobeResult] = await Promise.all([
+      supabase.from("private_messages")
+        .select("id, sender_id, content, created_at, delivered_at, read_at")
+        .eq("conversation_id", convId)
+        .order("created_at", { ascending: true })
+        .limit(100),
+      conv?.partner_id
+        ? supabase.from("user_wardrobe")
+            .select("clothing_id")
+            .eq("user_id", conv.partner_id)
+            .eq("equipped", true)
+        : Promise.resolve({ data: [] }),
+    ]);
+    setDmMessages((messagesResult.data ?? []) as DmMessage[]);
+    // Build partner outfit map: { slot: clothing_id }
+    if (wardrobeResult.data && wardrobeResult.data.length > 0) {
+      const outfitMap: Record<string, string> = {};
+      for (const w of wardrobeResult.data as { clothing_id: string }[]) {
+        const item = clothingCatalog.find(c => c.id === w.clothing_id);
+        if (item) outfitMap[item.slot] = w.clothing_id;
+      }
+      setDmPartnerOutfit(outfitMap);
+    } else {
+      setDmPartnerOutfit({});
+    }
     setTimeout(() => dmEndRef.current?.scrollIntoView({ behavior: "instant" }), 50);
     // Mark all unread as read
     await supabase.from("private_messages")
@@ -3765,29 +3792,60 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             {/* DM chat */}
             {rightPanel === "dm_chat" && activeDmConvId && (() => {
               const conv = dmConversations.find(c => c.id === activeDmConvId);
+              // Mini avatar renderer used in messages
+              const MiniAvatar = ({ color, outfit, onClick }: { color: string; outfit: Record<string, string>; onClick?: () => void }) => (
+                <button
+                  onClick={onClick}
+                  className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden transition-opacity hover:opacity-80 ${onClick ? "cursor-pointer" : "cursor-default"}`}
+                  style={{ backgroundColor: color + "18", border: `1.5px solid ${color}40` }}
+                >
+                  <svg width="30" height="32" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                    <PersonAvatar color={color} glow={false} />
+                    {Object.keys(outfit).length > 0 && <ClothingOverlay outfit={outfit} catalog={clothingCatalog} />}
+                  </svg>
+                </button>
+              );
               return (
                 <>
-                  <div className="px-3 py-3 border-b border-white/[0.06] flex items-center gap-2 bg-[#030912]/60 flex-shrink-0">
+                  {/* Header */}
+                  <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center gap-2 bg-[#030912]/60 flex-shrink-0">
                     <button onClick={() => setRightPanel("dms")} className="text-slate-500 hover:text-slate-200 transition-colors p-1"><ChevronLeft className="w-4 h-4" /></button>
                     {conv && (
-                      <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden" style={{ backgroundColor: conv.partner_color + "22", border: `1.5px solid ${conv.partner_color}55` }}>
-                        <svg width="26" height="28" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
-                          <PersonAvatar color={conv.partner_color} glow={false} />
-                        </svg>
-                      </div>
+                      <button onClick={() => openProfile(conv.partner_id)} className="flex items-center gap-2 flex-1 min-w-0 hover:opacity-80 transition-opacity text-left">
+                        <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden" style={{ backgroundColor: conv.partner_color + "22", border: `1.5px solid ${conv.partner_color}55` }}>
+                          <svg width="26" height="28" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                            <PersonAvatar color={conv.partner_color} glow={false} />
+                            {Object.keys(dmPartnerOutfit).length > 0 && <ClothingOverlay outfit={dmPartnerOutfit} catalog={clothingCatalog} />}
+                          </svg>
+                        </div>
+                        <span className="text-[14px] font-bold text-slate-200 truncate">{conv.partner_name}</span>
+                      </button>
                     )}
-                    <span className="text-[14px] font-bold text-slate-200 flex-1 truncate">{conv?.partner_name ?? "Privat besked"}</span>
-                    <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                    {!conv && <span className="text-[14px] font-bold text-slate-200 flex-1">Privat besked</span>}
+                    <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
                   </div>
-                  <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
+                  {/* Messages */}
+                  <div className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
                     {dmMessages.map((msg, i) => {
                       const isMe = msg.sender_id === currentProfile.id;
                       const showTime = i === 0 || (new Date(msg.created_at).getTime() - new Date(dmMessages[i-1].created_at).getTime()) > 5 * 60000;
+                      // Show avatar only on last message of each consecutive group
+                      const isLastInGroup = i === dmMessages.length - 1 || dmMessages[i + 1].sender_id !== msg.sender_id;
+                      const avatarSlot = (
+                        <div className="w-9 flex-shrink-0 flex items-end pb-0.5">
+                          {isLastInGroup && (
+                            isMe
+                              ? <MiniAvatar color={myColor} outfit={myOutfit} onClick={() => setRightPanel("profile")} />
+                              : conv && <MiniAvatar color={conv.partner_color} outfit={dmPartnerOutfit} onClick={() => openProfile(conv.partner_id)} />
+                          )}
+                        </div>
+                      );
                       return (
                         <div key={msg.id}>
-                          {showTime && <p className="text-center text-[11px] text-slate-600 my-2">{new Date(msg.created_at).toLocaleString("da-DK", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</p>}
-                          <div className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                            <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed ${isMe ? "bg-violet-600 text-white rounded-br-sm" : "bg-white/[0.08] text-slate-200 rounded-bl-sm"}`}>
+                          {showTime && <p className="text-center text-[11px] text-slate-600 my-3">{new Date(msg.created_at).toLocaleString("da-DK", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</p>}
+                          <div className={`flex items-end gap-1.5 ${isMe ? "justify-end flex-row-reverse" : "justify-start"}`}>
+                            {avatarSlot}
+                            <div className={`max-w-[72%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed ${isMe ? "bg-violet-600 text-white rounded-br-sm" : "bg-white/[0.09] text-slate-200 rounded-bl-sm"}`}>
                               {msg.content}
                               {isMe && (
                                 <span className="ml-2 inline-flex items-center text-white/50">
@@ -3801,6 +3859,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     })}
                     <div ref={dmEndRef} />
                   </div>
+                  {/* Input */}
                   <div className="px-3 pb-3 pt-2 border-t border-white/[0.06] flex-shrink-0">
                     {dmEmojiOpen && (
                       <div className="mb-2 grid grid-cols-8 gap-1 p-2 bg-white/[0.04] rounded-xl border border-white/[0.06]">
