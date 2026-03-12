@@ -370,10 +370,12 @@ interface RoomBot {
 interface CtxMenu {
   clientX: number;
   clientY: number;
-  kind: "user" | "self" | "tile_item" | "bot";
+  kind: "user" | "self" | "tile_item" | "bot" | "tile";
   user?: PresenceUser;
   item?: RoomItem;
   bot?: RoomBot;
+  tileGx?: number;
+  tileGy?: number;
 }
 interface LogMessage {
   id: string;
@@ -529,6 +531,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
   const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [lockedTiles, setLockedTiles] = useState<Set<string>>(new Set());
   const [botMsgTick, setBotMsgTick] = useState(0);
   const [passcodePrompt, setPasscodePrompt] = useState<{ room: ChatRoom } | null>(null);
   const [passcodeInput, setPasscodeInput] = useState("");
@@ -788,13 +791,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       return;
     }
 
-    // Always load latest minutes from DB on entry — this is the source of truth
-    // so minutes persist whether the user reloaded the page or just switched rooms
-    supabase.from("profiles").select("solarie_minutes").eq("id", currentProfile.id).single().then(({ data }) => {
-      if (data?.solarie_minutes != null) {
-        solarieMinutesRef.current = data.solarie_minutes;
-      }
-    });
+    // solarieMinutesRef is loaded from DB at mount (profiles fetch below).
+    // Do NOT re-read from DB here — it races with the cleanup save and can overwrite
+    // the accumulated minutes with an old value before the previous save commits.
 
     const entered = Date.now();
     solarieEnteredRef.current = entered;
@@ -985,6 +984,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId, activeRoomName]);
 
+  // Load locked tiles from DB whenever room changes
+  useEffect(() => {
+    supabase.from("chat_rooms").select("locked_tiles").eq("id", activeRoomId).single().then(({ data }) => {
+      if (data?.locked_tiles) setLockedTiles(new Set(data.locked_tiles as string[]));
+      else setLockedTiles(new Set());
+    });
+  }, [activeRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Items realtime — fetch room items + any items the user is carrying (owner_id = me, any room)
   useEffect(() => {
     Promise.all([
@@ -1148,6 +1155,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         if (p.user_id !== currentProfile.id) return;
         switchRoom(p.redirect_room_id, p.redirect_room_name, p.redirect_cols, p.redirect_rows, p.redirect_type, p.redirect_theme, p.redirect_floor);
       })
+      .on("broadcast", { event: "locked_tiles_update" }, ({ payload }) => {
+        const p = payload as { locked_tiles: string[] };
+        setLockedTiles(new Set(p.locked_tiles ?? []));
+      })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${activeRoomId}` }, async (payload) => {
         const sid: string = payload.new.user_id; const txt: string = payload.new.content;
         const newBubble: SpeechBubble = { id: Date.now() + Math.random(), text: txt, ts: Date.now() };
@@ -1233,15 +1244,19 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     }
     if (Array.from(users.values()).some(u => u.user_id !== currentProfile.id && u.gx === gx && u.gy === gy)) return;
     if (bots.some(b => b.gx === gx && b.gy === gy)) return;
+    if (!isAdmin && lockedTiles.has(`${gx},${gy}`)) return;
     moveMyPos(gx, gy); broadcastMove(gx, gy);
   };
 
-  const handleRightClick = (e: React.MouseEvent, user: PresenceUser | null, item: RoomItem | null, bot: RoomBot | null) => {
+  const handleRightClick = (e: React.MouseEvent, user: PresenceUser | null, item: RoomItem | null, bot: RoomBot | null, tileGx?: number, tileGy?: number) => {
     e.preventDefault(); e.stopPropagation();
     if (user?.user_id === currentProfile.id) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "self" }); return; }
     if (user) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "user", user }); return; }
     if (bot) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "bot", bot }); return; }
     if (item) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "tile_item", item }); return; }
+    if (isAdmin && tileGx !== undefined && tileGy !== undefined) {
+      setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "tile", tileGx, tileGy });
+    }
   };
 
   const openProfile = async (userId: string) => {
@@ -1485,6 +1500,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const saveItemName = async (item: RoomItem, name: string) => {
     if (name.trim()) await supabase.from("virtual_room_items").update({ name: name.trim() }).eq("id", item.id);
     setEditItem(null);
+  };
+
+  const toggleTileLock = async (gx: number, gy: number) => {
+    setCtxMenu(null);
+    const key = `${gx},${gy}`;
+    const newSet = new Set(lockedTiles);
+    if (newSet.has(key)) newSet.delete(key); else newSet.add(key);
+    setLockedTiles(newSet);
+    const arr = Array.from(newSet);
+    await supabase.from("chat_rooms").update({ locked_tiles: arr }).eq("id", activeRoomId);
+    channelRef.current?.send({ type: "broadcast", event: "locked_tiles_update", payload: { locked_tiles: arr } });
   };
 
   const updateItemScale = async (item: RoomItem, delta: number) => {
@@ -2114,6 +2140,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 const isBotTarget = !!movingBotId && !cellBot;
                 const isFloorPlacing = !!placingItem && !isWallItemType(placingItem.item.item_type);
                 const isPlaceTarget = isFloorPlacing && isHov && !hasUser && !cellBot;
+                const isLocked = lockedTiles.has(cellKey);
 
                 const baseFill = (() => {
                   switch (activeFloorPattern) {
@@ -2131,12 +2158,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 return (
                   <g key={cellKey}
                     onClick={() => handleTileClick(gx, gy)}
-                    onContextMenu={e => handleRightClick(e, null, cellItem ?? null, cellBot ?? null)}
+                    onContextMenu={e => handleRightClick(e, null, cellItem ?? null, cellBot ?? null, gx, gy)}
                     onMouseEnter={() => setHovered(cellKey)}
                     onMouseLeave={() => setHovered(null)}
                     style={{ cursor: isFloorPlacing ? "crosshair" : cellBot || hasUser ? "default" : movingBotId ? "crosshair" : "pointer" }}>
                     <polygon points={tilePts(x, y)} fill={tileFill} stroke={tileStroke} strokeWidth={isMyTile || isPlaceTarget ? 1.5 : 0.7} />
                     {isHov && !hasUser && !cellBot && !movingBotId && !isFloorPlacing && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
+                    {/* Locked tile — admin-only red overlay */}
+                    {isLocked && isAdmin && <polygon points={tilePts(x, y)} fill="rgba(239,68,68,0.13)" stroke="rgba(239,68,68,0.35)" strokeWidth={0.8} />}
+                    {isLocked && isAdmin && (
+                      <text x={x} y={y + 3} textAnchor="middle" fontSize={7} fill="rgba(239,68,68,0.7)" style={{ pointerEvents: "none", userSelect: "none" }}>🔒</text>
+                    )}
                     {/* Ghost preview for place mode */}
                     {isPlaceTarget && placingItem && (
                       <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (placingItem.item.item_scale ?? 1)}) rotate(${placingItem.rotation * 90})`} opacity={0.65}>
@@ -3609,6 +3641,25 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                 )}
                 <button className="w-full text-left px-3 py-2 text-[14px] text-slate-300 hover:bg-white/[0.06]" onClick={() => pickupItem(ci)}>Tag op til inventar</button>
                 {isAdmin && <button className="w-full text-left px-3 py-2 text-[14px] text-rose-400 hover:bg-rose-500/10" onClick={() => deleteItem(ci.id)}>Slet genstand</button>}
+              </>
+            );
+          })()}
+
+          {ctxMenu.kind === "tile" && ctxMenu.tileGx !== undefined && ctxMenu.tileGy !== undefined && (() => {
+            const key = `${ctxMenu.tileGx},${ctxMenu.tileGy}`;
+            const locked = lockedTiles.has(key);
+            return (
+              <>
+                <div className="px-3 py-2 border-b border-white/[0.06] flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-400">Felt ({ctxMenu.tileGx}, {ctxMenu.tileGy})</span>
+                  {locked && <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wide">Låst</span>}
+                </div>
+                <button
+                  onClick={() => toggleTileLock(ctxMenu.tileGx!, ctxMenu.tileGy!)}
+                  className={`w-full text-left px-3 py-2.5 text-sm flex items-center gap-2 transition-colors ${locked ? "text-emerald-400 hover:bg-emerald-500/10" : "text-rose-400 hover:bg-rose-500/10"}`}>
+                  <span>{locked ? "🔓" : "🔒"}</span>
+                  {locked ? "Åbn felt" : "Lås felt"}
+                </button>
               </>
             );
           })()}
