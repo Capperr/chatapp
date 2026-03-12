@@ -2041,6 +2041,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <polygon
                       points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
                       fill={theme.wallA}
+                      stroke={theme.color} strokeWidth={0.8} strokeOpacity={0.35}
                       onClick={e => handleWallClick(e, "right")}
                       style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
@@ -2050,7 +2051,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 10} ${tcx},${tcy - 10}`}
                       fill={theme.color + "18"}
                     />
-                    <line x1={tcx} y1={tcy} x2={rBR.x} y2={rBR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.45} />
+                    <line x1={tcx} y1={tcy} x2={rBR.x} y2={rBR.y} stroke={theme.color} strokeWidth={1.5} opacity={0.7} />
                     {/* Right wall top stripe */}
                     <polygon
                       points={`${tcx},${tcy - WALL_H + 12} ${rBR.x},${rBR.y - WALL_H + 12} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
@@ -2060,6 +2061,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                     <polygon
                       points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
                       fill={theme.wallB}
+                      stroke={theme.color} strokeWidth={0.8} strokeOpacity={0.25}
                       onClick={e => handleWallClick(e, "left")}
                       style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
@@ -2069,17 +2071,17 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                       points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 10} ${tcx},${tcy - 10}`}
                       fill={theme.color + "14"}
                     />
-                    <line x1={tcx} y1={tcy} x2={lBL.x} y2={lBL.y} stroke={theme.color} strokeWidth={1.2} opacity={0.35} />
+                    <line x1={tcx} y1={tcy} x2={lBL.x} y2={lBL.y} stroke={theme.color} strokeWidth={1.5} opacity={0.55} />
                     {/* Left wall top stripe */}
                     <polygon
                       points={`${tcx},${tcy - WALL_H + 12} ${lBL.x},${lBL.y - WALL_H + 12} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
                       fill={theme.color + "08"}
                     />
                     {/* Wall top ridge glow lines */}
-                    <line x1={apex.x} y1={apex.y} x2={rBR.x} y2={rBR.y - WALL_H} stroke={theme.color} strokeWidth={1.2} opacity={0.3} />
-                    <line x1={apex.x} y1={apex.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke={theme.color} strokeWidth={1.2} opacity={0.22} />
+                    <line x1={apex.x} y1={apex.y} x2={rBR.x} y2={rBR.y - WALL_H} stroke={theme.color} strokeWidth={1.5} opacity={0.55} />
+                    <line x1={apex.x} y1={apex.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke={theme.color} strokeWidth={1.5} opacity={0.45} />
                     {/* Corner glow */}
-                    <line x1={tcx} y1={tcy} x2={apex.x} y2={apex.y} stroke={theme.color} strokeWidth={1.5} opacity={0.35} />
+                    <line x1={tcx} y1={tcy} x2={apex.x} y2={apex.y} stroke={theme.color} strokeWidth={2} opacity={0.6} />
                     {/* Wall-mounted items */}
                     {wallItems.map(renderWallItemSvg)}
                   </g>
