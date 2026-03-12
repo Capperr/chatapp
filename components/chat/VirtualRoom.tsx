@@ -1196,6 +1196,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     return () => window.removeEventListener("click", h);
   }, []);
 
+  // Clear room hover tooltip when switching away from rooms panel
+  useEffect(() => {
+    if (rightPanel !== "rooms") { setHoveredRoomId(null); setTooltipPos(null); }
+  }, [rightPanel]);
+
   const handleTileClick = (gx: number, gy: number) => {
     if (isDraggingRef.current) return;
     setCtxMenu(null);
