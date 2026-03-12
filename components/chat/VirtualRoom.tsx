@@ -1818,7 +1818,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         </div>
 
         {/* Body */}
-        <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
+        <div className="flex-1 flex flex-col sm:flex-row overflow-hidden relative">
 
           {/* Isometric room */}
           <div
@@ -2356,10 +2356,9 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             </div>
           </div>
 
-        </div>
-        {/* Extension panel - appears to the right of window */}
-        {extensionOpen && (
-          <div className={`${fullscreen ? "absolute right-4 top-14 bottom-4 z-30 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl" : "absolute right-0 top-0 translate-x-full h-full rounded-r-2xl border border-l-0 border-white/[0.1] shadow-[16px_0_40px_rgba(0,0,0,0.6)] max-sm:hidden"} w-[min(420px,38vw)] flex flex-col bg-[#030912]/98 overflow-hidden`}>
+          {/* Extension panel - overlays room area */}
+          {extensionOpen && (
+          <div className={`absolute right-2 top-2 bottom-2 z-30 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl w-[min(400px,calc(100%-16px))] flex flex-col bg-[#030912]/98 overflow-hidden`}>
             {/* Online users */}
             {rightPanel === "online" && (
               <>
@@ -3160,6 +3159,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
           </div>
         )}
+
+        </div>{/* end body */}
 
         {/* ── Trade request toast ── */}
         {tradeRequest && (
