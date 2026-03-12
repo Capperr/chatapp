@@ -573,7 +573,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [disconnectMsg, setDisconnectMsg] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmCountdown, setConfirmCountdown] = useState(120);
-  const lastHourConfirmRef = useRef(Date.now());
+  // If there's a pending hourly confirm from a previous session, make the modal show in 1-3 min
+  const _pendingConfirm = typeof window !== "undefined" && !!localStorage.getItem("vr_pending_confirm");
+  const _confirmDelay = _pendingConfirm ? (60 + Math.random() * 120) * 1000 : 0; // 1-3 min
+  const lastHourConfirmRef = useRef(_pendingConfirm ? Date.now() - 3_600_000 + _confirmDelay : Date.now());
   const showConfirmModalRef = useRef(false);
   const disconnectedRef = useRef(false);
   const minuteXpAccRef = useRef(0);
@@ -655,11 +658,14 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     showConfirmModalRef.current = false;
     setShowConfirmModal(false);
     lastHourConfirmRef.current = Date.now();
+    if (typeof window !== "undefined") localStorage.removeItem("vr_pending_confirm");
     confirmedHoursRef.current += 1;
     setConfirmedHours(confirmedHoursRef.current);
     const newCoins = coinsRef.current + 100;
     coinsRef.current = newCoins; setCoins(newCoins);
-    await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
+    const newXp = xpRef.current + 50; // 50 XP bonus for hourly confirmation
+    xpRef.current = newXp; setXp(newXp);
+    await supabase.from("profiles").update({ coins: newCoins, xp: newXp }).eq("id", currentProfile.id);
   }, [supabase, currentProfile.id]);
 
   // Inactivity + hourly check (every 30s)
@@ -719,6 +725,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       setConfirmCountdown(prev => {
         if (prev <= 1) {
           clearInterval(cd);
+          if (typeof window !== "undefined") localStorage.setItem("vr_pending_confirm", "1");
           triggerDisconnect("Du har mistet forbindelsen til chatten");
           setShowConfirmModal(false);
           return 0;
@@ -1090,9 +1097,21 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "private_messages" }, async (payload) => {
         const msg = payload.new as { id: string; conversation_id: string; sender_id: string; content: string; created_at: string };
         if (msg.sender_id === currentProfile.id) return;
+        // Play notification sound
+        try {
+          const ctx = new AudioContext();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = "sine"; osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.12, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
+          setTimeout(() => ctx.close(), 600);
+        } catch { /* ignore AudioContext errors */ }
         // Mark as delivered
         await supabase.from("private_messages").update({ delivered_at: new Date().toISOString() }).eq("id", msg.id);
-        // If currently viewing this conversation → mark as read too
+        // If currently viewing this conversation → mark as read too + append message
         if (activeDmConvIdRef.current === msg.conversation_id) {
           await supabase.from("private_messages").update({ read_at: new Date().toISOString() }).eq("id", msg.id);
           setDmMessages(prev => [...prev, { id: msg.id, sender_id: msg.sender_id, content: msg.content, created_at: msg.created_at, delivered_at: new Date().toISOString(), read_at: new Date().toISOString() }]);
@@ -1103,6 +1122,11 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             ? { ...c, unread_count: c.unread_count + 1, last_preview: msg.content.slice(0, 60), last_message_at: msg.created_at }
             : c).sort((a, b) => b.last_message_at.localeCompare(a.last_message_at)));
         }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "private_messages" }, (payload) => {
+        // Update read receipts on sender's side (delivered_at / read_at changes)
+        const updated = payload.new as DmMessage;
+        setDmMessages(prev => prev.map(m => m.id === updated.id ? { ...m, delivered_at: updated.delivered_at, read_at: updated.read_at } : m));
       })
       .subscribe();
     return () => { supabase.removeChannel(dmCh); };
@@ -3958,7 +3982,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
             <div className="bg-[#0d1526] border border-violet-500/30 rounded-2xl p-6 max-w-[320px] w-[90%] shadow-2xl text-center">
               <div className="text-3xl mb-3">⏰</div>
               <p className="text-[15px] font-bold text-white mb-1.5">Er du stadig her?</p>
-              <p className="text-[14px] text-slate-400 mb-4">Bekræft din tilstedeværelse for at forblive tilkoblet og modtage <span className="text-amber-400 font-semibold">🪙 100 mønter</span>.</p>
+              <p className="text-[14px] text-slate-400 mb-4">Bekræft din tilstedeværelse for at forblive tilkoblet og modtage <span className="text-amber-400 font-semibold">🪙 100 mønter</span> + <span className="text-violet-400 font-semibold">⚡ 50 XP</span>.</p>
               <div className="w-full bg-white/[0.06] rounded-full h-1.5 mb-4 overflow-hidden">
                 <div className="h-full bg-violet-500 transition-all duration-1000" style={{ width: `${(confirmCountdown / 120) * 100}%` }} />
               </div>
