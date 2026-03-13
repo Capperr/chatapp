@@ -1517,6 +1517,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         const state = ch.presenceState<PresenceUser>();
         const others: PresenceUser[] = [];
         for (const arr of Object.values(state)) { const p = arr[0] as PresenceUser; if (p?.user_id && p.user_id !== currentProfile.id && !p.invisible) others.push(p); }
+        // Initialize activity timestamp for users we haven't seen yet (so ZZZ can appear after 10min idle)
+        const now = Date.now();
+        for (const p of others) { if (!userLastActivityRef.current.has(p.user_id)) userLastActivityRef.current.set(p.user_id, now); }
         setUsers(prev => {
           const next = new Map(prev);
           // Update ALL presence users (not just new ones) so position is always current
