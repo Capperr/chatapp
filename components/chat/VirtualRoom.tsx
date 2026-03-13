@@ -916,7 +916,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   const changeMood = (mood: string) => {
     myMoodRef.current = mood; setMyMood(mood);
-    channelRef.current?.send({ type: "broadcast", event: "move", payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood, outfit: outfitRef.current } satisfies PresenceUser });
+    if (!isInvisibleRef.current) channelRef.current?.send({ type: "broadcast", event: "move", payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood, outfit: outfitRef.current, name_color: nameColor, invisible: false } satisfies PresenceUser });
   };
 
   // ─── Data fetches ──────────────────────────────────────────────────────────
@@ -1423,11 +1423,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   useEffect(() => { if (chatLogRef.current) chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight; }, [logMessages]);
 
   const broadcastMove = useCallback((gx: number, gy: number) => {
-    const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, invisible: isInvisibleRef.current };
+    // Don't broadcast position when invisible — skip both move event and presence track
+    if (isInvisibleRef.current) return;
+    const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, invisible: false };
     channelRef.current?.send({ type: "broadcast", event: "move", payload });
     // Also re-track presence so joining users always see the current position
     channelRef.current?.track(payload);
-  }, [currentProfile.id, currentProfile.display_name, myColor]);
+  }, [currentProfile.id, currentProfile.display_name, myColor, nameColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Main presence/broadcast channel
   useEffect(() => {
@@ -1467,7 +1469,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       })
       .on("broadcast", { event: "move" }, ({ payload }) => {
         const p = payload as PresenceUser;
-        if (!p?.user_id || p.user_id === currentProfile.id) return;
+        if (!p?.user_id || p.user_id === currentProfile.id || p.invisible) return;
         setUsers(prev => { const m = new Map(prev); m.set(p.user_id, p); return m; });
       })
       .on("broadcast", { event: "admin_move" }, ({ payload }) => {
