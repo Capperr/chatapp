@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck, Settings, Rocket, Trophy, Mail, Send, ChevronLeft, Check, CheckCheck } from "lucide-react";
+import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck, Settings, Rocket, Trophy, Mail, Send, ChevronLeft, Check, CheckCheck, Eye, EyeOff, Search } from "lucide-react";
 import type { Profile, Achievement } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -341,6 +341,8 @@ interface PresenceUser {
   mood?: string;
   outfit?: Record<string, string>; // slot → clothing_id
   tan_level?: number;
+  name_color?: string | null;
+  invisible?: boolean;
 }
 interface SpeechBubble { id: number; text: string; ts: number; }
 interface ClothingItem {
@@ -547,7 +549,17 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [activeFloorPattern, setActiveFloorPattern] = useState("standard");
   const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
   const [editRoomForm, setEditRoomForm] = useState<{ id: string; name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
-  const [adminTab, setAdminTab] = useState<"items" | "bots">("items");
+  const [adminTab, setAdminTab] = useState<"users" | "items" | "bots" | "self">("users");
+  const [isInvisible, setIsInvisible] = useState(false);
+  const isInvisibleRef = useRef(false);
+  const [nameColor, setNameColor] = useState<string | null>(null);
+  const [adminSearchQuery, setAdminSearchQuery] = useState("");
+  const [adminSearchResults, setAdminSearchResults] = useState<Profile[]>([]);
+  const [adminEditTarget, setAdminEditTarget] = useState<Profile | null>(null);
+  const [adminEditForm, setAdminEditForm] = useState<{ xp: string; coins: string; total_online_seconds: string; tan_level: string; muted_until: string }>({ xp: "", coins: "", total_online_seconds: "", tan_level: "", muted_until: "" });
+  const [adminMoveTarget, setAdminMoveTarget] = useState<{ user_id: string; display_name: string } | null>(null);
+  const [adminMoveTile, setAdminMoveTile] = useState<{ gx: string; gy: string }>({ gx: "", gy: "" });
+  const [adminMoveRoom, setAdminMoveRoom] = useState<string>("");
   const [createBotForm, setCreateBotForm] = useState<{ name: string; color: string; message: string; moves_randomly: boolean; gives_clothing_id: string } | null>(null);
   const [movingBotId, setMovingBotId] = useState<string | null>(null);
   const [coins, setCoins] = useState(1000);
@@ -972,6 +984,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         // Load own mute status
         const mu = (data as { muted_until?: string | null }).muted_until;
         if (mu && new Date(mu) > new Date()) { setMyMutedUntil(mu); myMutedUntilRef.current = mu; }
+        const nc = (data as { name_color?: string | null }).name_color;
+        if (nc) setNameColor(nc);
         // Load message count
         const mc = (data as { message_count?: number }).message_count ?? 0;
         messageCountRef.current = mc;
@@ -1408,7 +1422,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   useEffect(() => { if (chatLogRef.current) chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight; }, [logMessages]);
 
   const broadcastMove = useCallback((gx: number, gy: number) => {
-    const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current };
+    const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, invisible: isInvisibleRef.current };
     channelRef.current?.send({ type: "broadcast", event: "move", payload });
     // Also re-track presence so joining users always see the current position
     channelRef.current?.track(payload);
@@ -1420,12 +1434,12 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     const ch = supabase.channel(`virtual-${activeRoomId}`, { config: { presence: { key: currentProfile.id } } });
     channelRef.current = ch;
     const startPos = myPosRef.current;
-    const myData: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: startPos.gx, gy: startPos.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current };
+    const myData: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: startPos.gx, gy: startPos.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, invisible: isInvisibleRef.current };
     ch
       .on("presence", { event: "sync" }, () => {
         const state = ch.presenceState<PresenceUser>();
         const others: PresenceUser[] = [];
-        for (const arr of Object.values(state)) { const p = arr[0] as PresenceUser; if (p?.user_id && p.user_id !== currentProfile.id) others.push(p); }
+        for (const arr of Object.values(state)) { const p = arr[0] as PresenceUser; if (p?.user_id && p.user_id !== currentProfile.id && !p.invisible) others.push(p); }
         setUsers(prev => {
           const next = new Map(prev);
           // Update ALL presence users (not just new ones) so position is always current
@@ -1454,6 +1468,17 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         const p = payload as PresenceUser;
         if (!p?.user_id || p.user_id === currentProfile.id) return;
         setUsers(prev => { const m = new Map(prev); m.set(p.user_id, p); return m; });
+      })
+      .on("broadcast", { event: "admin_move" }, ({ payload }) => {
+        const p = payload as { user_id: string; gx: number; gy: number };
+        if (p.user_id !== currentProfile.id) return;
+        moveMyPos(p.gx, p.gy);
+        if (channelRef.current) broadcastMove(p.gx, p.gy);
+      })
+      .on("broadcast", { event: "admin_room_switch" }, ({ payload }) => {
+        const p = payload as { user_id: string; room_id: string; room_name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string; owner_id: string | null };
+        if (p.user_id !== currentProfile.id) return;
+        switchRoom(p.room_id, p.room_name, p.cols, p.rows, p.room_type, p.theme_key, p.floor_pattern, p.owner_id);
       })
       .on("broadcast", { event: "kick" }, ({ payload }) => {
         if ((payload as { user_id: string }).user_id === currentProfile.id) onClose();
@@ -2646,7 +2671,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           {(() => { const outfit = isMe ? myOutfit : (user.outfit ?? {}); return Object.keys(outfit).length > 0 ? <ClothingOverlay outfit={outfit} catalog={clothingCatalog} /> : null; })()}
                         </g>
                         <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{user.display_name}</text>
-                        <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill="white">{user.display_name}</text>
+                        <text x={0} y={9} textAnchor="middle" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700" fill={isMe ? (nameColor ?? "white") : (user.name_color ?? "white")}>{user.display_name}</text>
                         {/* Muted indicator */}
                         {mutedUsers.has(user.user_id) && (
                           <g>
@@ -3096,21 +3121,183 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             {/* Admin panel */}
             {rightPanel === "admin" && isAdmin && (
               <>
-                <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
-                  <div className="flex gap-1">
-                    <button onClick={() => setAdminTab("items")} className={`px-2 py-0.5 rounded text-[12px] font-semibold transition-colors ${adminTab === "items" ? "bg-violet-500/20 text-violet-300" : "text-slate-500 hover:text-slate-300"}`}>Ting</button>
-                    <button onClick={() => setAdminTab("bots")} className={`px-2 py-0.5 rounded text-[12px] font-semibold transition-colors ${adminTab === "bots" ? "bg-violet-500/20 text-violet-300" : "text-slate-500 hover:text-slate-300"}`}>Bots</button>
+                {/* Tab bar */}
+                <div className="px-3 py-2.5 border-b border-white/[0.06] flex-shrink-0 bg-[#030912]/60">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-rose-400 uppercase tracking-widest">Admin Panel</span>
+                    <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
                   </div>
-                  <div className="flex items-center gap-1">
-                    {adminTab === "items" && <button onClick={() => setCreateForm({ name: "", item_type: "flower" })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3 h-3" /></button>}
-                    {adminTab === "bots" && <button onClick={() => setCreateBotForm({ name: "", color: "#6366f1", message: "", moves_randomly: false, gives_clothing_id: "" })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3 h-3" /></button>}
-                    <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300"><X className="w-3 h-3" /></button>
+                  <div className="flex gap-1">
+                    {(["users", "items", "bots", "self"] as const).map(tab => (
+                      <button key={tab} onClick={() => setAdminTab(tab)} className={`flex-1 py-1 rounded-lg text-[11px] font-semibold transition-colors ${adminTab === tab ? "bg-rose-500/20 text-rose-300" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.06]"}`}>
+                        {tab === "users" ? "Brugere" : tab === "items" ? "Ting" : tab === "bots" ? "Bots" : "Mig"}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                {/* Items tab */}
+                {/* ── Users tab ── */}
+                {adminTab === "users" && (
+                  <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
+                    {/* Search */}
+                    <div className="px-3 py-2 border-b border-white/[0.06] flex-shrink-0">
+                      <div className="flex items-center gap-2 bg-white/[0.05] border border-white/[0.08] rounded-xl px-3 py-1.5">
+                        <Search className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                        <input
+                          value={adminSearchQuery}
+                          onChange={async e => {
+                            const q = e.target.value;
+                            setAdminSearchQuery(q);
+                            if (!q.trim()) { setAdminSearchResults([]); return; }
+                            const { data } = await supabase.from("profiles").select("id, display_name, avatar_color, role, coins, xp, level, total_online_seconds, muted_until, is_banned, tan_level, name_color").ilike("display_name", `%${q}%`).limit(20);
+                            setAdminSearchResults((data ?? []) as Profile[]);
+                          }}
+                          placeholder="Søg bruger..."
+                          className="flex-1 bg-transparent text-[13px] text-slate-200 placeholder-slate-600 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Edit modal */}
+                    {adminEditTarget && (
+                      <div className="mx-3 my-2 p-3 bg-rose-500/5 border border-rose-500/20 rounded-xl flex-shrink-0">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[12px] font-bold text-rose-300">Rediger: {adminEditTarget.display_name}</span>
+                          <button onClick={() => setAdminEditTarget(null)} className="text-slate-600 hover:text-slate-300"><X className="w-3 h-3" /></button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5 mb-2">
+                          {([["XP", "xp"], ["Mønter", "coins"], ["Online sek.", "total_online_seconds"], ["Solarie lv.", "tan_level"]] as [string, keyof typeof adminEditForm][]).map(([label, key]) => (
+                            <div key={key}>
+                              <p className="text-[10px] text-slate-500 mb-0.5">{label}</p>
+                              <input
+                                value={adminEditForm[key]}
+                                onChange={e => setAdminEditForm(f => ({ ...f, [key]: e.target.value }))}
+                                className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-2 py-1 text-[12px] text-slate-200 outline-none focus:border-rose-500/40"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mb-2">
+                          <p className="text-[10px] text-slate-500 mb-0.5">Muttet indtil (ISO)</p>
+                          <input value={adminEditForm.muted_until} onChange={e => setAdminEditForm(f => ({ ...f, muted_until: e.target.value }))} placeholder="tom = ikke muttet" className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-2 py-1 text-[12px] text-slate-200 outline-none focus:border-rose-500/40" />
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const patch: Record<string, number | string | null> = {};
+                            if (adminEditForm.xp !== "") patch.xp = parseInt(adminEditForm.xp) || 0;
+                            if (adminEditForm.coins !== "") patch.coins = parseInt(adminEditForm.coins) || 0;
+                            if (adminEditForm.total_online_seconds !== "") patch.total_online_seconds = parseInt(adminEditForm.total_online_seconds) || 0;
+                            if (adminEditForm.tan_level !== "") patch.tan_level = parseInt(adminEditForm.tan_level) || 0;
+                            patch.muted_until = adminEditForm.muted_until.trim() || null;
+                            if (adminEditForm.muted_until.trim()) {
+                              globalChannelRef.current?.send({ type: "broadcast", event: "user_muted", payload: { user_id: adminEditTarget.id, muted_until: adminEditForm.muted_until.trim() } });
+                            }
+                            await supabase.from("profiles").update(patch).eq("id", adminEditTarget.id);
+                            setAdminEditTarget(null);
+                            // Refresh search results
+                            if (adminSearchQuery) {
+                              const { data } = await supabase.from("profiles").select("id, display_name, avatar_color, role, coins, xp, level, total_online_seconds, muted_until, is_banned, tan_level, name_color").ilike("display_name", `%${adminSearchQuery}%`).limit(20);
+                              setAdminSearchResults((data ?? []) as Profile[]);
+                            }
+                          }}
+                          className="w-full py-1.5 bg-rose-600 hover:bg-rose-500 rounded-lg text-[12px] font-bold text-white transition-colors"
+                        >
+                          Gem ændringer
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Move modal */}
+                    {adminMoveTarget && (
+                      <div className="mx-3 mb-2 p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl flex-shrink-0">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[12px] font-bold text-blue-300">Flyt: {adminMoveTarget.display_name}</span>
+                          <button onClick={() => setAdminMoveTarget(null)} className="text-slate-600 hover:text-slate-300"><X className="w-3 h-3" /></button>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mb-1.5">Flyt til felt (x, y)</p>
+                        <div className="flex gap-1.5 mb-2">
+                          <input value={adminMoveTile.gx} onChange={e => setAdminMoveTile(f => ({ ...f, gx: e.target.value }))} placeholder="X" className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-lg px-2 py-1 text-[12px] text-slate-200 outline-none focus:border-blue-500/40" />
+                          <input value={adminMoveTile.gy} onChange={e => setAdminMoveTile(f => ({ ...f, gy: e.target.value }))} placeholder="Y" className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-lg px-2 py-1 text-[12px] text-slate-200 outline-none focus:border-blue-500/40" />
+                          <button
+                            onClick={() => {
+                              const gx = parseInt(adminMoveTile.gx); const gy = parseInt(adminMoveTile.gy);
+                              if (isNaN(gx) || isNaN(gy)) return;
+                              channelRef.current?.send({ type: "broadcast", event: "admin_move", payload: { user_id: adminMoveTarget.user_id, gx, gy } });
+                              setAdminMoveTarget(null);
+                            }}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded-lg text-[12px] text-white transition-colors"
+                          >Flyt</button>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mb-1.5">Flyt til rum</p>
+                        <select value={adminMoveRoom} onChange={e => setAdminMoveRoom(e.target.value)} className="w-full bg-[#0a1220] border border-white/[0.08] rounded-lg px-2 py-1 text-[12px] text-slate-300 outline-none mb-1.5">
+                          <option value="">Vælg rum...</option>
+                          {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        </select>
+                        <button
+                          onClick={() => {
+                            if (!adminMoveRoom) return;
+                            const r = rooms.find(x => x.id === adminMoveRoom);
+                            if (!r) return;
+                            globalChannelRef.current?.send({ type: "broadcast", event: "admin_room_switch", payload: { user_id: adminMoveTarget.user_id, room_id: r.id, room_name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type ?? "normal", theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard", owner_id: r.owner_id ?? null } });
+                            setAdminMoveTarget(null);
+                          }}
+                          className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-[12px] font-bold text-white transition-colors"
+                        >Flyt til rum</button>
+                      </div>
+                    )}
+
+                    {/* User list */}
+                    <div className="flex-1 overflow-y-auto">
+                      {(adminSearchQuery ? adminSearchResults : Array.from(globalUsers.values()).map(u => ({ id: u.user_id, display_name: u.display_name, avatar_color: u.color, role: "user", coins: 0, xp: 0, level: 0 } as Profile))).map(user => {
+                        const isOnline = globalUsers.has(user.id);
+                        const isMutedNow = !!(user.muted_until && new Date(user.muted_until) > new Date());
+                        return (
+                          <div key={user.id} className="px-3 py-2 border-b border-white/[0.03] hover:bg-white/[0.02]">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: isOnline ? "#22c55e" : "#475569" }} />
+                              <span className="text-[13px] font-semibold text-slate-200 flex-1 truncate">{user.display_name}</span>
+                              {user.role === "admin" && <span className="text-[10px] text-violet-400 font-bold">MOD</span>}
+                              {isMutedNow && <span className="text-[10px] text-amber-400">🔇</span>}
+                              {user.is_banned && <span className="text-[10px] text-rose-400">BAN</span>}
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {/* Kick — only if online in same room */}
+                              {Array.from(users.keys()).includes(user.id) && (
+                                <button onClick={() => channelRef.current?.send({ type: "broadcast", event: "kick", payload: { user_id: user.id } })} className="px-2 py-0.5 rounded-lg text-[11px] bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/20 transition-colors">Kick</button>
+                              )}
+                              {/* Ban/Unban */}
+                              {user.is_banned
+                                ? <button onClick={async () => { await supabase.from("profiles").update({ is_banned: false }).eq("id", user.id); setAdminSearchResults(r => r.map(x => x.id === user.id ? { ...x, is_banned: false } : x)); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">Fjern ban</button>
+                                : <button onClick={async () => { if (!confirm(`Ban ${user.display_name}?`)) return; await supabase.from("profiles").update({ is_banned: true }).eq("id", user.id); setAdminSearchResults(r => r.map(x => x.id === user.id ? { ...x, is_banned: true } : x)); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors">Ban</button>
+                              }
+                              {/* Mute */}
+                              {isMutedNow
+                                ? <button onClick={async () => { await supabase.from("profiles").update({ muted_until: null }).eq("id", user.id); globalChannelRef.current?.send({ type: "broadcast", event: "user_muted", payload: { user_id: user.id, muted_until: null } }); setAdminSearchResults(r => r.map(x => x.id === user.id ? { ...x, muted_until: null } : x)); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">Unmute</button>
+                                : <button onClick={async () => { const until = new Date(Date.now() + 60 * 60000).toISOString(); await supabase.from("profiles").update({ muted_until: until }).eq("id", user.id); globalChannelRef.current?.send({ type: "broadcast", event: "user_muted", payload: { user_id: user.id, muted_until: until } }); setAdminSearchResults(r => r.map(x => x.id === user.id ? { ...x, muted_until: until } : x)); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 transition-colors">Mute 1t</button>
+                              }
+                              {/* Move */}
+                              {isOnline && (
+                                <button onClick={() => { setAdminMoveTarget({ user_id: user.id, display_name: user.display_name }); setAdminMoveTile({ gx: "", gy: "" }); setAdminMoveRoom(""); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors">Flyt</button>
+                              )}
+                              {/* Edit */}
+                              <button onClick={() => { setAdminEditTarget(user); setAdminEditForm({ xp: String(user.xp ?? ""), coins: String(user.coins ?? ""), total_online_seconds: String(user.total_online_seconds ?? ""), tan_level: String((user as Profile & { tan_level?: number }).tan_level ?? ""), muted_until: user.muted_until ?? "" }); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 border border-violet-500/20 transition-colors">Rediger</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {adminSearchQuery && adminSearchResults.length === 0 && <p className="text-[13px] text-slate-600 text-center mt-6">Ingen brugere fundet</p>}
+                      {!adminSearchQuery && globalUsers.size === 0 && <p className="text-[13px] text-slate-600 text-center mt-6">Ingen online</p>}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Items tab ── */}
                 {adminTab === "items" && (
                   <>
+                    <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
+                      <span className="text-[12px] text-slate-400 font-semibold">Genstande i rum</span>
+                      <button onClick={() => setCreateForm({ name: "", item_type: "flower" })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
+                    </div>
                     {createForm && (
                       <div className="px-3 py-2 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0">
                         <p className="text-[12px] font-semibold text-slate-500 mb-1.5">Ny genstand</p>
@@ -3155,9 +3342,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   </>
                 )}
 
-                {/* Bots tab */}
+                {/* ── Bots tab ── */}
                 {adminTab === "bots" && (
                   <>
+                    <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
+                      <span className="text-[12px] text-slate-400 font-semibold">Bots i rum</span>
+                      <button onClick={() => setCreateBotForm({ name: "", color: "#6366f1", message: "", moves_randomly: false, gives_clothing_id: "" })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
+                    </div>
                     {createBotForm && (
                       <div className="px-3 py-2 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0">
                         <p className="text-[12px] font-semibold text-slate-500 mb-1.5">Ny bot</p>
@@ -3193,14 +3384,67 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                               <p className="text-[11px] text-slate-600">{bot.moves_randomly ? "Bevæger sig · " : ""}{givesItem ? `🎁 ${givesItem.name}` : "Ingen gave"}</p>
                             </div>
                             <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => { setMovingBotId(bot.id); setCtxMenu(null); }} className="p-0.5 text-slate-500 hover:text-amber-400 text-[10px]">Flyt</button>
-                              <button onClick={() => deleteBot(bot.id)} className="p-0.5 text-slate-500 hover:text-rose-400"><Trash2 className="w-2.5 h-2.5" /></button>
+                              <button onClick={() => setMovingBotId(bot.id)} className="p-1 text-slate-500 hover:text-blue-400" title="Flyt bot"><Bot className="w-2.5 h-2.5" /></button>
+                              <button onClick={() => deleteBot(bot.id)} className="p-1 text-slate-500 hover:text-rose-400"><Trash2 className="w-2.5 h-2.5" /></button>
                             </div>
                           </div>
                         );
                       })}
                     </div>
                   </>
+                )}
+
+                {/* ── Self tab ── */}
+                {adminTab === "self" && (
+                  <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+                    {/* Invisible mode */}
+                    <div className="p-3 bg-white/[0.03] border border-white/[0.07] rounded-xl">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[13px] font-semibold text-slate-200">Usynlig tilstand</span>
+                        <button
+                          onClick={() => {
+                            const next = !isInvisible;
+                            setIsInvisible(next);
+                            isInvisibleRef.current = next;
+                            if (next) {
+                              channelRef.current?.untrack();
+                              globalChannelRef.current?.untrack();
+                            } else {
+                              const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, invisible: false };
+                              channelRef.current?.track(payload);
+                              globalChannelRef.current?.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
+                            }
+                          }}
+                          className={`relative w-10 h-5 rounded-full transition-colors ${isInvisible ? "bg-violet-600" : "bg-white/[0.12]"}`}
+                        >
+                          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isInvisible ? "translate-x-5" : "translate-x-0.5"}`} />
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-500">{isInvisible ? "🔮 Du er usynlig — andre kan ikke se dig" : "Andre kan se dig i rummet"}</p>
+                    </div>
+
+                    {/* Name color */}
+                    <div className="p-3 bg-white/[0.03] border border-white/[0.07] rounded-xl">
+                      <p className="text-[13px] font-semibold text-slate-200 mb-2">Navn farve</p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([["#ffffff", "Hvid"], ["#c4b5fd", "Lilla"], ["#f87171", "Rød"], ["#fbbf24", "Guld"], ["#34d399", "Grøn"], ["#38bdf8", "Cyan"], ["#fb923c", "Orange"], [null, "Standard"]] as [string | null, string][]).map(([color, label]) => (
+                          <button
+                            key={label}
+                            onClick={async () => {
+                              setNameColor(color);
+                              await supabase.from("profiles").update({ name_color: color }).eq("id", currentProfile.id);
+                              broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
+                            }}
+                            className={`py-1.5 rounded-lg text-[11px] font-semibold transition-all border ${nameColor === color ? "border-white/40 bg-white/[0.12]" : "border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.07]"}`}
+                            style={{ color: color ?? "#94a3b8" }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-2">Navn preview: <span style={{ color: nameColor ?? "white", fontWeight: 700 }}>{currentProfile.display_name}</span></p>
+                    </div>
+                  </div>
                 )}
               </>
             )}
