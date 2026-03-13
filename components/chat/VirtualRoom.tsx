@@ -601,6 +601,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
   const [showLevelGuide, setShowLevelGuide] = useState(false);
   const [otherLevelUps, setOtherLevelUps] = useState<Map<string, number>>(new Map());
+  const [rouletteWinEffects, setRouletteWinEffects] = useState<Map<string, number>>(new Map());
   const [mutedUsers, setMutedUsers] = useState<Set<string>>(new Set());
   const [myMutedUntil, setMyMutedUntil] = useState<string | null>(null);
   const myMutedUntilRef = useRef<string | null>(null);
@@ -1692,6 +1693,12 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         setOtherLevelUps(prev => { const m = new Map(prev); m.set(p.user_id, p.level); return m; });
         setTimeout(() => setOtherLevelUps(prev => { const m = new Map(prev); m.delete(p.user_id); return m; }), 4000);
       })
+      .on("broadcast", { event: "roulette_win" }, ({ payload }) => {
+        const p = payload as { user_id: string; amount: number };
+        if (!p?.user_id || p.user_id === currentProfile.id) return;
+        setRouletteWinEffects(prev => { const m = new Map(prev); m.set(p.user_id, p.amount); return m; });
+        setTimeout(() => setRouletteWinEffects(prev => { const m = new Map(prev); m.delete(p.user_id); return m; }), 3500);
+      })
       .on("broadcast", { event: "spaceship_request" }, ({ payload }) => {
         const p = payload as VisitRequest & { to_id: string };
         if (p.to_id !== currentProfile.id) return;
@@ -1843,17 +1850,23 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
     fetchHistory();
 
-    // Subscribe to new bets
+    // Subscribe to new bets (no server-side filter — filter client-side for reliability)
     const betChannel = supabase
       .channel(`roulette-bets-${activeRoomId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "roulette_bets", filter: `room_id=eq.${activeRoomId}` }, payload => {
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "roulette_bets" }, payload => {
+        const bet = payload.new as RouletteBet;
+        if (bet.room_id !== activeRoomId) return;
+        const curRoundId = rouletteRoundRef.current?.id;
+        if (curRoundId !== undefined && bet.round_id !== curRoundId) return;
         setRouletteBets(prev => {
-          if (prev.some(b => b.id === (payload.new as RouletteBet).id)) return prev;
-          return [...prev, payload.new as RouletteBet];
+          if (prev.some(b => b.id === bet.id)) return prev;
+          return [...prev, bet];
         });
       })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "roulette_bets", filter: `room_id=eq.${activeRoomId}` }, payload => {
-        setRouletteBets(prev => prev.map(b => b.id === (payload.new as RouletteBet).id ? payload.new as RouletteBet : b));
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "roulette_bets" }, payload => {
+        const bet = payload.new as RouletteBet;
+        if (bet.room_id !== activeRoomId) return;
+        setRouletteBets(prev => prev.map(b => b.id === bet.id ? bet : b));
       })
       .subscribe();
 
@@ -1919,7 +1932,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               setCoins(newCoins);
               setRouletteLastWin(totalWin);
               await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
-              setTimeout(() => setRouletteLastWin(null), 4000);
+              setTimeout(() => setRouletteLastWin(null), 3500);
+              // Broadcast win effect so others can see it
+              channelRef.current?.send({ type: "broadcast", event: "roulette_win", payload: { user_id: currentProfile.id, amount: totalWin } });
+              setRouletteWinEffects(prev => { const m = new Map(prev); m.set(currentProfile.id, totalWin); return m; });
+              setTimeout(() => setRouletteWinEffects(prev => { const m = new Map(prev); m.delete(currentProfile.id); return m; }), 3500);
             }
           }
           fetchHistory();
@@ -3379,6 +3396,31 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           );
                         })()}
                         {/* Bubbles are rendered in the HTML overlay for zoom-independence */}
+                        {/* Roulette win effect — +amount floating above avatar */}
+                        {(() => {
+                          const winAmt = isMe
+                            ? (rouletteLastWin !== null ? rouletteLastWin : null)
+                            : (rouletteWinEffects.get(user.user_id) ?? null);
+                          if (winAmt === null) return null;
+                          return (
+                            <g style={{ pointerEvents: "none" }}>
+                              {/* Coin burst rings */}
+                              {([["#10b981", 0], ["#34d399", 0.15], ["#6ee7b7", 0.3]] as [string, number][]).map(([rc, delay], i) => (
+                                <circle key={i} cx={0} cy={-AR_S * 0.3} fill="none" stroke={rc} strokeWidth={1.6 - i * 0.3}>
+                                  <animate attributeName="r" from="4" to="52" dur="1s" begin={`${delay}s`} repeatCount="indefinite" />
+                                  <animate attributeName="opacity" from="0.8" to="0" dur="1s" begin={`${delay}s`} repeatCount="indefinite" />
+                                </circle>
+                              ))}
+                              {/* +amount text floating upward */}
+                              <text x={0} y={-AR_S - 18}
+                                textAnchor="middle" fontSize={14} fontFamily="system-ui,sans-serif" fontWeight="900"
+                                fill="#10b981" stroke="rgba(0,0,0,0.9)" strokeWidth={3} paintOrder="stroke"
+                                style={{ animation: "svgLevelUpText 3s ease-out forwards" }}>
+                                +{winAmt} 🪙
+                              </text>
+                            </g>
+                          );
+                        })()}
                         {/* Level-up ring animation — shown for self and others */}
                         {(isMe ? showLevelUp : otherLevelUps.get(user.user_id) ?? null) !== null && (() => {
                           const lvNum = isMe ? showLevelUp! : otherLevelUps.get(user.user_id)!;
@@ -5875,8 +5917,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           {ctxMenu.kind === "self" && (
             <>
               <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: myColor + "33", border: `1.5px solid ${myColor}55` }}>
-                  <span className="text-[13px] font-bold" style={{ color: myColor }}>{currentProfile.display_name[0]?.toUpperCase()}</span>
+                <div className="w-10 h-10 rounded-xl flex-shrink-0 overflow-hidden bg-white/[0.04]" style={{ border: `1.5px solid ${myColor}44` }}>
+                  <svg width="40" height="40" viewBox="-20 -30 40 48">
+                    <PersonAvatar color={myColor} tanLevel={tanLevel} />
+                    <ClothingOverlay outfit={myOutfit ?? {}} catalog={clothingCatalog} />
+                  </svg>
                 </div>
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold text-slate-100 truncate">{currentProfile.display_name}</p>
@@ -5901,8 +5946,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             return (
               <>
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: bot.color + "33", border: `1.5px solid ${bot.color}55` }}>
-                    <Bot className="w-4 h-4" style={{ color: bot.color }} />
+                  <div className="w-10 h-10 rounded-xl flex-shrink-0 overflow-hidden bg-white/[0.04]" style={{ border: `1.5px solid ${bot.color}44` }}>
+                    <svg width="40" height="40" viewBox="-20 -30 40 48">
+                      <PersonAvatar color={bot.color} />
+                    </svg>
                   </div>
                   <div className="min-w-0">
                     <p className="text-[13px] font-semibold text-slate-100 truncate">{bot.name}</p>
@@ -5938,8 +5985,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               <>
                 {/* Header */}
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: u.color + "33", border: `1.5px solid ${u.color}55` }}>
-                    <span className="text-[13px] font-bold" style={{ color: u.color }}>{u.display_name[0]?.toUpperCase()}</span>
+                  <div className="w-10 h-10 rounded-xl flex-shrink-0 overflow-hidden bg-white/[0.04]" style={{ border: `1.5px solid ${u.color}44` }}>
+                    <svg width="40" height="40" viewBox="-20 -30 40 48">
+                      <PersonAvatar color={u.color} tanLevel={u.tan_level ?? 0} />
+                      <ClothingOverlay outfit={u.outfit ?? {}} catalog={clothingCatalog} />
+                    </svg>
                   </div>
                   <div className="min-w-0">
                     <p className="text-[13px] font-semibold text-slate-100 truncate">{u.display_name}</p>
