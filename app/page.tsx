@@ -12,6 +12,7 @@ export default function Home() {
   const [chatOpen, setChatOpen] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [defaultRoom, setDefaultRoom] = useState<RoomMeta | null>(null);
+  const [kickedBy, setKickedBy] = useState<string | null>(null);
 
   const loadUserData = useCallback(async (): Promise<boolean> => {
     const supabase = createClient();
@@ -169,6 +170,26 @@ export default function Home() {
         </div>
       )}
 
+      {/* ── Kicked overlay — blocks all access until page reload ── */}
+      {kickedBy && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-5 px-8 py-8 bg-[#070f1e] border border-rose-500/30 rounded-2xl shadow-[0_24px_64px_rgba(0,0,0,0.9)] max-w-sm w-[90%] text-center">
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-3xl">🚫</div>
+            <div>
+              <p className="text-[18px] font-bold text-white mb-1">Du er blevet kicket</p>
+              <p className="text-[14px] text-slate-400">af <span className="text-rose-300 font-semibold">{kickedBy}</span></p>
+            </div>
+            <p className="text-[13px] text-slate-500">Du skal genindlæse siden for at komme tilbage i chatten.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full py-3 bg-rose-600 hover:bg-rose-500 rounded-xl text-[14px] font-bold text-white transition-colors shadow-[0_4px_16px_rgba(239,68,68,0.3)]"
+            >
+              Genindlæs siden
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Auth popup (not logged in) ── */}
       {chatOpen && !profile && (
         <ChatGateway
@@ -186,6 +207,7 @@ export default function Home() {
           initialRoomOwnerId={defaultRoom.owner_id}
           currentProfile={profile}
           onClose={() => setChatOpen(false)}
+          onKicked={(by) => { setChatOpen(false); setKickedBy(by); }}
         />
       )}
     </>

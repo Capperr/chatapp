@@ -442,6 +442,7 @@ interface VirtualRoomProps {
   initialRoomOwnerId?: string | null;
   currentProfile: Profile;
   onClose: () => void;
+  onKicked?: (by: string) => void;
 }
 type RightPanel = "chatlog" | "hidden" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile" | "userprofile" | "settings" | "achievements" | "dms" | "dm_chat";
 
@@ -464,7 +465,7 @@ interface DmMessage {
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
-export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwnerId, currentProfile, onClose }: VirtualRoomProps) {
+export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwnerId, currentProfile, onClose, onKicked }: VirtualRoomProps) {
   // Store client in a ref so it never changes reference between renders.
   // createBrowserClient creates a new object each call, which would cause
   // useEffect dependency arrays to see a "changed" value on every render,
@@ -1481,7 +1482,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         switchRoom(p.room_id, p.room_name, p.cols, p.rows, p.room_type, p.theme_key, p.floor_pattern, p.owner_id);
       })
       .on("broadcast", { event: "kick" }, ({ payload }) => {
-        if ((payload as { user_id: string }).user_id === currentProfile.id) onClose();
+        const p = payload as { user_id: string; by_name?: string };
+        if (p.user_id !== currentProfile.id) return;
+        if (onKicked) onKicked(p.by_name ?? "en admin");
+        else onClose();
       })
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         const p = payload as { user_id: string };
@@ -1635,7 +1639,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   const kickUser = (user: PresenceUser) => {
     setCtxMenu(null);
-    channelRef.current?.send({ type: "broadcast", event: "kick", payload: { user_id: user.user_id } });
+    channelRef.current?.send({ type: "broadcast", event: "kick", payload: { user_id: user.user_id, by_name: currentProfile.display_name } });
   };
 
   const kickFromSpaceship = (user: PresenceUser) => {
@@ -3263,7 +3267,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             <div className="flex flex-wrap gap-1">
                               {/* Kick — only if online in same room */}
                               {Array.from(users.keys()).includes(user.id) && (
-                                <button onClick={() => channelRef.current?.send({ type: "broadcast", event: "kick", payload: { user_id: user.id } })} className="px-2 py-0.5 rounded-lg text-[11px] bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/20 transition-colors">Kick</button>
+                                <button onClick={() => channelRef.current?.send({ type: "broadcast", event: "kick", payload: { user_id: user.id, by_name: currentProfile.display_name } })} className="px-2 py-0.5 rounded-lg text-[11px] bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/20 transition-colors">Kick</button>
                               )}
                               {/* Ban/Unban */}
                               {user.is_banned
