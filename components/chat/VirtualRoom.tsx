@@ -343,6 +343,7 @@ interface PresenceUser {
   tan_level?: number;
   name_color?: string | null;
   aura_color?: string | null;
+  bubble_color?: string | null;
   invisible?: boolean;
 }
 interface SpeechBubble { id: number; text: string; ts: number; }
@@ -556,10 +557,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const isInvisibleRef = useRef(false);
   const [nameColor, setNameColor] = useState<string | null>(null);
   const [auraColor, setAuraColor] = useState<string | null>(null);
+  const [bubbleColor, setBubbleColor] = useState<string | null>(null);
   const [adminSearchQuery, setAdminSearchQuery] = useState("");
   const [adminSearchResults, setAdminSearchResults] = useState<Profile[]>([]);
   const [adminEditTarget, setAdminEditTarget] = useState<Profile | null>(null);
-  const [adminEditForm, setAdminEditForm] = useState<{ xp: string; coins: string; total_online_seconds: string; tan_level: string; muted_until: string; name_color: string | null; aura_color: string | null }>({ xp: "", coins: "", total_online_seconds: "", tan_level: "", muted_until: "", name_color: null, aura_color: null });
+  const [adminEditForm, setAdminEditForm] = useState<{ xp: string; coins: string; total_online_seconds: string; tan_level: string; muted_until: string; name_color: string | null; aura_color: string | null; bubble_color: string | null }>({ xp: "", coins: "", total_online_seconds: "", tan_level: "", muted_until: "", name_color: null, aura_color: null, bubble_color: null });
   const [adminMoveTarget, setAdminMoveTarget] = useState<{ user_id: string; display_name: string } | null>(null);
   const [adminMoveTile, setAdminMoveTile] = useState<{ gx: string; gy: string }>({ gx: "", gy: "" });
   const [adminMoveRoom, setAdminMoveRoom] = useState<string>("");
@@ -808,6 +810,22 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     return `${cx - vbW / 2 + pan.x} ${cy - vbH / 2 + pan.y} ${vbW} ${vbH}`;
   }, [roomCols, roomRows, svgW, zoom, pan.x, pan.y]);
 
+  // Viewbox params for SVG→screen coordinate conversion (used by HTML bubble overlay)
+  const vbParams = useMemo(() => {
+    const pad = 14;
+    const tcx = svgW / 2;
+    const tcy = OFFSET_Y - TH / 2;
+    const apexY = tcy - WALL_H;
+    const left = tcx - roomRows * TW / 2 - pad;
+    const right = tcx + roomCols * TW / 2 + pad;
+    const top = apexY - pad;
+    const bottom = tcy + (roomCols + roomRows - 1) * TH / 2 + TH / 2 + pad;
+    const rw = right - left; const rh = bottom - top;
+    const cx = (left + right) / 2; const cy = (top + bottom) / 2;
+    const vbW = rw / zoom; const vbH = rh / zoom;
+    return { vbX: cx - vbW / 2 + pan.x, vbY: cy - vbH / 2 + pan.y, vbW, vbH };
+  }, [roomCols, roomRows, svgW, zoom, pan.x, pan.y]);
+
   const setRoomDimensions = (cols: number, rows: number) => {
     roomColsRef.current = cols; roomRowsRef.current = rows;
     setRoomCols(cols); setRoomRows(rows);
@@ -919,7 +937,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   const changeMood = (mood: string) => {
     myMoodRef.current = mood; setMyMood(mood);
-    if (!isInvisibleRef.current) channelRef.current?.send({ type: "broadcast", event: "move", payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood, outfit: outfitRef.current, name_color: nameColor, aura_color: auraColor, invisible: false } satisfies PresenceUser });
+    if (!isInvisibleRef.current) channelRef.current?.send({ type: "broadcast", event: "move", payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood, outfit: outfitRef.current, name_color: nameColor, aura_color: auraColor, bubble_color: bubbleColor, invisible: false } satisfies PresenceUser });
   };
 
   // ─── Data fetches ──────────────────────────────────────────────────────────
@@ -956,7 +974,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     supabase.from("user_achievements").select("achievement_id").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyAchievements(new Set(data.map((a: { achievement_id: string }) => a.achievement_id)));
     });
-    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, last_hour_confirm_at, muted_until, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending, name_color, aura_color").eq("id", currentProfile.id).single().then(({ data }) => {
+    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, last_hour_confirm_at, muted_until, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending, name_color, aura_color, bubble_color").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
         // Load tan — reset if expired
@@ -992,6 +1010,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         if (nc) setNameColor(nc);
         const ac = (data as { aura_color?: string | null }).aura_color;
         if (ac) setAuraColor(ac);
+        const bc = (data as { bubble_color?: string | null }).bubble_color;
+        if (bc) setBubbleColor(bc);
         // Load message count
         const mc = (data as { message_count?: number }).message_count ?? 0;
         messageCountRef.current = mc;
@@ -1094,17 +1114,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         }
       })
       .on("broadcast", { event: "user_style" }, ({ payload }) => {
-        const p = payload as { user_id: string; name_color: string | null; aura_color: string | null };
-        // If I am the target, update my own style immediately
+        const p = payload as { user_id: string; name_color: string | null; aura_color: string | null; bubble_color: string | null };
         if (p.user_id === currentProfile.id) {
           setNameColor(p.name_color);
           setAuraColor(p.aura_color);
+          setBubbleColor(p.bubble_color);
         }
-        // Update the users map so others in the room also see the change
         setUsers(prev => {
           const m = new Map(prev);
           const u = m.get(p.user_id);
-          if (u) m.set(p.user_id, { ...u, name_color: p.name_color, aura_color: p.aura_color });
+          if (u) m.set(p.user_id, { ...u, name_color: p.name_color, aura_color: p.aura_color, bubble_color: p.bubble_color });
           return m;
         });
       })
@@ -1445,11 +1464,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const broadcastMove = useCallback((gx: number, gy: number) => {
     // Don't broadcast position when invisible — skip both move event and presence track
     if (isInvisibleRef.current) return;
-    const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, aura_color: auraColor, invisible: false };
+    const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, aura_color: auraColor, bubble_color: bubbleColor, invisible: false };
     channelRef.current?.send({ type: "broadcast", event: "move", payload });
     // Also re-track presence so joining users always see the current position
     channelRef.current?.track(payload);
-  }, [currentProfile.id, currentProfile.display_name, myColor, nameColor, auraColor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentProfile.id, currentProfile.display_name, myColor, nameColor, auraColor, bubbleColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Always-current ref so the presence join handler can call broadcastMove without stale closure
   const broadcastMoveRef = useRef(broadcastMove);
@@ -1461,7 +1480,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     const ch = supabase.channel(`virtual-${activeRoomId}`, { config: { presence: { key: currentProfile.id } } });
     channelRef.current = ch;
     const startPos = myPosRef.current;
-    const myData: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: startPos.gx, gy: startPos.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, aura_color: auraColor, invisible: isInvisibleRef.current };
+    const myData: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: startPos.gx, gy: startPos.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, aura_color: auraColor, bubble_color: bubbleColor, invisible: isInvisibleRef.current };
     ch
       .on("presence", { event: "sync" }, () => {
         const state = ch.presenceState<PresenceUser>();
@@ -2692,11 +2711,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         <circle cx={ax + 15} cy={ay - AR_S - 8} r={5} fill="#1e293b" stroke="#475569" strokeWidth={0.8} />
                         <text x={ax + 15} y={ay - AR_S - 5.5} textAnchor="middle" fontSize={6} fill="#94a3b8">⚙</text>
                         {cellBot.gives_clothing_id && <text x={ax} y={y + TH / 4 + 8} textAnchor="middle" fontSize={8}>🎁</text>}
-                        {cellBot.message && (() => {
-                          const msgs = cellBot.message.split("\n").map(s => s.trim()).filter(Boolean);
-                          const msg = (msgs.length > 0 ? msgs[botMsgTick % msgs.length] : cellBot.message).replace(/\{navn\}/gi, currentProfile.display_name);
-                          return renderSvgBubble(ax, y - 80, msg, cellBot.color, 0.7);
-                        })()}
+                        {/* Bot bubble rendered in HTML overlay */}
                       </g>
                     );
                   }
@@ -2742,11 +2757,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             <text x={18} y={-AR_S + 8.5} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif">🔇</text>
                           </g>
                         )}
-                        {isMe && draft && renderSvgBubble(0, -80, draft + "…", "#475569", 0.85, 0, false)}
-                        {isTyping && renderTypingBubble(0, -80, 0)}
-                        {userBubbles.length > 0 && (!isMe || !draft) && (
-                          <g>{renderSvgBubble(0, -80, userBubbles[userBubbles.length - 1].text, user.color, 0.95, 0, true)}</g>
-                        )}
+                        {/* Bubbles are rendered in the HTML overlay for zoom-independence */}
                         {/* Level-up ring animation — shown for self and others */}
                         {(isMe ? showLevelUp : otherLevelUps.get(user.user_id) ?? null) !== null && (() => {
                           const lvNum = isMe ? showLevelUp! : otherLevelUps.get(user.user_id)!;
@@ -2798,6 +2809,75 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 );
               })}
             </svg>
+
+            {/* ── HTML Bubble Overlay — fixed pixel size regardless of SVG zoom ── */}
+            {(() => {
+              const toP = (svgX: number, svgY: number) => ({
+                left: `${((svgX - vbParams.vbX) / vbParams.vbW * 100).toFixed(3)}%`,
+                top:  `${((svgY - vbParams.vbY) / vbParams.vbH * 100).toFixed(3)}%`,
+              });
+              const BUBBLE_ANCHOR_Y = -AR_S * 2.8; // above head in SVG units
+              const transition = "left 0.38s cubic-bezier(0.22,1,0.36,1), top 0.38s cubic-bezier(0.22,1,0.36,1)";
+
+              const renderBubble = (key: string, svgX: number, svgY: number, messages: { text: string; id: number }[], bc: string, isDraft?: boolean, isTypingDots?: boolean) => {
+                const pos = toP(svgX, svgY + BUBBLE_ANCHOR_Y);
+                const textColor = bc === "#ffffff" || bc === "#fde68a" || bc === "#86efac" || bc === "#93c5fd" || bc === "#fca5a5" ? "#111827" : "#ffffff";
+                const tailColor = bc;
+                return (
+                  <div key={key} style={{ position: "absolute", ...pos, transform: "translate(-50%, -100%)", transition, pointerEvents: "none", zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                    {messages.map((m, i) => {
+                      const isNewest = i === messages.length - 1;
+                      const opacity = i === 0 && messages.length === 3 ? 0.55 : i === 1 && messages.length >= 2 ? 0.78 : 1;
+                      return (
+                        <div key={m.id} style={{ opacity, background: bc, border: "1.5px solid rgba(0,0,0,0.13)", borderRadius: 9, padding: "4px 10px", fontSize: 12, fontFamily: "system-ui,sans-serif", fontWeight: 600, color: textColor, whiteSpace: "pre-wrap", maxWidth: 180, lineHeight: 1.35, boxShadow: "0 2px 10px rgba(0,0,0,0.22)", position: "relative" }}>
+                          {isTypingDots && isNewest ? <span style={{ letterSpacing: 3 }}>{["●  ○  ○", "○  ●  ○", "○  ○  ●"][typingFrame % 3]}</span> : m.text}
+                          {isNewest && (
+                            <div style={{ position: "absolute", left: "50%", bottom: -6, transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: `6px solid ${tailColor}` }} />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              };
+
+              const allBubbles: React.ReactNode[] = [];
+
+              // Current user — draft or sent messages
+              const { x: mx, y: my } = isoCenter(myPos.gx, myPos.gy, svgW);
+              const myBubbleList = bubbles.get(currentProfile.id) ?? [];
+              if (draft) {
+                allBubbles.push(renderBubble("me-draft", mx, my, [{ text: draft + "…", id: -1 }], bubbleColor ?? "#ffffff", true));
+              } else if (myBubbleList.length > 0) {
+                const visible = myBubbleList.slice(-3);
+                allBubbles.push(renderBubble("me", mx, my, visible, bubbleColor ?? "#ffffff"));
+              }
+
+              // Other users
+              Array.from(users.values()).forEach(u => {
+                const { x: ux, y: uy } = isoCenter(u.gx, u.gy, svgW);
+                const ub = bubbles.get(u.user_id) ?? [];
+                const isTyp = typingUsers.has(u.user_id);
+                const bc = u.bubble_color ?? "#ffffff";
+                if (isTyp && ub.length === 0) {
+                  allBubbles.push(renderBubble(`typing-${u.user_id}`, ux, uy, [{ text: "…", id: -1 }], bc, false, true));
+                } else if (ub.length > 0) {
+                  const visible = ub.slice(-3);
+                  allBubbles.push(renderBubble(u.user_id, ux, uy, visible, bc));
+                }
+              });
+
+              // Bots
+              bots.forEach(bot => {
+                if (!bot.message) return;
+                const { x: bx, y: by } = isoCenter(bot.gx, bot.gy, svgW);
+                const msgs = bot.message.split("\n").map((s: string) => s.trim()).filter(Boolean);
+                const msg = (msgs.length > 0 ? msgs[botMsgTick % msgs.length] : bot.message).replace(/\{navn\}/gi, currentProfile.display_name);
+                allBubbles.push(renderBubble(`bot-${bot.id}`, bx, by, [{ text: msg, id: bot.id.charCodeAt(0) }], "#f1f5f9"));
+              });
+
+              return <div className="absolute inset-0 overflow-hidden" style={{ pointerEvents: "none", zIndex: 15 }}>{allBubbles}</div>;
+            })()}
 
             {/* Level-up overlay */}
             {showLevelUp !== null && (
@@ -3292,6 +3372,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             ))}
                           </div>
                         </div>
+                        <div className="mb-2">
+                          <p className="text-[10px] text-slate-500 mb-1">Boble farve</p>
+                          <div className="flex flex-wrap gap-1">
+                            {([["#ffffff", "Hvid"], ["#c4b5fd", "Lilla"], ["#86efac", "Grøn"], ["#93c5fd", "Blå"], ["#fde68a", "Gul"], ["#fca5a5", "Rød"], [null, "Standard"]] as [string | null, string][]).map(([color, label]) => (
+                              <button key={label} onClick={() => setAdminEditForm(f => ({ ...f, bubble_color: color }))}
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-all ${adminEditForm.bubble_color === color ? "border-white/40 bg-white/[0.15]" : "border-white/[0.06] bg-white/[0.03]"}`}
+                                style={{ color: color ? "#111" : "#94a3b8", backgroundColor: color ?? "transparent" }}>{label}</button>
+                            ))}
+                          </div>
+                        </div>
                         <button
                           onClick={async () => {
                             const patch: Record<string, number | string | null> = {};
@@ -3302,11 +3392,12 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             patch.muted_until = adminEditForm.muted_until.trim() || null;
                             patch.name_color = adminEditForm.name_color;
                             patch.aura_color = adminEditForm.aura_color;
+                            patch.bubble_color = adminEditForm.bubble_color;
                             if (adminEditForm.muted_until.trim()) {
                               globalChannelRef.current?.send({ type: "broadcast", event: "user_muted", payload: { user_id: adminEditTarget.id, muted_until: adminEditForm.muted_until.trim() } });
                             }
                             // Broadcast style update so target user sees changes in real-time
-                            globalChannelRef.current?.send({ type: "broadcast", event: "user_style", payload: { user_id: adminEditTarget.id, name_color: adminEditForm.name_color, aura_color: adminEditForm.aura_color } });
+                            globalChannelRef.current?.send({ type: "broadcast", event: "user_style", payload: { user_id: adminEditTarget.id, name_color: adminEditForm.name_color, aura_color: adminEditForm.aura_color, bubble_color: adminEditForm.bubble_color } });
                             await supabase.from("profiles").update(patch).eq("id", adminEditTarget.id);
                             setAdminEditTarget(null);
                             // Refresh search results
@@ -3395,7 +3486,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                 <button onClick={() => { setAdminMoveTarget({ user_id: user.id, display_name: user.display_name }); setAdminMoveTile({ gx: "", gy: "" }); setAdminMoveRoom(""); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors">Flyt</button>
                               )}
                               {/* Edit */}
-                              <button onClick={() => { setAdminEditTarget(user); setAdminEditForm({ xp: String(user.xp ?? ""), coins: String(user.coins ?? ""), total_online_seconds: String(user.total_online_seconds ?? ""), tan_level: String((user as Profile & { tan_level?: number }).tan_level ?? ""), muted_until: user.muted_until ?? "", name_color: user.name_color ?? null, aura_color: (user as Profile & { aura_color?: string | null }).aura_color ?? null }); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 border border-violet-500/20 transition-colors">Rediger</button>
+                              <button onClick={() => { setAdminEditTarget(user); setAdminEditForm({ xp: String(user.xp ?? ""), coins: String(user.coins ?? ""), total_online_seconds: String(user.total_online_seconds ?? ""), tan_level: String((user as Profile & { tan_level?: number }).tan_level ?? ""), muted_until: user.muted_until ?? "", name_color: user.name_color ?? null, aura_color: (user as Profile & { aura_color?: string | null }).aura_color ?? null, bubble_color: (user as Profile & { bubble_color?: string | null }).bubble_color ?? null }); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 border border-violet-500/20 transition-colors">Rediger</button>
                             </div>
                           </div>
                         );
@@ -3525,7 +3616,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                               channelRef.current?.untrack();
                               globalChannelRef.current?.untrack();
                             } else {
-                              const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, aura_color: auraColor, invisible: false };
+                              const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, aura_color: auraColor, bubble_color: bubbleColor, invisible: false };
                               channelRef.current?.track(payload);
                               globalChannelRef.current?.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
                             }
@@ -3580,6 +3671,26 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         ))}
                       </div>
                       {auraColor && <p className="text-[11px] text-slate-500 mt-2">Aura aktiv — synlig for alle i rummet</p>}
+                    </div>
+
+                    {/* Bubble color */}
+                    <div className="p-3 bg-white/[0.03] border border-white/[0.07] rounded-xl">
+                      <p className="text-[13px] font-semibold text-slate-200 mb-2">Boble farve</p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([["#ffffff", "Hvid"], ["#c4b5fd", "Lilla"], ["#86efac", "Grøn"], ["#93c5fd", "Blå"], ["#fde68a", "Gul"], ["#fca5a5", "Rød"], ["#f9a8d4", "Pink"], [null, "Standard"]] as [string | null, string][]).map(([color, label]) => (
+                          <button
+                            key={label}
+                            onClick={async () => {
+                              setBubbleColor(color);
+                              await supabase.from("profiles").update({ bubble_color: color }).eq("id", currentProfile.id);
+                            }}
+                            className={`py-1.5 rounded-lg text-[11px] font-bold transition-all border ${bubbleColor === color ? "border-white/40 ring-1 ring-white/20" : "border-white/[0.06] hover:border-white/20"}`}
+                            style={{ backgroundColor: color ?? "rgba(255,255,255,0.05)", color: color && ["#ffffff","#86efac","#93c5fd","#fde68a","#fca5a5","#f9a8d4"].includes(color) ? "#111" : "#e2e8f0" }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
