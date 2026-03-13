@@ -90,9 +90,9 @@ function xpForNextLevel(xp: number): number {
 // ─── Roulette constants ─────────────────────────────────────────────────────────
 const ROULETTE_RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
 const ROULETTE_WHEEL_ORDER = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
-const ROULETTE_ROUND_MS = 20000; // 20s per round: 10s bet + 5s spin + 5s result
-const ROULETTE_BET_MS   = 10000; // 10s betting phase
-const ROULETTE_SPIN_END = 15000; // spin ends at 15s
+const ROULETTE_ROUND_MS = 25000; // 25s per round: 15s bet + 5s spin + 5s result
+const ROULETTE_BET_MS   = 15000; // 15s betting phase
+const ROULETTE_SPIN_END = 20000; // spin ends at 20s
 function rouletteColor(n: number): "red" | "black" | "green" {
   if (n === 0) return "green";
   return ROULETTE_RED.has(n) ? "red" : "black";
@@ -677,6 +677,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [rouletteGy, setRouletteGy] = useState<number | null>(null);
   const [rouletteScale, setRouletteScale] = useState(1.0);
   const [rouletteMoveMode, setRouletteMoveMode] = useState(false);
+  const [rouletteSelectedNums, setRouletteSelectedNums] = useState<Set<number>>(new Set());
+  const [rouletteNumberGridOpen, setRouletteNumberGridOpen] = useState(false);
+  const rouletteLastBetRef = useRef<{ type: string; value: string; nums: number[]; amount: number } | null>(null);
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const xpRef = useRef(0);
@@ -1073,7 +1076,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   // ─── Data fetches ──────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern, owner_id, spaceship_passcode").order("name").then(({ data }) => {
+    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern, owner_id, spaceship_passcode, roulette_gx, roulette_gy, roulette_scale").order("name").then(({ data }) => {
       if (data) {
         const list = (data as ChatRoom[]).map(r => ({ ...r, cols: r.cols ?? DEFAULT_COLS, rows: r.rows ?? DEFAULT_ROWS, room_type: r.room_type ?? "normal", theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }));
         setRooms(list);
@@ -1085,6 +1088,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           setActiveThemeKey(cur.theme_key ?? "blue");
           setActiveFloorPattern(cur.floor_pattern ?? "standard");
           if (cur.room_type === "shop") setRightPanel("shop");
+          if (cur.room_type === "casino") {
+            setRouletteGx(cur.roulette_gx ?? null);
+            setRouletteGy(cur.roulette_gy ?? null);
+            setRouletteScale(cur.roulette_scale ?? 1.0);
+          }
         }
       }
     });
@@ -3097,21 +3105,20 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   const y2 = (cy - TH * 0.3) + ry * Math.sin(a2);
                   const fill = rouletteColor(num) === "green" ? "#065f46" : rouletteColor(num) === "red" ? "#7f1d1d" : "#111827";
                   const stroke = rouletteColor(num) === "green" ? "#10b981" : rouletteColor(num) === "red" ? "#ef4444" : "#374151";
-                  const isResult = rouletteRound && roulettePhase !== "betting" && rouletteRound.result === num;
                   return (
                     <path key={i}
                       d={`M ${cx.toFixed(1)} ${(cy - TH * 0.3).toFixed(1)} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${rx} ${ry} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z`}
-                      fill={isResult ? "#fbbf24" : fill}
-                      stroke={isResult ? "#f59e0b" : stroke}
-                      strokeWidth={isResult ? 1 : 0.5}
+                      fill={fill}
+                      stroke={stroke}
+                      strokeWidth={0.5}
                     />
                   );
                 });
 
-                // Ball position
+                // Ball position — subtract PI/2 so angle 0 = top, matching segment layout
                 const ballOrbitRx = rx * 0.82;
                 const ballOrbitRy = ry * 0.82;
-                const ballAng = (rouletteWheelAngle * Math.PI) / 180;
+                const ballAng = (rouletteWheelAngle * Math.PI) / 180 - Math.PI / 2;
                 const ballX = cx + ballOrbitRx * Math.cos(ballAng);
                 const ballY = (cy - TH * 0.3) + ballOrbitRy * Math.sin(ballAng);
 
@@ -3810,42 +3817,67 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           ))}
                         </div>
 
-                        {/* Number grid - casino table layout */}
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Direkte tal (35:1)</p>
-                        <div className="mb-2.5">
-                          {/* 0 spanning full width */}
-                          <button
-                            onClick={() => { setRouletteBetType("number"); setRouletteBetValue("0"); }}
-                            className="w-full py-1 rounded text-[11px] font-black mb-0.5 border-2 transition-all"
-                            style={{ background: rouletteBetType === "number" && rouletteBetValue === "0" ? "#064e3b" : "#052e16", borderColor: rouletteBetType === "number" && rouletteBetValue === "0" ? "#10b981" : "#065f46", color: "#6ee7b7" }}>
-                            0
-                          </button>
-                          {/* 1-36 in 3 columns (casino layout: cols = numbers modulo 3) */}
-                          <div className="grid grid-cols-3 gap-0.5">
-                            {[3,6,9,12,15,18,21,24,27,30,33,36].map((_, rowIdx) => {
-                              const row = rowIdx;
-                              return [1,2,3].map(col => {
-                                const n = (11 - row) * 3 + col;
-                                if (n < 1 || n > 36) return null;
-                                const colR = rouletteColor(n);
-                                const sel = rouletteBetType === "number" && rouletteBetValue === String(n);
-                                return (
-                                  <button key={n}
-                                    onClick={() => { setRouletteBetType("number"); setRouletteBetValue(String(n)); }}
-                                    className="py-1 rounded text-[10px] font-black border transition-all"
-                                    style={{
-                                      background: sel ? (colR === "red" ? "#991b1b" : "#1f2937") : (colR === "red" ? "#450a0a" : "#0f172a"),
-                                      borderColor: sel ? (colR === "red" ? "#ef4444" : "#6b7280") : "transparent",
-                                      color: colR === "red" ? "#fca5a5" : "#d1d5db",
-                                      boxShadow: sel ? `0 0 6px ${colR === "red" ? "#ef444455" : "#6b728055"}` : "none",
-                                    }}>
-                                    {n}
-                                  </button>
-                                );
-                              });
-                            })}
+                        {/* Number grid - collapsible */}
+                        <button
+                          onClick={() => setRouletteNumberGridOpen(o => !o)}
+                          className="w-full flex items-center justify-between mb-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors">
+                          <span>Direkte tal (35:1){rouletteSelectedNums.size > 0 && <span className="ml-1.5 text-amber-400 normal-case font-black">{rouletteSelectedNums.size} valgt</span>}</span>
+                          <span className="text-slate-600">{rouletteNumberGridOpen ? "▲" : "▼"}</span>
+                        </button>
+                        {rouletteNumberGridOpen && (
+                          <div className="mb-2.5">
+                            {/* 0 */}
+                            <button
+                              onClick={() => {
+                                setRouletteSelectedNums(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(0)) next.delete(0); else next.add(0);
+                                  return next;
+                                });
+                                setRouletteBetType("number");
+                              }}
+                              className="w-full py-1 rounded text-[11px] font-black mb-0.5 border-2 transition-all"
+                              style={{ background: rouletteSelectedNums.has(0) ? "#064e3b" : "#052e16", borderColor: rouletteSelectedNums.has(0) ? "#10b981" : "#065f46", color: "#6ee7b7" }}>
+                              0
+                            </button>
+                            {/* 1-36 grid */}
+                            <div className="grid grid-cols-3 gap-0.5">
+                              {Array.from({ length: 12 }, (_, rowIdx) =>
+                                [1, 2, 3].map(col => {
+                                  const n = (11 - rowIdx) * 3 + col;
+                                  if (n < 1 || n > 36) return null;
+                                  const colR = rouletteColor(n);
+                                  const sel = rouletteSelectedNums.has(n);
+                                  return (
+                                    <button key={n}
+                                      onClick={() => {
+                                        setRouletteSelectedNums(prev => {
+                                          const next = new Set(prev);
+                                          if (next.has(n)) next.delete(n); else next.add(n);
+                                          return next;
+                                        });
+                                        setRouletteBetType("number");
+                                      }}
+                                      className="py-1 rounded text-[10px] font-black border transition-all"
+                                      style={{
+                                        background: sel ? (colR === "red" ? "#991b1b" : "#1f2937") : (colR === "red" ? "#450a0a" : "#0f172a"),
+                                        borderColor: sel ? (colR === "red" ? "#ef4444" : "#6b7280") : "transparent",
+                                        color: colR === "red" ? "#fca5a5" : "#d1d5db",
+                                        boxShadow: sel ? `0 0 6px ${colR === "red" ? "#ef444455" : "#6b728055"}` : "none",
+                                      }}>
+                                      {n}
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                            {rouletteSelectedNums.size > 0 && (
+                              <button onClick={() => setRouletteSelectedNums(new Set())} className="mt-1 text-[10px] text-slate-600 hover:text-slate-400 transition-colors">
+                                Ryd valg
+                              </button>
+                            )}
                           </div>
-                        </div>
+                        )}
 
                         {/* Amount chips */}
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Beløb 🪙</p>
@@ -3867,35 +3899,96 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           onChange={e => setRouletteBetAmount(Math.max(1, Math.min(coins, parseInt(e.target.value) || 1)))}
                           className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-1.5 text-[13px] text-white outline-none focus:border-amber-500/50 mb-2" />
 
-                        {/* Summary + place bet */}
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-[11px] text-slate-500">
-                            {rouletteBetType === "number" ? `#${rouletteBetValue}` : betLabel(rouletteBetType, rouletteBetValue)}
-                            <span className="text-slate-700 mx-1">·</span>
-                            <span className="text-amber-400/70">{oddsLabel(rouletteBetType)}</span>
-                          </p>
-                          <p className="text-[11px] font-bold text-emerald-500">max {rouletteBetAmount * maxPayout(rouletteBetType)} 🪙</p>
+                        {/* Summary */}
+                        {(() => {
+                          const isNumBet = rouletteBetType === "number" && rouletteSelectedNums.size > 0;
+                          const numCount = isNumBet ? rouletteSelectedNums.size : 1;
+                          const totalCost = rouletteBetAmount * numCount;
+                          const label = isNumBet
+                            ? `${Array.from(rouletteSelectedNums).sort((a,b)=>a-b).join(", ")}`
+                            : betLabel(rouletteBetType, rouletteBetValue);
+                          const odds = isNumBet ? "35:1" : oddsLabel(rouletteBetType);
+                          const maxWin = isNumBet ? rouletteBetAmount * 36 : rouletteBetAmount * maxPayout(rouletteBetType);
+                          return (
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-[11px] text-slate-500 truncate max-w-[130px]">
+                                {label}
+                                <span className="text-slate-700 mx-1">·</span>
+                                <span className="text-amber-400/70">{odds}</span>
+                                {numCount > 1 && <span className="text-slate-600 ml-1">×{numCount}</span>}
+                              </p>
+                              <p className="text-[11px] font-bold text-emerald-500 flex-shrink-0">max {maxWin} 🪙</p>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Place bet + repeat */}
+                        <div className="flex gap-1.5">
+                          <button
+                            disabled={coins < rouletteBetAmount}
+                            onClick={async () => {
+                              if (!rouletteRound || roulettePhase !== "betting") return;
+                              const isNumBet = rouletteBetType === "number" && rouletteSelectedNums.size > 0;
+                              const numsToPlace = isNumBet ? Array.from(rouletteSelectedNums) : [];
+                              const totalCost = rouletteBetAmount * (isNumBet ? numsToPlace.length : 1);
+                              if (coins < totalCost) return;
+                              const roundId = rouletteRound.id;
+                              const newCoins = coinsRef.current - totalCost;
+                              coinsRef.current = newCoins;
+                              setCoins(newCoins);
+                              await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
+                              if (isNumBet) {
+                                rouletteLastBetRef.current = { type: "number", value: "", nums: numsToPlace, amount: rouletteBetAmount };
+                                const inserts = numsToPlace.map(n => ({
+                                  round_id: roundId, room_id: activeRoomId,
+                                  user_id: currentProfile.id, display_name: currentProfile.display_name,
+                                  avatar_color: myColor, bet_type: "number",
+                                  bet_value: String(n), amount: rouletteBetAmount,
+                                }));
+                                const { data: newBets } = await supabase.from("roulette_bets").insert(inserts).select();
+                                if (newBets) setRouletteBets(prev => [...prev, ...(newBets as RouletteBet[])]);
+                              } else {
+                                rouletteLastBetRef.current = { type: rouletteBetType, value: rouletteBetValue, nums: [], amount: rouletteBetAmount };
+                                const { data: newBet } = await supabase.from("roulette_bets").insert({
+                                  round_id: roundId, room_id: activeRoomId,
+                                  user_id: currentProfile.id, display_name: currentProfile.display_name,
+                                  avatar_color: myColor, bet_type: rouletteBetType,
+                                  bet_value: rouletteBetValue, amount: rouletteBetAmount,
+                                }).select().single();
+                                if (newBet) setRouletteBets(prev => [...prev, newBet as RouletteBet]);
+                              }
+                            }}
+                            className={`flex-1 py-2.5 rounded-xl text-[13px] font-black transition-all ${coins >= rouletteBetAmount ? "bg-gradient-to-r from-amber-600 to-amber-500 text-white hover:from-amber-500 hover:to-amber-400 shadow-[0_4px_16px_rgba(245,158,11,0.3)]" : "bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
+                            Sæt ind · {rouletteBetAmount * (rouletteBetType === "number" && rouletteSelectedNums.size > 0 ? rouletteSelectedNums.size : 1)} 🪙
+                          </button>
+                          {rouletteLastBetRef.current && (
+                            <button
+                              disabled={coins < rouletteLastBetRef.current.amount}
+                              onClick={async () => {
+                                const last = rouletteLastBetRef.current;
+                                if (!last || !rouletteRound || roulettePhase !== "betting") return;
+                                const isNumBet = last.type === "number" && last.nums.length > 0;
+                                const totalCost = last.amount * (isNumBet ? last.nums.length : 1);
+                                if (coins < totalCost) return;
+                                const roundId = rouletteRound.id;
+                                const newCoins = coinsRef.current - totalCost;
+                                coinsRef.current = newCoins;
+                                setCoins(newCoins);
+                                await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
+                                if (isNumBet) {
+                                  const inserts = last.nums.map(n => ({ round_id: roundId, room_id: activeRoomId, user_id: currentProfile.id, display_name: currentProfile.display_name, avatar_color: myColor, bet_type: "number", bet_value: String(n), amount: last.amount }));
+                                  const { data: newBets } = await supabase.from("roulette_bets").insert(inserts).select();
+                                  if (newBets) setRouletteBets(prev => [...prev, ...(newBets as RouletteBet[])]);
+                                } else {
+                                  const { data: newBet } = await supabase.from("roulette_bets").insert({ round_id: roundId, room_id: activeRoomId, user_id: currentProfile.id, display_name: currentProfile.display_name, avatar_color: myColor, bet_type: last.type, bet_value: last.value, amount: last.amount }).select().single();
+                                  if (newBet) setRouletteBets(prev => [...prev, newBet as RouletteBet]);
+                                }
+                              }}
+                              className="px-3 py-2.5 rounded-xl text-[11px] font-bold bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Gentag sidste bet">
+                              ↺
+                            </button>
+                          )}
                         </div>
-                        <button
-                          disabled={coins < rouletteBetAmount}
-                          onClick={async () => {
-                            if (!rouletteRound || roulettePhase !== "betting" || coins < rouletteBetAmount) return;
-                            const roundId = rouletteRound.id;
-                            const newCoins = coinsRef.current - rouletteBetAmount;
-                            coinsRef.current = newCoins;
-                            setCoins(newCoins);
-                            await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
-                            const { data: newBet } = await supabase.from("roulette_bets").insert({
-                              round_id: roundId, room_id: activeRoomId,
-                              user_id: currentProfile.id, display_name: currentProfile.display_name,
-                              avatar_color: myColor, bet_type: rouletteBetType,
-                              bet_value: rouletteBetValue, amount: rouletteBetAmount,
-                            }).select().single();
-                            if (newBet) setRouletteBets(prev => [...prev, newBet as RouletteBet]);
-                          }}
-                          className={`w-full py-2.5 rounded-xl text-[13px] font-black transition-all ${coins >= rouletteBetAmount ? "bg-gradient-to-r from-amber-600 to-amber-500 text-white hover:from-amber-500 hover:to-amber-400 shadow-[0_4px_16px_rgba(245,158,11,0.3)]" : "bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
-                          Sæt ind 🪙 {rouletteBetAmount}
-                        </button>
                       </div>
                     )}
 
