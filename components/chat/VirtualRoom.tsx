@@ -1431,6 +1431,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     channelRef.current?.track(payload);
   }, [currentProfile.id, currentProfile.display_name, myColor, nameColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Always-current ref so the presence join handler can call broadcastMove without stale closure
+  const broadcastMoveRef = useRef(broadcastMove);
+  useEffect(() => { broadcastMoveRef.current = broadcastMove; }, [broadcastMove]);
+
   // Main presence/broadcast channel
   useEffect(() => {
     setUsers(new Map()); setBubbles(new Map());
@@ -1466,6 +1470,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             }
           }
         }
+      })
+      .on("presence", { event: "join" }, () => {
+        // Re-broadcast position immediately so joining users see us without waiting for a move
+        broadcastMoveRef.current(myPosRef.current.gx, myPosRef.current.gy);
       })
       .on("broadcast", { event: "move" }, ({ payload }) => {
         const p = payload as PresenceUser;
@@ -2571,12 +2579,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 const tileStroke = isMyTile ? myColor : isPlaceTarget ? "#6366f1" : isBotTarget && isHov ? "#22c55e" : isHov ? theme.color + "90" : gridStroke;
 
                 return (
-                  <g key={cellKey}
-                    onClick={() => handleTileClick(gx, gy)}
-                    onContextMenu={e => handleRightClick(e, null, cellItem ?? null, cellBot ?? null, gx, gy)}
-                    onMouseEnter={() => setHovered(cellKey)}
-                    onMouseLeave={() => setHovered(null)}
-                    style={{ cursor: isFloorPlacing ? "crosshair" : cellBot || hasUser ? "default" : movingBotId ? "crosshair" : "pointer" }}>
+                  <g key={cellKey} style={{ pointerEvents: "none" }}>
                     <polygon points={tilePts(x, y)} fill={tileFill} stroke={tileStroke} strokeWidth={isMyTile || isPlaceTarget ? 1.5 : 0.7} />
                     {isHov && !hasUser && !cellBot && !movingBotId && !isFloorPlacing && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
                     {/* Locked tile overlay */}
@@ -2712,6 +2715,34 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   );
                 });
               })()}
+
+              {/* ── Click-cap layer: transparent polygons above all sprites so every tile is always clickable ── */}
+              {sortedTiles.map(({ gx, gy }) => {
+                const { x, y } = isoCenter(gx, gy, svgW);
+                const cellKey = `${gx},${gy}`;
+                const cellUser = usersByCell.get(cellKey);
+                const cellBot = botsByCell.get(cellKey);
+                const cellItem = itemsByCell.get(cellKey);
+                const isFloorPlacing = !!placingItem && !isWallItemType(placingItem.item.item_type);
+                const isOccupiedByOther = !!cellUser && cellUser.user_id !== currentProfile.id;
+                return (
+                  <polygon
+                    key={`cap-${cellKey}`}
+                    points={tilePts(x, y)}
+                    fill="transparent"
+                    stroke="none"
+                    onClick={() => handleTileClick(gx, gy)}
+                    onContextMenu={e => {
+                      e.preventDefault();
+                      if (cellUser) handleRightClick(e, cellUser, null, null);
+                      else handleRightClick(e, null, cellItem ?? null, cellBot ?? null, gx, gy);
+                    }}
+                    onMouseEnter={() => setHovered(cellKey)}
+                    onMouseLeave={() => setHovered(null)}
+                    style={{ cursor: isFloorPlacing ? "crosshair" : movingBotId ? "crosshair" : isOccupiedByOther || cellBot ? "default" : "pointer" }}
+                  />
+                );
+              })}
             </svg>
 
             {/* Level-up overlay */}
