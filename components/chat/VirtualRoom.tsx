@@ -429,12 +429,15 @@ interface RoomBot {
 interface CtxMenu {
   clientX: number;
   clientY: number;
-  kind: "user" | "self" | "tile_item" | "bot" | "tile";
+  kind: "user" | "self" | "tile_item" | "bot" | "tile" | "wall" | "portal";
   user?: PresenceUser;
   item?: RoomItem;
   bot?: RoomBot;
   tileGx?: number;
   tileGy?: number;
+  wallSide?: "left" | "right";
+  wallPosition?: number;
+  portal?: RoomPortal;
 }
 interface LogMessage {
   id: string;
@@ -497,6 +500,16 @@ interface RouletteRound {
   id: number;
   room_id: string;
   result: number;
+}
+
+interface RoomPortal {
+  id: string;
+  room_id: string;
+  wall_side: "left" | "right";
+  portal_type: "door" | "window";
+  position: number;
+  size: 1 | 2 | 3;
+  target_room_id?: string | null;
 }
 interface RouletteBet {
   id: string;
@@ -678,6 +691,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [rouletteGy, setRouletteGy] = useState<number | null>(null);
   const [rouletteScale, setRouletteScale] = useState(1.0);
   const [rouletteMoveMode, setRouletteMoveMode] = useState(false);
+  const [portals, setPortals] = useState<RoomPortal[]>([]);
+  const [portalFormType, setPortalFormType] = useState<"door" | "window">("door");
+  const [portalFormSize, setPortalFormSize] = useState<1 | 2 | 3>(1);
+  const [portalFormTargetRoomId, setPortalFormTargetRoomId] = useState<string>("");
   const [rouletteSelectedNums, setRouletteSelectedNums] = useState<Set<number>>(new Set());
   const [rouletteNumberGridOpen, setRouletteNumberGridOpen] = useState(false);
   const rouletteLastBetRef = useRef<{ type: string; value: string; nums: number[]; amount: number } | null>(null);
@@ -1964,6 +1981,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     });
   }, [activeRoomId, activeRoomType]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load portals when entering a room
+  useEffect(() => {
+    supabase.from("room_portals").select("*").eq("room_id", activeRoomId).then(({ data }) => {
+      if (data) setPortals(data as RoomPortal[]);
+    });
+  }, [activeRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleTileClick = (gx: number, gy: number) => {
     if (isDraggingRef.current) return;
     setCtxMenu(null);
@@ -2833,6 +2857,114 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     placeWallItem("left", t, Math.round(wh));
                   }
                 };
+                const handleWallContextMenu = (e: React.MouseEvent, side: "left" | "right") => {
+                  e.preventDefault(); e.stopPropagation();
+                  if (isWallPlacing) return;
+                  const canEdit = isAdmin || (activeRoomType === "spaceship" && activeRoomOwnerId === currentProfile.id);
+                  if (!canEdit) return;
+                  const { x: sx } = getSvgPos(e);
+                  const t = side === "right"
+                    ? Math.max(0.08, Math.min(0.92, (sx - tcx) / (rBR.x - tcx)))
+                    : Math.max(0.08, Math.min(0.92, (tcx - sx) / (tcx - lBL.x)));
+                  setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "wall", wallSide: side, wallPosition: t });
+                };
+
+                // Portal render helper
+                const renderPortal = (portal: RoomPortal) => {
+                  const unitW = 0.15;
+                  const w = unitW * portal.size;
+                  const t = portal.position;
+                  const dH = portal.portal_type === "door" ? 56 + portal.size * 8 : 38 + portal.size * 4;
+                  const winBottomOffset = portal.portal_type === "window" ? WALL_H * 0.26 : 0;
+
+                  let BL: {x:number;y:number}, BR: {x:number;y:number}, TL: {x:number;y:number}, TR: {x:number;y:number};
+                  if (portal.wall_side === "left") {
+                    const lx = (u: number) => tcx - u * (tcx - lBL.x);
+                    const ly = (u: number) => tcy + u * (lBL.y - tcy);
+                    BL = { x: lx(t - w/2), y: ly(t - w/2) - winBottomOffset };
+                    BR = { x: lx(t + w/2), y: ly(t + w/2) - winBottomOffset };
+                  } else {
+                    const rx = (u: number) => tcx + u * (rBR.x - tcx);
+                    const ry = (u: number) => tcy + u * (rBR.y - tcy);
+                    BL = { x: rx(t - w/2), y: ry(t - w/2) - winBottomOffset };
+                    BR = { x: rx(t + w/2), y: ry(t + w/2) - winBottomOffset };
+                  }
+                  TL = { x: BL.x, y: BL.y - dH };
+                  TR = { x: BR.x, y: BR.y - dH };
+
+                  const pts = `${BL.x},${BL.y} ${BR.x},${BR.y} ${TR.x},${TR.y} ${TL.x},${TL.y}`;
+                  const fW = 3.5;
+                  const framePts = `${BL.x-fW},${BL.y+1} ${BR.x+fW},${BR.y+1} ${TR.x+fW},${TR.y-fW} ${TL.x-fW},${TL.y-fW}`;
+                  const midX = (BL.x + BR.x + TR.x + TL.x) / 4;
+                  const midY = (BL.y + BR.y + TR.y + TL.y) / 4;
+                  const targetRoom = rooms.find(r => r.id === portal.target_room_id);
+                  const canEdit = isAdmin || (activeRoomType === "spaceship" && activeRoomOwnerId === currentProfile.id);
+
+                  if (portal.portal_type === "door") {
+                    return (
+                      <g key={portal.id}
+                        style={{ cursor: targetRoom ? "pointer" : "default" }}
+                        onClick={() => { if (targetRoom) switchRoom(targetRoom.id, targetRoom.name, targetRoom.cols, targetRoom.rows, targetRoom.room_type, targetRoom.theme_key, targetRoom.floor_pattern, targetRoom.owner_id); }}
+                        onContextMenu={canEdit ? e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "portal", portal }); } : undefined}
+                      >
+                        {/* Frame */}
+                        <polygon points={framePts} fill={theme.color + "50"} stroke={theme.color} strokeWidth={1} opacity={0.7} />
+                        {/* Door fill */}
+                        <polygon points={pts} fill="#050d1a" opacity={0.92} />
+                        <polygon points={pts} fill={theme.color} opacity={0.07} />
+                        {/* Door frame lines */}
+                        <line x1={TL.x} y1={TL.y} x2={TR.x} y2={TR.y} stroke={theme.color} strokeWidth={1.5} opacity={0.8} />
+                        <line x1={BL.x} y1={BL.y} x2={TL.x} y2={TL.y} stroke={theme.color} strokeWidth={1.2} opacity={0.6} />
+                        <line x1={BR.x} y1={BR.y} x2={TR.x} y2={TR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.6} />
+                        {/* Arrow indicator */}
+                        <text x={midX} y={midY + 3} textAnchor="middle" fontSize={10} fill={theme.color} opacity={0.9}
+                          fontFamily="system-ui,sans-serif" style={{ pointerEvents: "none" }}>▶</text>
+                        {/* Room name label above door */}
+                        {targetRoom && (
+                          <text x={midX} y={TL.y - 4} textAnchor="middle" fontSize={6.5} fontWeight="700"
+                            fill={theme.color} opacity={0.85} fontFamily="system-ui,sans-serif"
+                            stroke="rgba(0,0,0,0.8)" strokeWidth={2} paintOrder="stroke"
+                            style={{ pointerEvents: "none" }}>
+                            {targetRoom.name}
+                          </text>
+                        )}
+                        {/* Threshold line at base */}
+                        <line x1={BL.x} y1={BL.y} x2={BR.x} y2={BR.y} stroke={theme.color} strokeWidth={1.5} opacity={0.5} />
+                      </g>
+                    );
+                  } else {
+                    // Window
+                    return (
+                      <g key={portal.id}
+                        onContextMenu={canEdit ? e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "portal", portal }); } : undefined}
+                        style={{ cursor: canEdit ? "context-menu" : "default" }}
+                      >
+                        {/* Frame */}
+                        <polygon points={framePts} fill={theme.color + "30"} stroke={theme.color} strokeWidth={0.8} opacity={0.6} />
+                        {/* Glass */}
+                        <polygon points={pts} fill="#1e4a7a" opacity={0.55} />
+                        <polygon points={pts} fill="rgba(180,220,255,0.12)" />
+                        {/* Window cross divider */}
+                        <line x1={(TL.x+BL.x)/2} y1={(TL.y+BL.y)/2} x2={(TR.x+BR.x)/2} y2={(TR.y+BR.y)/2}
+                          stroke={theme.color} strokeWidth={0.8} opacity={0.45} />
+                        <line x1={(TL.x+TR.x)/2} y1={(TL.y+TR.y)/2} x2={(BL.x+BR.x)/2} y2={(BL.y+BR.y)/2}
+                          stroke={theme.color} strokeWidth={0.8} opacity={0.45} />
+                        {/* Glass highlight */}
+                        <polygon
+                          points={`${TL.x+2},${TL.y+2} ${TL.x+8},${TL.y+2} ${TL.x+2},${TL.y+7}`}
+                          fill="rgba(255,255,255,0.3)"
+                          style={{ pointerEvents: "none" }}
+                        />
+                        {/* Outer frame */}
+                        <line x1={TL.x} y1={TL.y} x2={TR.x} y2={TR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.7} />
+                        <line x1={BL.x} y1={BL.y} x2={BR.x} y2={BR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.7} />
+                        <line x1={BL.x} y1={BL.y} x2={TL.x} y2={TL.y} stroke={theme.color} strokeWidth={1} opacity={0.5} />
+                        <line x1={BR.x} y1={BR.y} x2={TR.x} y2={TR.y} stroke={theme.color} strokeWidth={1} opacity={0.5} />
+                      </g>
+                    );
+                  }
+                };
+
                 // ── Wall item renderer ──
                 const wallItems = items.filter(i => i.wall_side !== null && i.owner_id === null);
                 const renderWallItemSvg = (item: RoomItem) => {
@@ -2875,17 +3007,6 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   );
                 };
 
-                // Door helpers for left wall
-                const doorT1 = 0.22, doorT2 = 0.42, doorH = 68;
-                const dlx = (t: number) => tcx - t * (tcx - lBL.x);
-                const dly = (t: number) => tcy + t * (lBL.y - tcy);
-                const doorBL = { x: dlx(doorT1), y: dly(doorT1) };
-                const doorBR = { x: dlx(doorT2), y: dly(doorT2) };
-                const doorTR = { x: doorBR.x, y: doorBR.y - doorH };
-                const doorTL = { x: doorBL.x, y: doorBL.y - doorH };
-                const doorPts = `${doorBL.x},${doorBL.y} ${doorBR.x},${doorBR.y} ${doorTR.x},${doorTR.y} ${doorTL.x},${doorTL.y}`;
-                const frameW = 4;
-                const framePts = `${doorBL.x - frameW},${doorBL.y + 1} ${doorBR.x + frameW},${doorBR.y + 1} ${doorTR.x + frameW},${doorTR.y - frameW} ${doorTL.x - frameW},${doorTL.y - frameW}`;
 
                 // ── Wall thickness: "into-room" offset per wall ──
                 // Right wall is parallel to gx-axis; inward = -X direction = screen(-TW/2, +TH/2)
@@ -2905,6 +3026,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
                       fill={theme.wallA}
                       onClick={e => handleWallClick(e, "right")}
+                      onContextMenu={e => handleWallContextMenu(e, "right")}
                       style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
                     {/* Panel division lines */}
@@ -2943,12 +3065,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     <line x1={apex.x + rFX} y1={apex.y + rFY} x2={rBR.x + rFX} y2={rBR.y - WALL_H + rFY} stroke={theme.color} strokeWidth={0.8} opacity={0.3} />
                     {isWallPlacing && <polygon points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`} fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.5)" strokeWidth={2} style={{ pointerEvents: "none" }} />}
 
+                    {/* Right wall portals */}
+                    {portals.filter(p => p.wall_side === "right").map(renderPortal)}
+
                     {/* ── LEFT WALL ── */}
                     {/* Main wall face */}
                     <polygon
                       points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
                       fill={theme.wallB}
                       onClick={e => handleWallClick(e, "left")}
+                      onContextMenu={e => handleWallContextMenu(e, "left")}
                       style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
                     {/* Panel division lines */}
@@ -2991,13 +3117,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       style={{ pointerEvents: "none" }}
                     />
 
-                    {/* ── DOOR on left wall ── */}
-                    <polygon points={framePts} fill={theme.color + "30"} />
-                    <polygon points={doorPts} fill="#000" opacity={0.95} />
-                    <polygon points={doorPts} fill={theme.color} opacity={0.08} />
-                    <line x1={doorTL.x} y1={doorTL.y} x2={doorTR.x} y2={doorTR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.6} />
-                    <line x1={doorBL.x} y1={doorBL.y} x2={doorTL.x} y2={doorTL.y} stroke={theme.color} strokeWidth={1} opacity={0.4} />
-                    <line x1={doorBR.x} y1={doorBR.y} x2={doorTR.x} y2={doorTR.y} stroke={theme.color} strokeWidth={1} opacity={0.4} />
+                    {/* ── PORTALS (doors & windows) ── */}
+                    {portals.filter(p => p.wall_side === "left").map(renderPortal)}
 
                     {/* ── CORNER ridge ── */}
                     <line x1={tcx} y1={tcy} x2={apex.x} y2={apex.y} stroke={theme.color} strokeWidth={2.5} opacity={0.7} />
@@ -6140,6 +6261,109 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               </>
             );
           })()}
+
+          {ctxMenu.kind === "wall" && ctxMenu.wallSide !== undefined && (
+            <>
+              <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-2 flex-shrink-0">
+                <div className="w-2 h-2 rounded-full bg-violet-400" />
+                <p className="text-[13px] font-semibold text-slate-100">Tilføj til væg</p>
+                <p className="text-[11px] text-slate-500 ml-auto">{ctxMenu.wallSide === "left" ? "Venstre" : "Højre"}</p>
+              </div>
+              <div className="p-3 flex flex-col gap-2.5">
+                {/* Type */}
+                <div className="flex gap-1.5">
+                  {(["door", "window"] as const).map(t => (
+                    <button key={t} onClick={() => setPortalFormType(t)}
+                      className="flex-1 py-2 rounded-xl text-[12px] font-bold border-2 transition-all"
+                      style={{
+                        background: portalFormType === t ? (t === "door" ? "rgba(99,102,241,0.2)" : "rgba(34,211,238,0.15)") : "rgba(255,255,255,0.03)",
+                        borderColor: portalFormType === t ? (t === "door" ? "#6366f1" : "#22d3ee") : "rgba(255,255,255,0.07)",
+                        color: portalFormType === t ? (t === "door" ? "#a5b4fc" : "#67e8f9") : "#64748b",
+                      }}>
+                      {t === "door" ? "🚪 Dør" : "🪟 Vindue"}
+                    </button>
+                  ))}
+                </div>
+                {/* Size */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-1">Størrelse</p>
+                  <div className="flex gap-1.5">
+                    {([1, 2, 3] as const).map(s => (
+                      <button key={s} onClick={() => setPortalFormSize(s)}
+                        className="flex-1 py-1.5 rounded-lg text-[12px] font-bold border-2 transition-all"
+                        style={{
+                          background: portalFormSize === s ? "rgba(251,191,36,0.15)" : "rgba(255,255,255,0.03)",
+                          borderColor: portalFormSize === s ? "#fbbf24" : "rgba(255,255,255,0.07)",
+                          color: portalFormSize === s ? "#fde68a" : "#64748b",
+                        }}>
+                        {s === 1 ? "Smal" : s === 2 ? "Normal" : "Bred"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Target room (doors only) */}
+                {portalFormType === "door" && (
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-1">Destination</p>
+                    <select
+                      value={portalFormTargetRoomId}
+                      onChange={e => setPortalFormTargetRoomId(e.target.value)}
+                      className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-2 py-1.5 text-[12px] text-slate-200 outline-none focus:border-violet-500/50">
+                      <option value="">Vælg rum...</option>
+                      {rooms.filter(r => r.id !== activeRoomId).map(r => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {/* Create button */}
+                <button
+                  disabled={portalFormType === "door" && !portalFormTargetRoomId}
+                  onClick={async () => {
+                    if (portalFormType === "door" && !portalFormTargetRoomId) return;
+                    const { data } = await supabase.from("room_portals").insert({
+                      room_id: activeRoomId,
+                      wall_side: ctxMenu.wallSide,
+                      portal_type: portalFormType,
+                      position: ctxMenu.wallPosition ?? 0.32,
+                      size: portalFormSize,
+                      target_room_id: portalFormType === "door" ? portalFormTargetRoomId : null,
+                    }).select().single();
+                    if (data) setPortals(prev => [...prev, data as RoomPortal]);
+                    setCtxMenu(null);
+                  }}
+                  className={`w-full py-2.5 rounded-xl text-[13px] font-black transition-all ${
+                    (portalFormType === "window" || portalFormTargetRoomId)
+                      ? "bg-violet-600 hover:bg-violet-500 text-white"
+                      : "bg-white/[0.05] text-slate-600 cursor-not-allowed"
+                  }`}>
+                  Opret
+                </button>
+              </div>
+            </>
+          )}
+
+          {ctxMenu.kind === "portal" && ctxMenu.portal && (
+            <>
+              <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-2">
+                <span className="text-[14px]">{ctxMenu.portal.portal_type === "door" ? "🚪" : "🪟"}</span>
+                <p className="text-[13px] font-semibold text-slate-200">
+                  {ctxMenu.portal.portal_type === "door" ? "Dør" : "Vindue"} · {ctxMenu.portal.size === 1 ? "Smal" : ctxMenu.portal.size === 2 ? "Normal" : "Bred"}
+                </p>
+              </div>
+              <div className="py-1">
+                <button
+                  onClick={async () => {
+                    supabase.from("room_portals").delete().eq("id", ctxMenu.portal!.id).then(() => {});
+                    setPortals(prev => prev.filter(p => p.id !== ctxMenu.portal!.id));
+                    setCtxMenu(null);
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-[13px] text-rose-400 hover:bg-rose-500/[0.08] flex items-center gap-3 transition-colors">
+                  <Trash2 className="w-4 h-4 flex-shrink-0" /> Slet
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
