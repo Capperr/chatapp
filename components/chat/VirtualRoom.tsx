@@ -67,6 +67,26 @@ function hoursToNextLevel(totalSeconds: number): number {
   return lv < LEVEL_HOURS.length ? LEVEL_HOURS[lv] - h : 0;
 }
 
+// ─── XP-based level system ─────────────────────────────────────────────────────
+// Cumulative XP needed to reach each level (index 0 = level 1 = 0 XP)
+const XP_LEVELS = [0, 100, 300, 600, 1000, 1500, 2100, 2850, 3750, 4900, 6300, 8000, 10000, 12500, 15500];
+function levelFromXp(xp: number): number {
+  let lv = 1;
+  for (let i = 1; i < XP_LEVELS.length; i++) {
+    if (xp >= XP_LEVELS[i]) lv = i + 1; else break;
+  }
+  return lv;
+}
+function xpInCurrentLevel(xp: number): number {
+  const lv = levelFromXp(xp);
+  return xp - (XP_LEVELS[lv - 1] ?? 0);
+}
+function xpForNextLevel(xp: number): number {
+  const lv = levelFromXp(xp);
+  if (lv >= XP_LEVELS.length) return 0;
+  return XP_LEVELS[lv] - (XP_LEVELS[lv - 1] ?? 0);
+}
+
 // ─── Room themes ───────────────────────────────────────────────────────────────
 type RoomTheme = { id?: string; label?: string; color?: string; even: string; odd: string; highlight: string; wallA: string; wallB: string };
 function getShopTheme(): RoomTheme {
@@ -411,6 +431,7 @@ interface GlobalUser {
   outfit?: Record<string, string>;
   is_admin?: boolean;
   room_joined_at?: number; // ms timestamp
+  last_activity?: number;  // ms timestamp
 }
 interface ChatRoom {
   id: string;
@@ -519,6 +540,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [zoom, setZoom] = useState(1);
   const [rightPanel, setRightPanel] = useState<RightPanel>("hidden");
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
+  const [showLevelGuide, setShowLevelGuide] = useState(false);
   const [otherLevelUps, setOtherLevelUps] = useState<Map<string, number>>(new Map());
   const [mutedUsers, setMutedUsers] = useState<Set<string>>(new Set());
   const [myMutedUntil, setMyMutedUntil] = useState<string | null>(null);
@@ -1020,7 +1042,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           totalSecondsRef.current = data.total_online_seconds;
           setTotalSeconds(data.total_online_seconds);
           const lvTime = levelFromSeconds(data.total_online_seconds);
-          const lvXp = Math.floor((data.xp ?? 0) / 100) + 1;
+          const lvXp = levelFromXp(data.xp ?? 0);
           const lv = Math.max(lvTime, lvXp);
           levelRef.current = lv;
           setLevel(lv);
@@ -1207,7 +1229,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       })
       .subscribe(() => {
         roomJoinedAtRef.current = Date.now();
-        globalCh.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName, outfit: outfitRef.current, is_admin: currentProfile.role === "admin", room_joined_at: roomJoinedAtRef.current });
+        globalCh.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName, outfit: outfitRef.current, is_admin: currentProfile.role === "admin", room_joined_at: roomJoinedAtRef.current, last_activity: lastActivityRef.current });
       });
     return () => { supabase.removeChannel(globalCh); globalChannelRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1215,7 +1237,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   useEffect(() => {
     roomJoinedAtRef.current = Date.now();
-    globalChannelRef.current?.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName, outfit: outfitRef.current, is_admin: currentProfile.role === "admin", room_joined_at: roomJoinedAtRef.current });
+    globalChannelRef.current?.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName, outfit: outfitRef.current, is_admin: currentProfile.role === "admin", room_joined_at: roomJoinedAtRef.current, last_activity: lastActivityRef.current });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId, activeRoomName]);
 
@@ -1915,10 +1937,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       return;
     }
     draftRef.current = ""; setDraft(""); lastActivityRef.current = Date.now();
+    globalChannelRef.current?.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName, outfit: outfitRef.current, is_admin: currentProfile.role === "admin", room_joined_at: roomJoinedAtRef.current, last_activity: lastActivityRef.current });
     await supabase.from("messages").insert({ content: t, user_id: currentProfile.id, room_id: activeRoomId });
     // Award +10 XP per message
     const newXp = xpRef.current + 10;
-    const newLevel = Math.floor(newXp / 100) + 1;
+    const newLevel = Math.max(levelFromXp(newXp), levelFromSeconds(totalSecondsRef.current));
     if (newLevel > levelRef.current) {
       setShowLevelUp(newLevel);
       setTimeout(() => setShowLevelUp(null), 4000);
@@ -2294,8 +2317,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 >
                   {/* Level */}
                   <button
-                    onClick={() => setRightPanel(p => p === "profile" ? "hidden" : "profile")}
-                    className={`flex items-center gap-1.5 px-3.5 transition-colors h-full ${rightPanel === "profile" ? "bg-violet-500/15" : "hover:bg-white/[0.04]"}`}
+                    onClick={() => setShowLevelGuide(v => !v)}
+                    className={`flex items-center gap-1.5 px-3.5 transition-colors h-full hover:bg-violet-500/10`}
+                    title="Klik for at se niveau-oversigt"
                   >
                     <span className="text-[9px] font-black tracking-[0.2em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
                     <span className="text-[16px] font-black text-white tabular-nums leading-none">{level}</span>
@@ -2306,7 +2330,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   {/* XP */}
                   <div className="hidden sm:flex items-center px-3.5">
                     <span className="text-[13px] font-semibold tabular-nums" style={{ color: "rgba(255,255,255,0.22)" }}>
-                      <span style={{ color: "#8b5cf6" }}>{xp % 100}</span>/100 xp
+                      <span style={{ color: "#8b5cf6" }}>{xpInCurrentLevel(xp)}</span>/{xpForNextLevel(xp) || "MAX"} xp
                     </span>
                   </div>
 
@@ -3044,6 +3068,52 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               return <div className="absolute inset-0 overflow-hidden" style={{ pointerEvents: "none", zIndex: 15 }}>{allBubbles}</div>;
             })()}
 
+            {/* Level guide modal */}
+            {showLevelGuide && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowLevelGuide(false)}>
+                <div className="bg-[#0a1628] border border-white/[0.1] rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.8)] w-[320px] max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                  <div className="px-5 py-4 border-b border-white/[0.07] flex items-center justify-between flex-shrink-0">
+                    <div>
+                      <p className="text-[15px] font-black text-white">Niveau-oversigt</p>
+                      <p className="text-[12px] text-slate-500 mt-0.5">Du er på niveau {level} · {xpInCurrentLevel(xp)}/{xpForNextLevel(xp) || "MAX"} XP</p>
+                    </div>
+                    <button onClick={() => setShowLevelGuide(false)} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-4 h-4" /></button>
+                  </div>
+                  <div className="overflow-y-auto flex-1 p-3 space-y-1">
+                    {XP_LEVELS.map((cumXp, i) => {
+                      const lv = i + 1;
+                      const isCurrentLv = lv === level;
+                      const isUnlocked = xp >= cumXp;
+                      const xpNeededThisLv = i === 0 ? 0 : cumXp - XP_LEVELS[i - 1];
+                      const nextCumXp = XP_LEVELS[i + 1];
+                      const inLv = isCurrentLv ? xpInCurrentLevel(xp) : 0;
+                      const pct = isCurrentLv && xpForNextLevel(xp) > 0 ? Math.min(100, inLv / xpForNextLevel(xp) * 100) : isUnlocked && !isCurrentLv ? 100 : 0;
+                      return (
+                        <div key={lv} className={`rounded-xl px-3 py-2.5 border transition-colors ${isCurrentLv ? "bg-violet-500/15 border-violet-500/40" : isUnlocked ? "bg-white/[0.03] border-white/[0.05]" : "bg-white/[0.01] border-white/[0.03] opacity-50"}`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[13px] font-black ${isCurrentLv ? "text-violet-300" : isUnlocked ? "text-slate-300" : "text-slate-600"}`}>LV {lv}</span>
+                              {isCurrentLv && <span className="text-[9px] font-bold bg-violet-500/25 text-violet-300 px-1.5 py-0.5 rounded-full border border-violet-500/30">NU</span>}
+                              {lv === XP_LEVELS.length && <span className="text-[9px] font-bold bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full border border-amber-500/20">MAX</span>}
+                            </div>
+                            <span className="text-[11px] text-slate-500 tabular-nums">
+                              {lv === 1 ? "Start" : `+${xpNeededThisLv.toLocaleString()} XP`}
+                            </span>
+                          </div>
+                          {isCurrentLv && nextCumXp !== undefined && (
+                            <div className="w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden">
+                              <div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all" style={{ width: `${pct}%` }} />
+                            </div>
+                          )}
+                          {lv > 1 && <p className="text-[10px] text-slate-600 mt-0.5">{cumXp.toLocaleString()} XP i alt</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Level-up overlay */}
             {showLevelUp !== null && (
               <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
@@ -3241,15 +3311,35 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       return (
                         <div key={u.user_id} className={`px-3 py-2.5 flex items-center gap-3 border-b border-white/[0.03] hover:bg-white/[0.04] transition-colors group ${inSameRoom ? "bg-violet-500/[0.03]" : ""}`}>
                           {/* Mini avatar */}
-                          <div className="relative flex-shrink-0">
-                            <div className="w-10 h-12 rounded-lg overflow-hidden flex items-end justify-center" style={{ background: u.color + "18", border: `1px solid ${u.color}30` }}>
-                              <svg width="36" height="44" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
-                                <PersonAvatar color={u.color} glow={!!u.is_admin} />
-                                {Object.keys(uOutfit).length > 0 && <ClothingOverlay outfit={uOutfit} catalog={clothingCatalog} />}
-                              </svg>
-                            </div>
-                            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#07101c] shadow-[0_0_4px_rgba(52,211,153,0.6)]" />
-                          </div>
+                          {(() => {
+                            const isIdle = !!u.last_activity && Date.now() - u.last_activity > 10 * 60 * 1000;
+                            return (
+                              <div className="relative flex-shrink-0">
+                                <div className="w-10 h-12 rounded-lg overflow-hidden flex items-end justify-center" style={{ background: u.color + "18", border: `1px solid ${u.color}30` }}>
+                                  <svg width="36" height="44" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                                    <PersonAvatar color={u.color} glow={!!u.is_admin} />
+                                    {Object.keys(uOutfit).length > 0 && <ClothingOverlay outfit={uOutfit} catalog={clothingCatalog} />}
+                                    {isIdle && (
+                                      <g style={{ pointerEvents: "none" }}>
+                                        {[{ sz: 5, dx: 8,  y: -28, delay: "0s"   },
+                                          { sz: 6, dx: 13, y: -34, delay: "0.7s" },
+                                          { sz: 7, dx: 19, y: -41, delay: "1.4s" }].map(({ sz, dx, y, delay }, i) => (
+                                          <text key={i} x={dx} y={y} textAnchor="middle" fontSize={sz} fontWeight="900"
+                                            fill="#fbbf24" fontFamily="system-ui,sans-serif"
+                                            stroke="rgba(0,0,0,0.7)" strokeWidth={1} paintOrder="stroke" opacity={0}>
+                                            <animate attributeName="opacity" values="0;1;0" dur="2.4s" begin={delay} repeatCount="indefinite" />
+                                            <animate attributeName="y" from={`${y}`} to={`${y - 8}`} dur="2.4s" begin={delay} repeatCount="indefinite" />
+                                            Z
+                                          </text>
+                                        ))}
+                                      </g>
+                                    )}
+                                  </svg>
+                                </div>
+                                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#07101c] shadow-[0_0_4px_rgba(52,211,153,0.6)]" />
+                              </div>
+                            );
+                          })()}
                           {/* Info */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -4095,18 +4185,25 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
                   <div className="flex-1 overflow-y-auto p-3 space-y-3">
                     {/* XP bar */}
-                    {profileView.xp != null && (
-                      <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[12px] font-bold text-violet-300">Niveau {profileView.level ?? 1}</span>
-                          <span className="text-[12px] text-slate-500 tabular-nums">{profileView.xp % 100} / 100 XP</span>
+                    {profileView.xp != null && (() => {
+                      const pvXp = profileView.xp;
+                      const pvLv = levelFromXp(pvXp);
+                      const pvInLv = xpInCurrentLevel(pvXp);
+                      const pvNeeded = xpForNextLevel(pvXp);
+                      const pct = pvNeeded > 0 ? Math.min(100, pvInLv / pvNeeded * 100) : 100;
+                      return (
+                        <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[12px] font-bold text-violet-300">Niveau {pvLv}</span>
+                            <span className="text-[12px] text-slate-500 tabular-nums">{pvInLv} / {pvNeeded > 0 ? pvNeeded : "MAX"} XP</span>
+                          </div>
+                          <div className="w-full bg-white/[0.06] rounded-full h-2.5 overflow-hidden">
+                            <div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400" style={{ width: `${pct}%` }} />
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-1">{pvNeeded > 0 ? `${pvNeeded - pvInLv} XP til niveau ${pvLv + 1}` : "Max niveau nået!"}</p>
                         </div>
-                        <div className="w-full bg-white/[0.06] rounded-full h-2.5 overflow-hidden">
-                          <div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400" style={{ width: `${profileView.xp % 100}%` }} />
-                        </div>
-                        <p className="text-[11px] text-slate-600 mt-1">{100 - (profileView.xp % 100)} XP til niveau {(profileView.level ?? 1) + 1}</p>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Achievements */}
                     {pvEarned.length > 0 && (
