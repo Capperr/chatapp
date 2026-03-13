@@ -90,8 +90,9 @@ function xpForNextLevel(xp: number): number {
 // ─── Roulette constants ─────────────────────────────────────────────────────────
 const ROULETTE_RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
 const ROULETTE_WHEEL_ORDER = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
-const ROULETTE_ROUND_MS = 15000; // 15s per round
+const ROULETTE_ROUND_MS = 20000; // 20s per round: 10s bet + 5s spin + 5s result
 const ROULETTE_BET_MS   = 10000; // 10s betting phase
+const ROULETTE_SPIN_END = 15000; // spin ends at 15s
 function rouletteColor(n: number): "red" | "black" | "green" {
   if (n === 0) return "green";
   return ROULETTE_RED.has(n) ? "red" : "black";
@@ -478,6 +479,9 @@ interface ChatRoom {
   owner_id?: string | null;
   spaceship_design?: string | null;
   spaceship_passcode?: string | null;
+  roulette_gx?: number | null;
+  roulette_gy?: number | null;
+  roulette_scale?: number | null;
 }
 interface VisitRequest { from_id: string; from_name: string; spaceship_room_id: string; spaceship_room_name: string; }
 interface TradeOffer { coins: number; clothing_ids: string[]; item_ids: string[]; }
@@ -507,6 +511,7 @@ interface RouletteBet {
   payout?: number | null;
   won?: boolean | null;
   resolved?: boolean;
+  created_at?: string | null;
 }
 
 const SPACESHIP_VARIANTS: { id: string; name: string; emoji: string; desc: string; cols: number; rows: number; theme: string; price: number }[] = [
@@ -667,6 +672,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const roulettePlacedRef = useRef<Set<number>>(new Set()); // rounds where we already placed bets
   const [rouletteTab, setRouletteTab] = useState<"bet" | "history">("bet");
   const [rouletteMyHistory, setRouletteMyHistory] = useState<RouletteBet[]>([]);
+  const [rouletteGx, setRouletteGx] = useState<number | null>(null);
+  const [rouletteGy, setRouletteGy] = useState<number | null>(null);
+  const [rouletteScale, setRouletteScale] = useState(1.0);
+  const [rouletteMoveMode, setRouletteMoveMode] = useState(false);
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const xpRef = useRef(0);
@@ -1861,8 +1870,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           setRouletteBets([]);
           await fetchBets(roundId);
         }
-      } else if (msInRound < ROULETTE_ROUND_MS - 1000) {
-        // Spinning phase
+      } else if (msInRound < ROULETTE_SPIN_END) {
+        // Spinning phase (5s)
         setRoulettePhase("spinning");
         if (!spinInterval) {
           spinInterval = setInterval(() => {
@@ -1918,9 +1927,27 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     };
   }, [activeRoomType, activeRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load roulette position/scale when entering a casino room
+  useEffect(() => {
+    if (activeRoomType !== "casino") return;
+    supabase.from("chat_rooms").select("roulette_gx, roulette_gy, roulette_scale").eq("id", activeRoomId).single().then(({ data }) => {
+      if (!data) return;
+      setRouletteGx(data.roulette_gx ?? null);
+      setRouletteGy(data.roulette_gy ?? null);
+      setRouletteScale(data.roulette_scale ?? 1.0);
+    });
+  }, [activeRoomId, activeRoomType]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleTileClick = (gx: number, gy: number) => {
     if (isDraggingRef.current) return;
     setCtxMenu(null);
+    // Roulette move mode (admin)
+    if (rouletteMoveMode && isAdmin) {
+      supabase.from("chat_rooms").update({ roulette_gx: gx, roulette_gy: gy }).eq("id", activeRoomId);
+      setRouletteGx(gx); setRouletteGy(gy);
+      setRouletteMoveMode(false);
+      return;
+    }
     if (movingBotId) {
       supabase.from("virtual_room_bots").update({ gx, gy }).eq("id", movingBotId);
       setMovingBotId(null);
@@ -1933,10 +1960,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (Array.from(users.values()).some(u => u.user_id !== currentProfile.id && u.gx === gx && u.gy === gy)) return;
     if (bots.some(b => b.gx === gx && b.gy === gy)) return;
     if (!isAdmin && lockedTiles.has(`${gx},${gy}`)) return;
-    // Block center tiles when in casino room (where roulette wheel sits)
+    // Block roulette area tiles in casino room
     if (activeRoomType === "casino") {
-      const cx = Math.floor(roomCols / 2), cy = Math.floor(roomRows / 2);
-      if (Math.abs(gx - cx) <= 1 && Math.abs(gy - cy) <= 1) return;
+      const rgx = rouletteGx ?? Math.floor(roomCols / 2);
+      const rgy = rouletteGy ?? Math.floor(roomRows / 2);
+      if (Math.abs(gx - rgx) <= 1 && Math.abs(gy - rgy) <= 1) return;
     }
     moveMyPos(gx, gy); broadcastMove(gx, gy);
   };
@@ -3005,16 +3033,31 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       <text x={x} y={y + 3} textAnchor="middle" fontSize={7} fill="rgba(239,68,68,0.7)" style={{ pointerEvents: "none", userSelect: "none" }}>🔒</text>
                     )}
 
-                    {/* Casino roulette table surface — color center tiles green */}
+                    {/* Casino Las Vegas felt table surface */}
                     {activeRoomType === "casino" && (() => {
-                      const cx = Math.floor(roomCols / 2), cy = Math.floor(roomRows / 2);
-                      if (Math.abs(gx - cx) <= 1 && Math.abs(gy - cy) <= 1) {
-                        const isCenter = gx === cx && gy === cy;
+                      const rcx = rouletteGx ?? Math.floor(roomCols / 2);
+                      const rcy = rouletteGy ?? Math.floor(roomRows / 2);
+                      const dx = gx - rcx, dy = gy - rcy;
+                      if (Math.abs(dx) <= 2 && Math.abs(dy) <= 2) {
+                        const isCenter = dx === 0 && dy === 0;
+                        const isEdge = Math.abs(dx) === 2 || Math.abs(dy) === 2;
+                        // Felt color: center=dark green, ring=casino green, border=deep gold
+                        const feltFill = isEdge ? "#3b1800" : isCenter ? "#052e1c" : "#064e3b";
+                        const feltStroke = isEdge ? "#92400e" : "#059669";
+                        const pts = tilePts(x, y);
                         return (
-                          <polygon points={tilePts(x, y)}
-                            fill={isCenter ? "#064e3b" : "#065f46"}
-                            stroke="#059669" strokeWidth={1}
-                          />
+                          <>
+                            <polygon points={pts} fill={feltFill} stroke={feltStroke} strokeWidth={isEdge ? 1.5 : 1} />
+                            {/* Gold border decorative lines on felt */}
+                            {!isEdge && (
+                              <polygon points={pts}
+                                fill="none"
+                                stroke={isCenter ? "rgba(251,191,36,0.25)" : "rgba(251,191,36,0.12)"}
+                                strokeWidth={isCenter ? 1.2 : 0.7}
+                                strokeDasharray={isCenter ? "none" : "3 3"}
+                              />
+                            )}
+                          </>
                         );
                       }
                       return null;
@@ -3035,10 +3078,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
               {/* ── Roulette table & wheel (casino rooms only) ── */}
               {activeRoomType === "casino" && (() => {
-                const tcx = Math.floor(roomCols / 2);
-                const tcy = Math.floor(roomRows / 2);
+                const tcx = rouletteGx ?? Math.floor(roomCols / 2);
+                const tcy = rouletteGy ?? Math.floor(roomRows / 2);
                 const { x: cx, y: cy } = isoCenter(tcx, tcy, svgW);
-                const rx = TW * 1.1;  // horizontal radius
+                const scale = rouletteScale ?? 1.0;
+                const rx = TW * 1.1 * scale;  // horizontal radius
                 const ry = rx * (TH / TW) * 0.85; // isometric compression
                 const numSlots = 37;
 
@@ -3074,10 +3118,33 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 const resultNum = rouletteRound?.result;
                 const resultColor = resultNum !== undefined ? rouletteColor(resultNum) : "black";
 
+                // Arrow pointer at result position (top of wheel, pointing inward)
+                const arrowAng = roulettePhase === "finished" && resultNum !== undefined
+                  ? (rouletteWheelAngleForResult(resultNum) * Math.PI) / 180 - Math.PI / 2
+                  : null;
+                const arrowTipRx = rx + 5;
+                const arrowTipRy = ry + 2.5;
+                const arrowTip = arrowAng !== null ? {
+                  x: cx + arrowTipRx * Math.cos(arrowAng),
+                  y: (cy - TH * 0.3) + arrowTipRy * Math.sin(arrowAng),
+                } : null;
+                const arrowBase1 = arrowAng !== null ? {
+                  x: cx + (arrowTipRx + 10) * Math.cos(arrowAng + 0.18),
+                  y: (cy - TH * 0.3) + (arrowTipRy + 5) * Math.sin(arrowAng + 0.18),
+                } : null;
+                const arrowBase2 = arrowAng !== null ? {
+                  x: cx + (arrowTipRx + 10) * Math.cos(arrowAng - 0.18),
+                  y: (cy - TH * 0.3) + (arrowTipRy + 5) * Math.sin(arrowAng - 0.18),
+                } : null;
+
                 return (
-                  <g style={{ pointerEvents: "none" }}>
-                    {/* Bezel */}
-                    <ellipse cx={cx} cy={cy - TH * 0.3} rx={rx + 6} ry={ry + 3} fill="#111827" stroke="#374151" strokeWidth={2} />
+                  <g
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setRightPanel(p => p === "roulette" ? p : "roulette")}
+                  >
+                    {/* Outer gold ring / bezel */}
+                    <ellipse cx={cx} cy={cy - TH * 0.3} rx={rx + 9} ry={ry + 4.5} fill="#78350f" stroke="#fbbf24" strokeWidth={1.5} />
+                    <ellipse cx={cx} cy={cy - TH * 0.3} rx={rx + 6} ry={ry + 3} fill="#111827" stroke="#374151" strokeWidth={1.5} />
                     {/* Segments */}
                     {segments}
                     {/* Inner hub */}
@@ -3100,7 +3167,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       const tx = cx + tr * Math.cos(midA);
                       const ty = (cy - TH * 0.3) + tRy * Math.sin(midA);
                       return (
-                        <text key={`n-${i}`} x={tx} y={ty + 2} textAnchor="middle" fontSize={5.5} fontWeight="900"
+                        <text key={`n-${i}`} x={tx} y={ty + 2} textAnchor="middle" fontSize={5.5 * scale} fontWeight="900"
                           fill="white" fontFamily="system-ui,sans-serif" opacity={0.92}>
                           {num}
                         </text>
@@ -3108,7 +3175,15 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     })}
                     {/* Ball */}
                     {(roulettePhase === "spinning" || roulettePhase === "finished") && (
-                      <circle cx={ballX} cy={ballY} r={4} fill="white" stroke="#e5e7eb" strokeWidth={0.8} />
+                      <circle cx={ballX} cy={ballY} r={4 * scale} fill="white" stroke="#e5e7eb" strokeWidth={0.8} />
+                    )}
+                    {/* Arrow pointer at result */}
+                    {roulettePhase === "finished" && arrowTip && arrowBase1 && arrowBase2 && (
+                      <polygon
+                        points={`${arrowTip.x.toFixed(1)},${arrowTip.y.toFixed(1)} ${arrowBase1.x.toFixed(1)},${arrowBase1.y.toFixed(1)} ${arrowBase2.x.toFixed(1)},${arrowBase2.y.toFixed(1)}`}
+                        fill="#fbbf24" stroke="#92400e" strokeWidth={1}
+                        style={{ filter: "drop-shadow(0 0 3px rgba(251,191,36,0.8))" }}
+                      />
                     )}
                     {/* Result or phase label */}
                     {roulettePhase === "finished" && resultNum !== undefined && (
@@ -3137,6 +3212,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         stroke="rgba(0,0,0,0.8)" strokeWidth={1.5} paintOrder="stroke">
                         🎰
                       </text>
+                    )}
+                    {/* Admin move mode indicator */}
+                    {rouletteMoveMode && isAdmin && (
+                      <ellipse cx={cx} cy={cy - TH * 0.3} rx={rx + 12} ry={ry + 6}
+                        fill="none" stroke="#6366f1" strokeWidth={2} strokeDasharray="6 3"
+                        style={{ animation: "none", opacity: 0.8 }}
+                      />
                     )}
                   </g>
                 );
@@ -3885,6 +3967,35 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           ))}
                         </div>
                     }
+                  </div>
+                )}
+
+                {/* ── Admin controls ── */}
+                {isAdmin && (
+                  <div className="mx-3 mb-3 mt-2 p-3 rounded-xl bg-violet-500/[0.06] border border-violet-500/20 flex-shrink-0">
+                    <p className="text-[10px] font-bold text-violet-400 uppercase tracking-widest mb-2">Admin · Bord</p>
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={() => setRouletteMoveMode(m => !m)}
+                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${rouletteMoveMode ? "bg-indigo-500/20 border-indigo-400/50 text-indigo-300" : "bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+                        {rouletteMoveMode ? "Klik en tile..." : "Flyt bord"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const ns = Math.max(0.5, parseFloat((rouletteScale - 0.25).toFixed(2)));
+                          setRouletteScale(ns);
+                          supabase.from("chat_rooms").update({ roulette_scale: ns }).eq("id", activeRoomId);
+                        }}
+                        className="w-9 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] text-slate-400 hover:text-slate-200 font-bold text-[14px] flex items-center justify-center transition-colors">−</button>
+                      <span className="w-8 flex items-center justify-center text-[11px] font-bold text-slate-400">{rouletteScale.toFixed(1)}×</span>
+                      <button
+                        onClick={() => {
+                          const ns = Math.min(3.0, parseFloat((rouletteScale + 0.25).toFixed(2)));
+                          setRouletteScale(ns);
+                          supabase.from("chat_rooms").update({ roulette_scale: ns }).eq("id", activeRoomId);
+                        }}
+                        className="w-9 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] text-slate-400 hover:text-slate-200 font-bold text-[14px] flex items-center justify-center transition-colors">+</button>
+                    </div>
                   </div>
                 )}
               </>
