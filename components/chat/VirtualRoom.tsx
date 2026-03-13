@@ -1338,7 +1338,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         .order("created_at", { ascending: true })
         .limit(100),
       conv?.partner_id
-        ? supabase.from("user_wardrobe")
+        ? supabase.from("virtual_user_wardrobe")
             .select("clothing_id")
             .eq("user_id", conv.partner_id)
             .eq("equipped", true)
