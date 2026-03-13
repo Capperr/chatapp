@@ -2977,7 +2977,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 const textColor = bc === "#ffffff" || bc === "#fde68a" || bc === "#86efac" || bc === "#93c5fd" || bc === "#fca5a5" ? "#111827" : "#ffffff";
                 const tailColor = bc;
                 return (
-                  <div key={key} style={{ position: "absolute", ...pos, transform: "translate(-50%, -100%)", pointerEvents: "none", zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                  <div key={key} style={{ position: "absolute", ...pos, transform: "translate(-50%, -100%)", transition: "left 0.38s cubic-bezier(0.22,1,0.36,1), top 0.38s cubic-bezier(0.22,1,0.36,1)", pointerEvents: "none", zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                     {messages.map((m, i) => {
                       const isNewest = i === messages.length - 1;
                       const opacity = i === 0 && messages.length === 3 ? 0.55 : i === 1 && messages.length >= 2 ? 0.78 : 1;
