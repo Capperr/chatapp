@@ -489,6 +489,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const roomRowsRef = useRef(DEFAULT_ROWS);
   const outfitRef = useRef<Record<string, string>>({});
   const roomJoinedAtRef = useRef<number>(Date.now());
+  const userLastActivityRef = useRef<Map<string, number>>(new Map());
   const botsRef = useRef<RoomBot[]>([]);
   const usersRef = useRef<Map<string, PresenceUser>>(new Map());
   const coinsRef = useRef(1000);
@@ -1506,7 +1507,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   // Main presence/broadcast channel
   useEffect(() => {
-    setUsers(new Map()); setBubbles(new Map());
+    setUsers(new Map()); setBubbles(new Map()); userLastActivityRef.current = new Map();
     const ch = supabase.channel(`virtual-${activeRoomId}`, { config: { presence: { key: currentProfile.id } } });
     channelRef.current = ch;
     const startPos = myPosRef.current;
@@ -1547,6 +1548,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       .on("broadcast", { event: "move" }, ({ payload }) => {
         const p = payload as PresenceUser;
         if (!p?.user_id || p.user_id === currentProfile.id || p.invisible) return;
+        userLastActivityRef.current.set(p.user_id, Date.now());
         setUsers(prev => { const m = new Map(prev); m.set(p.user_id, p); return m; });
       })
       .on("broadcast", { event: "admin_move" }, ({ payload }) => {
@@ -1605,6 +1607,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${activeRoomId}` }, async (payload) => {
         const sid: string = payload.new.user_id; const txt: string = payload.new.content;
+        // Track activity for idle detection
+        if (sid === currentProfile.id) lastActivityRef.current = Date.now();
+        else userLastActivityRef.current.set(sid, Date.now());
         const newBubble: SpeechBubble = { id: Date.now() + Math.random(), text: txt, ts: Date.now() };
         setBubbles(prev => { const m = new Map(prev); const existing = m.get(sid) ?? []; m.set(sid, [...existing.slice(-3), newBubble]); return m; });
         setTimeout(() => { setBubbles(prev => { const m = new Map(prev); const arr = m.get(sid); if (!arr) return prev; const f = arr.filter(b => b.id !== newBubble.id); if (f.length === 0) m.delete(sid); else m.set(sid, f); return m; }); }, 7000);
@@ -2878,6 +2883,32 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             <text x={18} y={-AR_S + 8.5} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif">🔇</text>
                           </g>
                         )}
+                        {/* ZZZ idle effect — shown after 10 min of inactivity (move/chat) */}
+                        {(() => {
+                          const lastAct = isMe
+                            ? lastActivityRef.current
+                            : (userLastActivityRef.current.get(user.user_id) ?? null);
+                          if (lastAct === null) return null; // no data yet for remote user
+                          if (Date.now() - lastAct < 10 * 60 * 1000) return null;
+                          const ZS = [
+                            { sz: 7,  dx: 12, baseY: -AR_S * 2.1,      delay: "0s"   },
+                            { sz: 9,  dx: 20, baseY: -AR_S * 2.1 - 10, delay: "0.8s" },
+                            { sz: 12, dx: 29, baseY: -AR_S * 2.1 - 22, delay: "1.6s" },
+                          ];
+                          return (
+                            <g style={{ pointerEvents: "none" }}>
+                              {ZS.map(({ sz, dx, baseY, delay }, i) => (
+                                <text key={i} x={dx} y={baseY} textAnchor="middle" fontSize={sz} fontWeight="900"
+                                  fill="#fbbf24" fontFamily="system-ui,sans-serif"
+                                  stroke="rgba(0,0,0,0.75)" strokeWidth={1.5} paintOrder="stroke" opacity={0}>
+                                  <animate attributeName="opacity" values="0;1;0" dur="2.4s" begin={delay} repeatCount="indefinite" />
+                                  <animate attributeName="y" from={`${baseY}`} to={`${baseY - 16}`} dur="2.4s" begin={delay} repeatCount="indefinite" />
+                                  Z
+                                </text>
+                              ))}
+                            </g>
+                          );
+                        })()}
                         {/* Bubbles are rendered in the HTML overlay for zoom-independence */}
                         {/* Level-up ring animation — shown for self and others */}
                         {(isMe ? showLevelUp : otherLevelUps.get(user.user_id) ?? null) !== null && (() => {
