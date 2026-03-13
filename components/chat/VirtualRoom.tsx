@@ -1057,6 +1057,22 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         for (const arr of Object.values(state)) { const p = arr[0] as GlobalUser; if (p?.user_id) all.set(p.user_id, p); }
         setGlobalUsers(all);
       })
+      .on("broadcast", { event: "user_muted" }, ({ payload }) => {
+        const p = payload as { user_id: string; muted_until: string | null };
+        // Update the room muted set for everyone
+        setMutedUsers(prev => {
+          const s = new Set(prev);
+          if (p.muted_until && p.muted_until > new Date().toISOString()) s.add(p.user_id);
+          else s.delete(p.user_id);
+          return s;
+        });
+        // If I am the muted user, update my own mute state immediately
+        if (p.user_id === currentProfile.id) {
+          const mu = p.muted_until && new Date(p.muted_until) > new Date() ? p.muted_until : null;
+          setMyMutedUntil(mu);
+          myMutedUntilRef.current = mu;
+        }
+      })
       .on("broadcast", { event: "trade_request" }, ({ payload }) => {
         const p = payload as TradeRequest & { to_id: string };
         if (p.to_id !== currentProfile.id) return;
@@ -3327,6 +3343,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               const updatePV = async (patch: Partial<Profile>) => {
                 const { data } = await supabase.from("profiles").update(patch).eq("id", profileView.id).select().single();
                 if (data) setProfileView(data as Profile);
+                // Broadcast mute changes so all clients update in real time
+                if ("muted_until" in patch) {
+                  globalChannelRef.current?.send({ type: "broadcast", event: "user_muted", payload: { user_id: profileView.id, muted_until: patch.muted_until ?? null } });
+                }
               };
               return (
                 <>
@@ -3433,13 +3453,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         </div>
                         <div className="p-2 space-y-1.5">
                           {isMutedNow ? (
-                            <button onClick={() => updatePV({ muted_until: null }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.delete(profileView.id); return s; }))} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">
+                            <button onClick={() => updatePV({ muted_until: null })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">
                               <Volume2 className="w-3.5 h-3.5" /> Fjern mute
                             </button>
                           ) : (
                             <div className="grid grid-cols-2 gap-1.5">
                               {([["15 min", 15], ["1 time", 60], ["24 timer", 1440], ["Permanent", 5256000]] as [string, number][]).map(([l, m]) => (
-                                <button key={l} onClick={() => { const until = new Date(Date.now() + m * 60000).toISOString(); updatePV({ muted_until: until }).then(() => setMutedUsers(prev => { const s = new Set(prev); s.add(profileView.id); return s; })); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"><VolumeX className="w-3 h-3 flex-shrink-0" />{l}</button>
+                                <button key={l} onClick={() => { const until = new Date(Date.now() + m * 60000).toISOString(); updatePV({ muted_until: until }); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"><VolumeX className="w-3 h-3 flex-shrink-0" />{l}</button>
                               ))}
                             </div>
                           )}
