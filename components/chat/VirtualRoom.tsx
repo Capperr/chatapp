@@ -665,6 +665,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [rouletteLastWin, setRouletteLastWin] = useState<number | null>(null);
   const rouletteProcessedRef = useRef<Set<number>>(new Set());
   const roulettePlacedRef = useRef<Set<number>>(new Set()); // rounds where we already placed bets
+  const [rouletteTab, setRouletteTab] = useState<"bet" | "history">("bet");
+  const [rouletteMyHistory, setRouletteMyHistory] = useState<RouletteBet[]>([]);
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const xpRef = useRef(0);
@@ -1843,8 +1845,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       const now = Date.now();
       const roundId = Math.floor(now / ROULETTE_ROUND_MS);
       const msInRound = now % ROULETTE_ROUND_MS;
-      const timeLeft = Math.ceil((ROULETTE_ROUND_MS - msInRound) / 1000);
-      setRouletteTimeLeft(timeLeft);
+      // Show countdown within the betting phase (10s → 1s)
+      const betTimeLeft = Math.max(0, Math.ceil((ROULETTE_BET_MS - msInRound) / 1000));
+      setRouletteTimeLeft(betTimeLeft);
 
       if (msInRound < ROULETTE_BET_MS) {
         // Betting phase
@@ -3089,6 +3092,20 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       const oy = (cy - TH * 0.3) + ry * Math.sin(a);
                       return <line key={i} x1={cx} y1={cy - TH * 0.3} x2={ox} y2={oy} stroke="rgba(0,0,0,0.6)" strokeWidth={0.4} />;
                     })}
+                    {/* Segment numbers */}
+                    {ROULETTE_WHEEL_ORDER.map((num, i) => {
+                      const midA = (i / numSlots) * 2 * Math.PI - Math.PI / 2;
+                      const tr = rx * 0.70;
+                      const tRy = ry * 0.70;
+                      const tx = cx + tr * Math.cos(midA);
+                      const ty = (cy - TH * 0.3) + tRy * Math.sin(midA);
+                      return (
+                        <text key={`n-${i}`} x={tx} y={ty + 2} textAnchor="middle" fontSize={5.5} fontWeight="900"
+                          fill="white" fontFamily="system-ui,sans-serif" opacity={0.92}>
+                          {num}
+                        </text>
+                      );
+                    })}
                     {/* Ball */}
                     {(roulettePhase === "spinning" || roulettePhase === "finished") && (
                       <circle cx={ballX} cy={ballY} r={4} fill="white" stroke="#e5e7eb" strokeWidth={0.8} />
@@ -3605,8 +3622,14 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           {extensionOpen && (
           <div className={`absolute right-2 top-2 bottom-2 z-30 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl w-[min(400px,calc(100%-16px))] flex flex-col bg-[#030912]/98 overflow-hidden`}>
             {/* Roulette panel */}
-            {rightPanel === "roulette" && activeRoomType === "casino" && (
+            {rightPanel === "roulette" && activeRoomType === "casino" && (() => {
+              const betLabel = (type: string, value: string) =>
+                type === "number" ? `#${value}` : type === "red" ? "Rød" : type === "black" ? "Sort" : type === "green" ? "Grøn" : type === "odd" ? "Ulige" : type === "even" ? "Lige" : type === "low" ? "1-18" : type === "high" ? "19-36" : type === "dozen1" ? "1-12" : type === "dozen2" ? "13-24" : type === "dozen3" ? "25-36" : type;
+              const maxPayout = (type: string) => type === "number" || type === "green" ? 36 : type.startsWith("dozen") || type.startsWith("col") ? 3 : 2;
+              const oddsLabel = (type: string) => type === "number" || type === "green" ? "35:1" : type.startsWith("dozen") || type.startsWith("col") ? "2:1" : "1:1";
+              return (
               <>
+                {/* Header */}
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <span className="text-lg">🎰</span>
@@ -3618,191 +3641,255 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto flex flex-col">
-                  {/* Win toast */}
-                  {rouletteLastWin !== null && (
-                    <div className="mx-3 mt-3 px-3 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center gap-2">
-                      <span className="text-lg">🏆</span>
-                      <div>
-                        <p className="text-[13px] font-bold text-emerald-400">Du vandt!</p>
-                        <p className="text-[12px] text-emerald-300">+{rouletteLastWin} 🪙</p>
+                {/* Tabs */}
+                <div className="flex border-b border-white/[0.06] flex-shrink-0">
+                  {(["bet", "history"] as const).map(tab => (
+                    <button key={tab} onClick={() => {
+                      setRouletteTab(tab);
+                      if (tab === "history") {
+                        supabase.from("roulette_bets").select("*").eq("user_id", currentProfile.id).eq("room_id", activeRoomId).order("created_at", { ascending: false }).limit(30).then(({ data }) => { if (data) setRouletteMyHistory(data as RouletteBet[]); });
+                      }
+                    }}
+                      className={`flex-1 py-2 text-[12px] font-bold transition-colors ${rouletteTab === tab ? "text-amber-400 border-b-2 border-amber-400 -mb-px" : "text-slate-500 hover:text-slate-300"}`}>
+                      {tab === "bet" ? "Spil" : "Mine bets"}
+                    </button>
+                  ))}
+                </div>
+
+                {/* ── Tab: Spil ── */}
+                {rouletteTab === "bet" && (
+                  <div className="flex-1 overflow-y-auto flex flex-col">
+
+                    {/* Win toast */}
+                    {rouletteLastWin !== null && (
+                      <div className="mx-3 mt-3 px-3 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center gap-2">
+                        <span className="text-lg">🏆</span>
+                        <div>
+                          <p className="text-[13px] font-bold text-emerald-400">Du vandt!</p>
+                          <p className="text-[12px] text-emerald-300">+{rouletteLastWin} 🪙</p>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Result display */}
-                  {roulettePhase !== "betting" && rouletteRound && (
-                    <div className="mx-3 mt-3 px-4 py-3 rounded-xl border text-center"
-                      style={{
-                        background: roulettePhase === "finished"
-                          ? (rouletteColor(rouletteRound.result) === "red" ? "rgba(127,29,29,0.3)" : rouletteColor(rouletteRound.result) === "green" ? "rgba(6,78,59,0.3)" : "rgba(17,24,39,0.5)")
-                          : "rgba(30,20,5,0.4)",
-                        borderColor: roulettePhase === "finished"
-                          ? (rouletteColor(rouletteRound.result) === "red" ? "rgba(239,68,68,0.3)" : rouletteColor(rouletteRound.result) === "green" ? "rgba(16,185,129,0.3)" : "rgba(107,114,128,0.3)")
-                          : "rgba(251,191,36,0.2)"
-                      }}>
-                      {roulettePhase === "spinning" && <p className="text-[13px] text-amber-400 font-bold animate-pulse">🎰 Spinner...</p>}
-                      {roulettePhase === "finished" && (
-                        <>
-                          <p className="text-[28px] font-black tabular-nums" style={{ color: rouletteColor(rouletteRound.result) === "red" ? "#ef4444" : rouletteColor(rouletteRound.result) === "green" ? "#10b981" : "#f9fafb" }}>{rouletteRound.result}</p>
-                          <p className="text-[12px] font-semibold mt-0.5" style={{ color: rouletteColor(rouletteRound.result) === "red" ? "#fca5a5" : rouletteColor(rouletteRound.result) === "green" ? "#6ee7b7" : "#9ca3af" }}>
-                            {rouletteColor(rouletteRound.result) === "red" ? "Rød" : rouletteColor(rouletteRound.result) === "green" ? "Grøn" : "Sort"} · {rouletteRound.result === 0 ? "—" : rouletteRound.result % 2 === 0 ? "Lige" : "Ulige"}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Bet form — only during betting phase */}
-                  {roulettePhase === "betting" && (
-                    <div className="mx-3 mt-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Placer indsats</p>
-
-                      {/* Bet type tabs */}
-                      <div className="flex flex-wrap gap-1 mb-2.5">
-                        {[
-                          { type: "red",    value: "red",    label: "Rød",   color: "bg-red-800/60 text-red-300 border-red-700/40" },
-                          { type: "black",  value: "black",  label: "Sort",  color: "bg-gray-800/80 text-gray-300 border-gray-600/40" },
-                          { type: "green",  value: "green",  label: "Grøn",  color: "bg-emerald-900/60 text-emerald-300 border-emerald-700/40" },
-                          { type: "odd",    value: "odd",    label: "Ulige", color: "bg-violet-900/40 text-violet-300 border-violet-700/40" },
-                          { type: "even",   value: "even",   label: "Lige",  color: "bg-violet-900/40 text-violet-300 border-violet-700/40" },
-                          { type: "low",    value: "low",    label: "1-18",  color: "bg-blue-900/40 text-blue-300 border-blue-700/40" },
-                          { type: "high",   value: "high",   label: "19-36", color: "bg-blue-900/40 text-blue-300 border-blue-700/40" },
-                          { type: "dozen1", value: "dozen1", label: "1-12",  color: "bg-orange-900/40 text-orange-300 border-orange-700/40" },
-                          { type: "dozen2", value: "dozen2", label: "13-24", color: "bg-orange-900/40 text-orange-300 border-orange-700/40" },
-                          { type: "dozen3", value: "dozen3", label: "25-36", color: "bg-orange-900/40 text-orange-300 border-orange-700/40" },
-                        ].map(opt => (
-                          <button key={opt.type}
-                            onClick={() => { setRouletteBetType(opt.type); setRouletteBetValue(opt.value); }}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition-all ${rouletteBetType === opt.type ? opt.color + " ring-1 ring-white/20" : "bg-white/[0.04] text-slate-500 border-white/[0.06] hover:bg-white/[0.08]"}`}>
-                            {opt.label}
-                          </button>
-                        ))}
-                        <button
-                          onClick={() => { setRouletteBetType("number"); setRouletteBetValue("0"); }}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition-all ${rouletteBetType === "number" ? "bg-amber-900/40 text-amber-300 border-amber-700/40 ring-1 ring-white/20" : "bg-white/[0.04] text-slate-500 border-white/[0.06] hover:bg-white/[0.08]"}`}>
-                          Tal
-                        </button>
+                    {/* Result display */}
+                    {roulettePhase !== "betting" && rouletteRound && (
+                      <div className="mx-3 mt-3 px-4 py-3 rounded-xl border text-center"
+                        style={{
+                          background: roulettePhase === "finished"
+                            ? (rouletteColor(rouletteRound.result) === "red" ? "rgba(127,29,29,0.3)" : rouletteColor(rouletteRound.result) === "green" ? "rgba(6,78,59,0.3)" : "rgba(17,24,39,0.5)")
+                            : "rgba(30,20,5,0.4)",
+                          borderColor: roulettePhase === "finished"
+                            ? (rouletteColor(rouletteRound.result) === "red" ? "rgba(239,68,68,0.3)" : rouletteColor(rouletteRound.result) === "green" ? "rgba(16,185,129,0.3)" : "rgba(107,114,128,0.3)")
+                            : "rgba(251,191,36,0.2)"
+                        }}>
+                        {roulettePhase === "spinning" && <p className="text-[13px] text-amber-400 font-bold animate-pulse">🎰 Spinner...</p>}
+                        {roulettePhase === "finished" && (
+                          <>
+                            <p className="text-[28px] font-black tabular-nums" style={{ color: rouletteColor(rouletteRound.result) === "red" ? "#ef4444" : rouletteColor(rouletteRound.result) === "green" ? "#10b981" : "#f9fafb" }}>{rouletteRound.result}</p>
+                            <p className="text-[12px] font-semibold mt-0.5" style={{ color: rouletteColor(rouletteRound.result) === "red" ? "#fca5a5" : rouletteColor(rouletteRound.result) === "green" ? "#6ee7b7" : "#9ca3af" }}>
+                              {rouletteColor(rouletteRound.result) === "red" ? "Rød" : rouletteColor(rouletteRound.result) === "green" ? "Grøn" : "Sort"} · {rouletteRound.result === 0 ? "—" : rouletteRound.result % 2 === 0 ? "Lige" : "Ulige"}
+                            </p>
+                          </>
+                        )}
                       </div>
+                    )}
 
-                      {/* Number picker if "number" selected */}
-                      {rouletteBetType === "number" && (
+                    {/* Bet form — betting phase */}
+                    {roulettePhase === "betting" && (
+                      <div className="mx-3 mt-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+
+                        {/* Quick bets row */}
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Hurtig indsats</p>
+                        <div className="grid grid-cols-3 gap-1 mb-2">
+                          {[
+                            { type: "red",    value: "red",    label: "Rød",   bg: "#7f1d1d", border: "#dc2626", tc: "#fca5a5" },
+                            { type: "black",  value: "black",  label: "Sort",  bg: "#111827", border: "#4b5563", tc: "#d1d5db" },
+                            { type: "green",  value: "green",  label: "0 Grøn",bg: "#064e3b", border: "#059669", tc: "#6ee7b7" },
+                            { type: "odd",    value: "odd",    label: "Ulige", bg: "#1e1b4b", border: "#6366f1", tc: "#a5b4fc" },
+                            { type: "even",   value: "even",   label: "Lige",  bg: "#1e1b4b", border: "#6366f1", tc: "#a5b4fc" },
+                            { type: "low",    value: "low",    label: "1–18",  bg: "#172554", border: "#3b82f6", tc: "#93c5fd" },
+                            { type: "high",   value: "high",   label: "19–36", bg: "#172554", border: "#3b82f6", tc: "#93c5fd" },
+                            { type: "dozen1", value: "dozen1", label: "1–12",  bg: "#431407", border: "#f97316", tc: "#fdba74" },
+                            { type: "dozen2", value: "dozen2", label: "13–24", bg: "#431407", border: "#f97316", tc: "#fdba74" },
+                            { type: "dozen3", value: "dozen3", label: "25–36", bg: "#431407", border: "#f97316", tc: "#fdba74" },
+                          ].map(opt => (
+                            <button key={opt.type}
+                              onClick={() => { setRouletteBetType(opt.type); setRouletteBetValue(opt.value); }}
+                              className="py-1.5 rounded-lg text-[11px] font-bold border-2 transition-all"
+                              style={{
+                                background: rouletteBetType === opt.type ? opt.bg : "rgba(255,255,255,0.03)",
+                                borderColor: rouletteBetType === opt.type ? opt.border : "rgba(255,255,255,0.07)",
+                                color: rouletteBetType === opt.type ? opt.tc : "#64748b",
+                                boxShadow: rouletteBetType === opt.type ? `0 0 8px ${opt.border}55` : "none",
+                              }}>
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Number grid - casino table layout */}
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Direkte tal (35:1)</p>
                         <div className="mb-2.5">
-                          <p className="text-[10px] text-slate-500 mb-1">Vælg tal (0-36)</p>
-                          <div className="flex flex-wrap gap-0.5 max-h-28 overflow-y-auto">
-                            {Array.from({ length: 37 }, (_, i) => {
-                              const col = rouletteColor(i);
-                              return (
-                                <button key={i}
-                                  onClick={() => setRouletteBetValue(String(i))}
-                                  className={`w-7 h-7 rounded text-[10px] font-bold transition-all ${rouletteBetValue === String(i) ? "ring-2 ring-white/50 scale-110" : ""}`}
-                                  style={{ background: col === "red" ? "#7f1d1d" : col === "green" ? "#064e3b" : "#111827", color: col === "red" ? "#fca5a5" : col === "green" ? "#6ee7b7" : "#d1d5db" }}>
-                                  {i}
-                                </button>
-                              );
+                          {/* 0 spanning full width */}
+                          <button
+                            onClick={() => { setRouletteBetType("number"); setRouletteBetValue("0"); }}
+                            className="w-full py-1 rounded text-[11px] font-black mb-0.5 border-2 transition-all"
+                            style={{ background: rouletteBetType === "number" && rouletteBetValue === "0" ? "#064e3b" : "#052e16", borderColor: rouletteBetType === "number" && rouletteBetValue === "0" ? "#10b981" : "#065f46", color: "#6ee7b7" }}>
+                            0
+                          </button>
+                          {/* 1-36 in 3 columns (casino layout: cols = numbers modulo 3) */}
+                          <div className="grid grid-cols-3 gap-0.5">
+                            {[3,6,9,12,15,18,21,24,27,30,33,36].map((_, rowIdx) => {
+                              const row = rowIdx;
+                              return [1,2,3].map(col => {
+                                const n = (11 - row) * 3 + col;
+                                if (n < 1 || n > 36) return null;
+                                const colR = rouletteColor(n);
+                                const sel = rouletteBetType === "number" && rouletteBetValue === String(n);
+                                return (
+                                  <button key={n}
+                                    onClick={() => { setRouletteBetType("number"); setRouletteBetValue(String(n)); }}
+                                    className="py-1 rounded text-[10px] font-black border transition-all"
+                                    style={{
+                                      background: sel ? (colR === "red" ? "#991b1b" : "#1f2937") : (colR === "red" ? "#450a0a" : "#0f172a"),
+                                      borderColor: sel ? (colR === "red" ? "#ef4444" : "#6b7280") : "transparent",
+                                      color: colR === "red" ? "#fca5a5" : "#d1d5db",
+                                      boxShadow: sel ? `0 0 6px ${colR === "red" ? "#ef444455" : "#6b728055"}` : "none",
+                                    }}>
+                                    {n}
+                                  </button>
+                                );
+                              });
                             })}
                           </div>
                         </div>
-                      )}
 
-                      {/* Amount */}
-                      <div className="flex items-center gap-2 mb-2.5">
-                        <span className="text-[11px] text-slate-500 flex-shrink-0">Indsats 🪙</span>
-                        <div className="flex items-center gap-1 flex-1">
-                          {[10, 25, 50, 100, 250].map(amt => (
+                        {/* Amount chips */}
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Beløb 🪙</p>
+                        <div className="flex gap-1 mb-1.5">
+                          {[10, 25, 50, 100, 250, 500].map(amt => (
                             <button key={amt}
                               onClick={() => setRouletteBetAmount(amt)}
-                              className={`flex-1 py-1 rounded text-[10px] font-bold transition-all ${rouletteBetAmount === amt ? "bg-amber-500/25 text-amber-300 border border-amber-500/30" : "bg-white/[0.04] text-slate-500 border border-white/[0.06] hover:bg-white/[0.08]"}`}>
+                              className="flex-1 py-1 rounded text-[10px] font-black transition-all border"
+                              style={{
+                                background: rouletteBetAmount === amt ? "#92400e" : "rgba(255,255,255,0.04)",
+                                borderColor: rouletteBetAmount === amt ? "#f59e0b" : "rgba(255,255,255,0.07)",
+                                color: rouletteBetAmount === amt ? "#fde68a" : "#64748b",
+                              }}>
                               {amt}
                             </button>
                           ))}
                         </div>
+                        <input type="number" min={1} max={coins} value={rouletteBetAmount}
+                          onChange={e => setRouletteBetAmount(Math.max(1, Math.min(coins, parseInt(e.target.value) || 1)))}
+                          className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-1.5 text-[13px] text-white outline-none focus:border-amber-500/50 mb-2" />
+
+                        {/* Summary + place bet */}
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[11px] text-slate-500">
+                            {rouletteBetType === "number" ? `#${rouletteBetValue}` : betLabel(rouletteBetType, rouletteBetValue)}
+                            <span className="text-slate-700 mx-1">·</span>
+                            <span className="text-amber-400/70">{oddsLabel(rouletteBetType)}</span>
+                          </p>
+                          <p className="text-[11px] font-bold text-emerald-500">max {rouletteBetAmount * maxPayout(rouletteBetType)} 🪙</p>
+                        </div>
+                        <button
+                          disabled={coins < rouletteBetAmount}
+                          onClick={async () => {
+                            if (!rouletteRound || roulettePhase !== "betting" || coins < rouletteBetAmount) return;
+                            const roundId = rouletteRound.id;
+                            const newCoins = coinsRef.current - rouletteBetAmount;
+                            coinsRef.current = newCoins;
+                            setCoins(newCoins);
+                            await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
+                            const { data: newBet } = await supabase.from("roulette_bets").insert({
+                              round_id: roundId, room_id: activeRoomId,
+                              user_id: currentProfile.id, display_name: currentProfile.display_name,
+                              avatar_color: myColor, bet_type: rouletteBetType,
+                              bet_value: rouletteBetValue, amount: rouletteBetAmount,
+                            }).select().single();
+                            if (newBet) setRouletteBets(prev => [...prev, newBet as RouletteBet]);
+                          }}
+                          className={`w-full py-2.5 rounded-xl text-[13px] font-black transition-all ${coins >= rouletteBetAmount ? "bg-gradient-to-r from-amber-600 to-amber-500 text-white hover:from-amber-500 hover:to-amber-400 shadow-[0_4px_16px_rgba(245,158,11,0.3)]" : "bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
+                          Sæt ind 🪙 {rouletteBetAmount}
+                        </button>
                       </div>
-                      <input
-                        type="number" min={1} max={coins} value={rouletteBetAmount}
-                        onChange={e => setRouletteBetAmount(Math.max(1, Math.min(coins, parseInt(e.target.value) || 1)))}
-                        className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-1.5 text-[13px] text-white outline-none focus:border-amber-500/50 mb-2.5"
-                      />
-
-                      {/* Potential payout info */}
-                      <p className="text-[10px] text-slate-600 mb-2">
-                        Mulighed: {rouletteBetAmount * (rouletteBetType === "number" ? 36 : rouletteBetType === "green" ? 36 : rouletteBetType.startsWith("dozen") || rouletteBetType.startsWith("col") ? 3 : 2)} 🪙
-                        {" "}({rouletteBetType === "number" ? "35:1" : rouletteBetType === "green" ? "35:1" : rouletteBetType.startsWith("dozen") || rouletteBetType.startsWith("col") ? "2:1" : "1:1"})
-                      </p>
-
-                      {/* Place bet button */}
-                      <button
-                        disabled={coins < rouletteBetAmount || roulettePlacedRef.current.has(rouletteRound?.id ?? -1)}
-                        onClick={async () => {
-                          if (!rouletteRound || roulettePhase !== "betting") return;
-                          if (coins < rouletteBetAmount) return;
-                          const roundId = rouletteRound.id;
-                          // Deduct coins
-                          const newCoins = coinsRef.current - rouletteBetAmount;
-                          coinsRef.current = newCoins;
-                          setCoins(newCoins);
-                          await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
-                          // Insert bet
-                          await supabase.from("roulette_bets").insert({
-                            round_id: roundId,
-                            room_id: activeRoomId,
-                            user_id: currentProfile.id,
-                            display_name: currentProfile.display_name,
-                            avatar_color: myColor,
-                            bet_type: rouletteBetType,
-                            bet_value: rouletteBetValue,
-                            amount: rouletteBetAmount,
-                          });
-                        }}
-                        className={`w-full py-2 rounded-xl text-[13px] font-bold transition-all ${coins >= rouletteBetAmount ? "bg-gradient-to-r from-emerald-600 to-emerald-500 text-white hover:from-emerald-500 hover:to-emerald-400 shadow-[0_4px_16px_rgba(16,185,129,0.25)]" : "bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
-                        Sæt ind 🪙 {rouletteBetAmount}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Live bets section */}
-                  <div className="mx-3 mt-3 mb-3">
-                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Aktive indsatser ({rouletteBets.length})</p>
-                    {rouletteBets.length === 0 && (
-                      <p className="text-[12px] text-slate-700 italic">Ingen indsatser endnu</p>
                     )}
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                      {rouletteBets.map(bet => {
-                        const isMe = bet.user_id === currentProfile.id;
-                        const betLabel = bet.bet_type === "number" ? `#${bet.bet_value}` : bet.bet_type === "red" ? "Rød" : bet.bet_type === "black" ? "Sort" : bet.bet_type === "green" ? "Grøn" : bet.bet_type === "odd" ? "Ulige" : bet.bet_type === "even" ? "Lige" : bet.bet_type === "low" ? "1-18" : bet.bet_type === "high" ? "19-36" : bet.bet_type === "dozen1" ? "1-12" : bet.bet_type === "dozen2" ? "13-24" : bet.bet_type === "dozen3" ? "25-36" : bet.bet_type;
-                        return (
-                          <div key={bet.id} className={`flex items-center gap-2 px-2.5 py-2 rounded-lg ${isMe ? "bg-violet-500/10 border border-violet-500/20" : "bg-white/[0.03] border border-white/[0.05]"}`}>
-                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: bet.avatar_color ?? "#8b5cf6" }} />
-                            <span className="text-[12px] font-semibold flex-1 truncate" style={{ color: bet.avatar_color ?? "#8b5cf6" }}>{bet.display_name}</span>
-                            <span className="text-[11px] text-slate-400">{betLabel}</span>
-                            <span className="text-[11px] font-bold text-amber-400">{bet.amount}🪙</span>
-                            {bet.won !== null && bet.won !== undefined && (
-                              <span className={`text-[11px] font-bold ${bet.won ? "text-emerald-400" : "text-rose-400"}`}>{bet.won ? `+${bet.payout}` : "-"}</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
 
-                  {/* History */}
-                  <div className="mx-3 mb-3">
-                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Seneste 10 resultater</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {rouletteHistory.map(h => {
-                        const col = rouletteColor(h.result);
-                        return (
-                          <div key={h.id} className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-black"
-                            style={{ background: col === "red" ? "#7f1d1d" : col === "green" ? "#064e3b" : "#111827", color: col === "red" ? "#fca5a5" : col === "green" ? "#6ee7b7" : "#d1d5db", border: `1px solid ${col === "red" ? "#dc2626" : col === "green" ? "#059669" : "#374151"}` }}>
-                            {h.result}
+                    {/* Live bets */}
+                    <div className="mx-3 mt-3">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Aktive indsatser ({rouletteBets.length})</p>
+                      {rouletteBets.length === 0
+                        ? <p className="text-[12px] text-slate-700 italic">Ingen indsatser endnu</p>
+                        : <div className="space-y-1 max-h-40 overflow-y-auto">
+                            {rouletteBets.map(bet => {
+                              const isMe = bet.user_id === currentProfile.id;
+                              return (
+                                <div key={bet.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg ${isMe ? "bg-amber-500/10 border border-amber-500/20" : "bg-white/[0.03] border border-white/[0.04]"}`}>
+                                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: bet.avatar_color ?? "#8b5cf6" }} />
+                                  <span className="text-[11px] font-semibold flex-1 truncate" style={{ color: bet.avatar_color ?? "#8b5cf6" }}>{bet.display_name}</span>
+                                  <span className="text-[10px] text-slate-500 font-bold">{betLabel(bet.bet_type, bet.bet_value)}</span>
+                                  <span className="text-[10px] font-black text-amber-400">{bet.amount}🪙</span>
+                                  {bet.won != null && (
+                                    <span className={`text-[10px] font-black ${bet.won ? "text-emerald-400" : "text-rose-400"}`}>{bet.won ? `+${bet.payout}` : "✗"}</span>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      })}
+                      }
+                    </div>
+
+                    {/* Recent results */}
+                    <div className="mx-3 mt-3 mb-3">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Seneste resultater</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {rouletteHistory.map(h => {
+                          const col = rouletteColor(h.result);
+                          return (
+                            <div key={h.id} className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black"
+                              style={{ background: col === "red" ? "#7f1d1d" : col === "green" ? "#064e3b" : "#111827", color: col === "red" ? "#fca5a5" : col === "green" ? "#6ee7b7" : "#d1d5db", border: `1px solid ${col === "red" ? "#dc2626" : col === "green" ? "#059669" : "#374151"}` }}>
+                              {h.result}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
+
+                {/* ── Tab: Mine bets ── */}
+                {rouletteTab === "history" && (
+                  <div className="flex-1 overflow-y-auto p-3">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Mine seneste bets</p>
+                    {rouletteMyHistory.length === 0
+                      ? <p className="text-[12px] text-slate-700 italic">Ingen bets endnu</p>
+                      : <div className="space-y-1.5">
+                          {rouletteMyHistory.map(bet => (
+                            <div key={bet.id} className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border ${bet.resolved ? (bet.won ? "bg-emerald-500/8 border-emerald-500/20" : "bg-rose-500/8 border-rose-500/15") : "bg-white/[0.03] border-white/[0.05]"}`}>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[12px] font-bold text-slate-200">{betLabel(bet.bet_type, bet.bet_value)}</span>
+                                  <span className="text-[10px] text-slate-600">·</span>
+                                  <span className="text-[11px] text-amber-400 font-bold">{bet.amount}🪙</span>
+                                </div>
+                                <p className="text-[10px] text-slate-600 mt-0.5">{new Date(bet.created_at ?? "").toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" })}</p>
+                              </div>
+                              {bet.resolved
+                                ? bet.won
+                                  ? <span className="text-[12px] font-black text-emerald-400">+{bet.payout}🪙</span>
+                                  : <span className="text-[12px] font-black text-rose-400">Tabt</span>
+                                : <span className="text-[11px] text-slate-600 animate-pulse">Afventer...</span>
+                              }
+                            </div>
+                          ))}
+                        </div>
+                    }
+                  </div>
+                )}
               </>
-            )}
+              );
+            })()}
 
             {/* Online users */}
             {rightPanel === "online" && (
