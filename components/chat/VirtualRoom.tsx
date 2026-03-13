@@ -620,6 +620,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [totalSeconds, setTotalSeconds] = useState(0);
   const accessTokenRef = useRef<string | null>(null);
   const [placingItem, setPlacingItem] = useState<{ item: RoomItem; rotation: number } | null>(null);
+  const [movingFloorItemId, setMovingFloorItemId] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panRef = useRef({ x: 0, y: 0 });
@@ -1574,7 +1575,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       if (myMutedUntilRef.current && new Date(myMutedUntilRef.current) > new Date()) return;
       if (e.key === "Enter") { sendDraftRef.current(); return; }
       if (e.key === "Escape") {
-        if (placingItem) { setPlacingItem(null); return; }
+        if (placingItem) { setPlacingItem(null); setMovingFloorItemId(null); return; }
         if (movingBotId) { setMovingBotId(null); return; }
         draftRef.current = ""; setDraft(""); return;
       }
@@ -1897,6 +1898,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (!placingItem || !isSpaceshipOwner) return;
     await supabase.from("virtual_room_items").update({ owner_id: null, gx, gy, rotation, wall_side: null }).eq("id", placingItem.item.id);
     setPlacingItem(null);
+    setMovingFloorItemId(null);
   };
 
   const placeWallItem = async (wall_side: string, wall_pos: number, wall_height: number) => {
@@ -2611,12 +2613,6 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     {isLocked && isAdmin && (
                       <text x={x} y={y + 3} textAnchor="middle" fontSize={7} fill="rgba(239,68,68,0.7)" style={{ pointerEvents: "none", userSelect: "none" }}>🔒</text>
                     )}
-                    {/* Ghost preview for place mode */}
-                    {isPlaceTarget && placingItem && (
-                      <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (placingItem.item.item_scale ?? 1)}) rotate(${placingItem.rotation * 90})`} opacity={0.65}>
-                        <ItemSVG type={placingItem.item.item_type} />
-                      </g>
-                    )}
 
                     {/* Shop counter (gy=0 row) */}
                     {activeRoomType === "shop" && gy === 0 && (
@@ -2636,21 +2632,43 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 type Sprite =
                   | { kind: "item"; item: RoomItem; gx: number; gy: number }
                   | { kind: "bot";  bot: RoomBot;   gx: number; gy: number }
-                  | { kind: "user"; user: PresenceUser; gx: number; gy: number };
+                  | { kind: "user"; user: PresenceUser; gx: number; gy: number }
+                  | { kind: "ghost"; item: RoomItem; rotation: number; gx: number; gy: number };
                 const sprites: Sprite[] = [];
-                items.filter(i => i.gx !== null && i.gy !== null && !i.wall_side).forEach(i => sprites.push({ kind: "item", item: i, gx: i.gx!, gy: i.gy! }));
+                // Exclude item being moved so it disappears from its old spot
+                items.filter(i => i.gx !== null && i.gy !== null && !i.wall_side && i.id !== movingFloorItemId).forEach(i => sprites.push({ kind: "item", item: i, gx: i.gx!, gy: i.gy! }));
+                // Ghost preview — show on hovered tile when placing/moving a floor item
+                if (placingItem && !isWallItemType(placingItem.item.item_type) && hovered) {
+                  const parts = hovered.split(",");
+                  const hgx = parseInt(parts[0]), hgy = parseInt(parts[1]);
+                  if (!isNaN(hgx) && !isNaN(hgy)) sprites.push({ kind: "ghost", item: placingItem.item, rotation: placingItem.rotation, gx: hgx, gy: hgy });
+                }
                 bots.filter(b => b.gx >= 0 && b.gx < roomCols && b.gy >= 0 && b.gy < roomRows).forEach(b => sprites.push({ kind: "bot", bot: b, gx: b.gx, gy: b.gy }));
                 // Add current user from local state (excluded from presence users map)
                 sprites.push({ kind: "user", user: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPos.gx, gy: myPos.gy, mood: myMood, outfit: myOutfit }, gx: myPos.gx, gy: myPos.gy });
                 Array.from(users.values()).filter(u => u.gx >= 0 && u.gx < roomCols && u.gy >= 0 && u.gy < roomRows).forEach(u => sprites.push({ kind: "user", user: u, gx: u.gx, gy: u.gy }));
                 sprites.sort((a, b) => {
-                  const da = a.gx + a.gy + (a.kind === "user" ? 0.6 : a.kind === "bot" ? 0.4 : 0.2 * Math.min((a as { item: RoomItem }).item?.item_scale ?? 1, 1));
-                  const db = b.gx + b.gy + (b.kind === "user" ? 0.6 : b.kind === "bot" ? 0.4 : 0.2 * Math.min((b as { item: RoomItem }).item?.item_scale ?? 1, 1));
+                  const itemScale = (s: Sprite) => s.kind === "item" || s.kind === "ghost" ? 0.2 * Math.min((s as { item: RoomItem }).item?.item_scale ?? 1, 1) : 0;
+                  const da = a.gx + a.gy + (a.kind === "user" ? 0.6 : a.kind === "bot" ? 0.4 : a.kind === "ghost" ? 0.3 : itemScale(a));
+                  const db = b.gx + b.gy + (b.kind === "user" ? 0.6 : b.kind === "bot" ? 0.4 : b.kind === "ghost" ? 0.3 : itemScale(b));
                   return da - db;
                 });
                 return sprites.map(s => {
                   const { x, y } = isoCenter(s.gx, s.gy, svgW);
                   const ax = x; const ay = y - AR_S;
+                  if (s.kind === "ghost") {
+                    const rot = s.rotation * 90;
+                    return (
+                      <g key="ghost-preview" style={{ pointerEvents: "none" }}>
+                        {/* Pulsing highlight on the target tile */}
+                        <polygon points={tilePts(x, y)} fill="rgba(80,160,255,0.18)" stroke="rgba(80,160,255,0.7)" strokeWidth={1.5} strokeDasharray="4 2" />
+                        {/* Transparent ghost item */}
+                        <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (s.item.item_scale ?? 1)}) rotate(${rot})`} opacity={0.55}>
+                          <ItemSVG type={s.item.item_type} />
+                        </g>
+                      </g>
+                    );
+                  }
                   if (s.kind === "item") {
                     const rot = (s.item.rotation ?? 0) * 90;
                     return (
@@ -4765,6 +4783,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   </div>
                 </div>
                 {/* Actions */}
+                {!isWall && isSpaceshipOwner && (
+                  <button className="w-full text-left px-3 py-2 text-[14px] text-blue-300 hover:bg-blue-500/10 flex items-center gap-2" onClick={() => {
+                    setCtxMenu(null);
+                    setPlacingItem({ item: ci, rotation: ci.rotation ?? 0 });
+                    setMovingFloorItemId(ci.id);
+                  }}>
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>
+                    Flyt
+                  </button>
+                )}
                 {!isWall && (
                   <button className="w-full text-left px-3 py-2 text-[14px] text-slate-300 hover:bg-white/[0.06]" onClick={() => rotateItem(ci)}>Roter (R)</button>
                 )}
