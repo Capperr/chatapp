@@ -1969,7 +1969,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     setCtxMenu(null);
     // Roulette move mode (admin)
     if (rouletteMoveMode && isAdmin) {
-      supabase.from("chat_rooms").update({ roulette_gx: gx, roulette_gy: gy }).eq("id", activeRoomId);
+      supabase.from("chat_rooms").update({ roulette_gx: gx, roulette_gy: gy }).eq("id", activeRoomId).then(() => {});
       setRouletteGx(gx); setRouletteGy(gy);
       setRouletteMoveMode(false);
       return;
@@ -4120,7 +4120,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         onClick={() => {
                           const ns = Math.max(0.5, parseFloat((rouletteScale - 0.25).toFixed(2)));
                           setRouletteScale(ns);
-                          supabase.from("chat_rooms").update({ roulette_scale: ns }).eq("id", activeRoomId);
+                          supabase.from("chat_rooms").update({ roulette_scale: ns }).eq("id", activeRoomId).then(() => {});
                         }}
                         className="w-9 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] text-slate-400 hover:text-slate-200 font-bold text-[14px] flex items-center justify-center transition-colors">−</button>
                       <span className="w-8 flex items-center justify-center text-[11px] font-bold text-slate-400">{rouletteScale.toFixed(1)}×</span>
@@ -4128,7 +4128,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         onClick={() => {
                           const ns = Math.min(3.0, parseFloat((rouletteScale + 0.25).toFixed(2)));
                           setRouletteScale(ns);
-                          supabase.from("chat_rooms").update({ roulette_scale: ns }).eq("id", activeRoomId);
+                          supabase.from("chat_rooms").update({ roulette_scale: ns }).eq("id", activeRoomId).then(() => {});
                         }}
                         className="w-9 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] text-slate-400 hover:text-slate-200 font-bold text-[14px] flex items-center justify-center transition-colors">+</button>
                     </div>
