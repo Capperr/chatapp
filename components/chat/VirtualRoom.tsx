@@ -87,6 +87,40 @@ function xpForNextLevel(xp: number): number {
   return XP_LEVELS[lv] - (XP_LEVELS[lv - 1] ?? 0);
 }
 
+// ─── Roulette constants ─────────────────────────────────────────────────────────
+const ROULETTE_RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+const ROULETTE_WHEEL_ORDER = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+const ROULETTE_ROUND_MS = 15000; // 15s per round
+const ROULETTE_BET_MS   = 10000; // 10s betting phase
+function rouletteColor(n: number): "red" | "black" | "green" {
+  if (n === 0) return "green";
+  return ROULETTE_RED.has(n) ? "red" : "black";
+}
+function roulettePayout(betType: string, betValue: string, result: number): number {
+  const col = rouletteColor(result);
+  switch (betType) {
+    case "number": return parseInt(betValue) === result ? 36 : 0;
+    case "red":    return col === "red"   ? 2 : 0;
+    case "black":  return col === "black" ? 2 : 0;
+    case "green":  return result === 0 ? 36 : 0;
+    case "odd":    return result > 0 && result % 2 === 1 ? 2 : 0;
+    case "even":   return result > 0 && result % 2 === 0 ? 2 : 0;
+    case "low":    return result >= 1 && result <= 18 ? 2 : 0;
+    case "high":   return result >= 19 && result <= 36 ? 2 : 0;
+    case "dozen1": return result >= 1  && result <= 12 ? 3 : 0;
+    case "dozen2": return result >= 13 && result <= 24 ? 3 : 0;
+    case "dozen3": return result >= 25 && result <= 36 ? 3 : 0;
+    case "col1":   return result > 0 && result % 3 === 1 ? 3 : 0;
+    case "col2":   return result > 0 && result % 3 === 2 ? 3 : 0;
+    case "col3":   return result > 0 && result % 3 === 0 ? 3 : 0;
+    default: return 0;
+  }
+}
+function rouletteWheelAngleForResult(result: number): number {
+  const idx = ROULETTE_WHEEL_ORDER.indexOf(result);
+  return idx < 0 ? 0 : (idx / 37) * 360;
+}
+
 // ─── Room themes ───────────────────────────────────────────────────────────────
 type RoomTheme = { id?: string; label?: string; color?: string; even: string; odd: string; highlight: string; wallA: string; wallB: string };
 function getShopTheme(): RoomTheme {
@@ -455,6 +489,26 @@ interface TradeSession {
 }
 interface TradeRequest { from_id: string; from_name: string; from_color: string; trade_id: string; }
 
+interface RouletteRound {
+  id: number;
+  room_id: string;
+  result: number;
+}
+interface RouletteBet {
+  id: string;
+  round_id: number;
+  room_id: string;
+  user_id: string;
+  display_name: string;
+  avatar_color?: string | null;
+  bet_type: string;
+  bet_value: string;
+  amount: number;
+  payout?: number | null;
+  won?: boolean | null;
+  resolved?: boolean;
+}
+
 const SPACESHIP_VARIANTS: { id: string; name: string; emoji: string; desc: string; cols: number; rows: number; theme: string; price: number }[] = [
   { id: "scout",    name: "Scout",    emoji: "🛸", desc: "Kompakt og hurtigt",      cols: 8,  rows: 6,  theme: "blue",   price: 2000  },
   { id: "cruiser",  name: "Cruiser",  emoji: "🚀", desc: "Komfortabelt og rummeligt", cols: 10, rows: 8,  theme: "cyan",   price: 4500  },
@@ -470,7 +524,7 @@ interface VirtualRoomProps {
   onClose: () => void;
   onKicked?: (by: string) => void;
 }
-type RightPanel = "chatlog" | "hidden" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile" | "userprofile" | "settings" | "achievements" | "dms" | "dm_chat";
+type RightPanel = "chatlog" | "hidden" | "rooms" | "admin" | "inventory" | "online" | "wardrobe" | "shop" | "profile" | "userprofile" | "settings" | "achievements" | "dms" | "dm_chat" | "roulette";
 
 interface DmConversation {
   id: string;
@@ -597,6 +651,20 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [coins, setCoins] = useState(1000);
   const [activeRoomType, setActiveRoomType] = useState(initialRoomType ?? "normal");
   const [activeRoomOwnerId, setActiveRoomOwnerId] = useState<string | null>(initialRoomOwnerId ?? null);
+  // ─── Roulette state ─────────────────────────────────────────────────────────
+  const [rouletteRound, setRouletteRound] = useState<RouletteRound | null>(null);
+  const rouletteRoundRef = useRef<RouletteRound | null>(null);
+  const [rouletteBets, setRouletteBets] = useState<RouletteBet[]>([]);
+  const [rouletteHistory, setRouletteHistory] = useState<{ id: number; result: number }[]>([]);
+  const [rouletteBetAmount, setRouletteBetAmount] = useState(10);
+  const [rouletteBetType, setRouletteBetType] = useState("red");
+  const [rouletteBetValue, setRouletteBetValue] = useState("red");
+  const [rouletteTimeLeft, setRouletteTimeLeft] = useState(15);
+  const [rouletteWheelAngle, setRouletteWheelAngle] = useState(0);
+  const [roulettePhase, setRoulettePhase] = useState<"betting" | "spinning" | "finished">("betting");
+  const [rouletteLastWin, setRouletteLastWin] = useState<number | null>(null);
+  const rouletteProcessedRef = useRef<Set<number>>(new Set());
+  const roulettePlacedRef = useRef<Set<number>>(new Set()); // rounds where we already placed bets
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const xpRef = useRef(0);
@@ -1705,6 +1773,148 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (rightPanel !== "rooms") { setHoveredRoomId(null); setTooltipPos(null); }
   }, [rightPanel]);
 
+  // ─── Roulette round management ──────────────────────────────────────────────
+  useEffect(() => {
+    if (activeRoomType !== "casino") return;
+    const supabase = supabaseRef.current;
+
+    // Fetch recent bets for current round
+    const fetchBets = async (roundId: number) => {
+      const { data } = await supabase
+        .from("roulette_bets")
+        .select("*")
+        .eq("round_id", roundId)
+        .eq("room_id", activeRoomId)
+        .order("created_at", { ascending: true });
+      if (data) setRouletteBets(data as RouletteBet[]);
+    };
+
+    // Fetch last 10 results
+    const fetchHistory = async () => {
+      const { data } = await supabase
+        .from("roulette_rounds")
+        .select("id, result")
+        .eq("room_id", activeRoomId)
+        .order("id", { ascending: false })
+        .limit(10);
+      if (data) setRouletteHistory(data as { id: number; result: number }[]);
+    };
+
+    // Ensure a round row exists for given roundId; returns the result
+    const ensureRound = async (roundId: number): Promise<number> => {
+      const result = Math.floor(Math.random() * 37);
+      const { data, error } = await supabase
+        .from("roulette_rounds")
+        .insert({ id: roundId, room_id: activeRoomId, result })
+        .select("result")
+        .single();
+      if (error) {
+        // Row already exists — fetch it
+        const { data: existing } = await supabase
+          .from("roulette_rounds")
+          .select("result")
+          .eq("id", roundId)
+          .eq("room_id", activeRoomId)
+          .single();
+        return existing?.result ?? 0;
+      }
+      return data?.result ?? result;
+    };
+
+    fetchHistory();
+
+    // Subscribe to new bets
+    const betChannel = supabase
+      .channel(`roulette-bets-${activeRoomId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "roulette_bets", filter: `room_id=eq.${activeRoomId}` }, payload => {
+        setRouletteBets(prev => {
+          if (prev.some(b => b.id === (payload.new as RouletteBet).id)) return prev;
+          return [...prev, payload.new as RouletteBet];
+        });
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "roulette_bets", filter: `room_id=eq.${activeRoomId}` }, payload => {
+        setRouletteBets(prev => prev.map(b => b.id === (payload.new as RouletteBet).id ? payload.new as RouletteBet : b));
+      })
+      .subscribe();
+
+    // Round tick
+    let spinInterval: ReturnType<typeof setInterval> | null = null;
+    const tick = async () => {
+      const now = Date.now();
+      const roundId = Math.floor(now / ROULETTE_ROUND_MS);
+      const msInRound = now % ROULETTE_ROUND_MS;
+      const timeLeft = Math.ceil((ROULETTE_ROUND_MS - msInRound) / 1000);
+      setRouletteTimeLeft(timeLeft);
+
+      if (msInRound < ROULETTE_BET_MS) {
+        // Betting phase
+        setRoulettePhase("betting");
+        if (spinInterval) { clearInterval(spinInterval); spinInterval = null; }
+        if (!rouletteRoundRef.current || rouletteRoundRef.current.id !== roundId) {
+          const result = await ensureRound(roundId);
+          const round = { id: roundId, room_id: activeRoomId, result };
+          rouletteRoundRef.current = round;
+          setRouletteRound(round);
+          setRouletteBets([]);
+          await fetchBets(roundId);
+        }
+      } else if (msInRound < ROULETTE_ROUND_MS - 1000) {
+        // Spinning phase
+        setRoulettePhase("spinning");
+        if (!spinInterval) {
+          spinInterval = setInterval(() => {
+            setRouletteWheelAngle(a => (a + 8) % 360);
+          }, 30);
+        }
+      } else {
+        // Finished phase — resolve bets
+        setRoulettePhase("finished");
+        if (spinInterval) { clearInterval(spinInterval); spinInterval = null; }
+        const round = rouletteRoundRef.current;
+        if (round && !rouletteProcessedRef.current.has(round.id)) {
+          rouletteProcessedRef.current.add(round.id);
+          // Snap ball to result
+          setRouletteWheelAngle(rouletteWheelAngleForResult(round.result));
+          // Resolve own bets
+          const { data: myBets } = await supabase
+            .from("roulette_bets")
+            .select("*")
+            .eq("round_id", round.id)
+            .eq("room_id", activeRoomId)
+            .eq("user_id", currentProfile.id)
+            .eq("resolved", false);
+          if (myBets && myBets.length > 0) {
+            let totalWin = 0;
+            for (const bet of myBets as RouletteBet[]) {
+              const mult = roulettePayout(bet.bet_type, bet.bet_value, round.result);
+              const payout = bet.amount * mult;
+              const won = mult > 0;
+              totalWin += payout;
+              await supabase.from("roulette_bets").update({ won, payout, resolved: true }).eq("id", bet.id);
+            }
+            if (totalWin > 0) {
+              const newCoins = coinsRef.current + totalWin;
+              coinsRef.current = newCoins;
+              setCoins(newCoins);
+              setRouletteLastWin(totalWin);
+              await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
+              setTimeout(() => setRouletteLastWin(null), 4000);
+            }
+          }
+          fetchHistory();
+        }
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 500);
+    return () => {
+      clearInterval(interval);
+      if (spinInterval) clearInterval(spinInterval);
+      supabase.removeChannel(betChannel);
+    };
+  }, [activeRoomType, activeRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleTileClick = (gx: number, gy: number) => {
     if (isDraggingRef.current) return;
     setCtxMenu(null);
@@ -1720,6 +1930,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (Array.from(users.values()).some(u => u.user_id !== currentProfile.id && u.gx === gx && u.gy === gy)) return;
     if (bots.some(b => b.gx === gx && b.gy === gy)) return;
     if (!isAdmin && lockedTiles.has(`${gx},${gy}`)) return;
+    // Block center tiles when in casino room (where roulette wheel sits)
+    if (activeRoomType === "casino") {
+      const cx = Math.floor(roomCols / 2), cy = Math.floor(roomRows / 2);
+      if (Math.abs(gx - cx) <= 1 && Math.abs(gy - cy) <= 1) return;
+    }
     moveMyPos(gx, gy); broadcastMove(gx, gy);
   };
 
@@ -2304,6 +2519,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 shadow-[0_0_6px_rgba(52,211,153,0.8)] animate-pulse" />
                 <span className="text-[15px] font-bold text-white tracking-tight truncate">#{activeRoomName}</span>
                 {activeRoomType === "shop" && <span className="hidden sm:flex text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Shop</span>}
+                {activeRoomType === "casino" && <span className="hidden sm:flex text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Casino</span>}
               </div>
             </div>
 
@@ -2355,11 +2571,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
           {/* XP glow bar */}
           <div className="flex items-center gap-1.5 px-1">
-            <span className="text-[9px] font-bold tabular-nums flex-shrink-0" style={{ color: "rgba(139,92,246,0.55)" }}>{xp % 100}/100 XP</span>
+            <span className="text-[9px] font-bold tabular-nums flex-shrink-0" style={{ color: "rgba(139,92,246,0.55)" }}>{xpInCurrentLevel(xp)}/{xpForNextLevel(xp) || "MAX"} XP</span>
             <div className="flex-1 h-0.5 bg-white/[0.03] relative overflow-hidden">
               <div
                 className="h-full transition-[width] duration-700"
-                style={{ width: `${xp % 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 6px rgba(139,92,246,0.8)" }}
+                style={{ width: `${xpForNextLevel(xp) ? (xpInCurrentLevel(xp) / xpForNextLevel(xp) * 100) : 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 6px rgba(139,92,246,0.8)" }}
               />
             </div>
             <span className="text-[9px] font-bold px-1 flex-shrink-0" style={{ color: "rgba(139,92,246,0.4)" }}>LV {level + 1}</span>
@@ -2367,10 +2583,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           {/* LV + coins row (non-fullscreen only) */}
           {!fullscreen && (
             <div className="flex items-center justify-end gap-3 px-3 py-1">
-              <div className="flex items-center gap-1.5">
+              <button onClick={() => setShowLevelGuide(v => !v)} className="flex items-center gap-1.5 hover:opacity-80 transition-opacity" title="Se niveau-oversigt">
                 <span className="text-[9px] font-black tracking-[0.18em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
                 <span className="text-[15px] font-black tabular-nums text-white leading-none">{level}</span>
-              </div>
+              </button>
               <span className="w-px h-3 bg-white/[0.08]" />
               <div className="flex items-center gap-1.5">
                 <span className="text-sm leading-none">🪙</span>
@@ -2786,6 +3002,21 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       <text x={x} y={y + 3} textAnchor="middle" fontSize={7} fill="rgba(239,68,68,0.7)" style={{ pointerEvents: "none", userSelect: "none" }}>🔒</text>
                     )}
 
+                    {/* Casino roulette table surface — color center tiles green */}
+                    {activeRoomType === "casino" && (() => {
+                      const cx = Math.floor(roomCols / 2), cy = Math.floor(roomRows / 2);
+                      if (Math.abs(gx - cx) <= 1 && Math.abs(gy - cy) <= 1) {
+                        const isCenter = gx === cx && gy === cy;
+                        return (
+                          <polygon points={tilePts(x, y)}
+                            fill={isCenter ? "#064e3b" : "#065f46"}
+                            stroke="#059669" strokeWidth={1}
+                          />
+                        );
+                      }
+                      return null;
+                    })()}
+
                     {/* Shop counter (gy=0 row) */}
                     {activeRoomType === "shop" && gy === 0 && (
                       <g transform={`translate(${x}, ${y - TH / 4})`}>
@@ -2798,6 +3029,101 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   </g>
                 );
               })}
+
+              {/* ── Roulette table & wheel (casino rooms only) ── */}
+              {activeRoomType === "casino" && (() => {
+                const tcx = Math.floor(roomCols / 2);
+                const tcy = Math.floor(roomRows / 2);
+                const { x: cx, y: cy } = isoCenter(tcx, tcy, svgW);
+                const rx = TW * 1.1;  // horizontal radius
+                const ry = rx * (TH / TW) * 0.85; // isometric compression
+                const numSlots = 37;
+
+                // Roulette wheel segments
+                const segments = ROULETTE_WHEEL_ORDER.map((num, i) => {
+                  const a1 = ((i - 0.5) / numSlots) * 2 * Math.PI - Math.PI / 2;
+                  const a2 = ((i + 0.5) / numSlots) * 2 * Math.PI - Math.PI / 2;
+                  const x1 = cx + rx * Math.cos(a1);
+                  const y1 = (cy - TH * 0.3) + ry * Math.sin(a1);
+                  const x2 = cx + rx * Math.cos(a2);
+                  const y2 = (cy - TH * 0.3) + ry * Math.sin(a2);
+                  const fill = rouletteColor(num) === "green" ? "#065f46" : rouletteColor(num) === "red" ? "#7f1d1d" : "#111827";
+                  const stroke = rouletteColor(num) === "green" ? "#10b981" : rouletteColor(num) === "red" ? "#ef4444" : "#374151";
+                  const isResult = rouletteRound && roulettePhase !== "betting" && rouletteRound.result === num;
+                  return (
+                    <path key={i}
+                      d={`M ${cx.toFixed(1)} ${(cy - TH * 0.3).toFixed(1)} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${rx} ${ry} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z`}
+                      fill={isResult ? "#fbbf24" : fill}
+                      stroke={isResult ? "#f59e0b" : stroke}
+                      strokeWidth={isResult ? 1 : 0.5}
+                    />
+                  );
+                });
+
+                // Ball position
+                const ballOrbitRx = rx * 0.82;
+                const ballOrbitRy = ry * 0.82;
+                const ballAng = (rouletteWheelAngle * Math.PI) / 180;
+                const ballX = cx + ballOrbitRx * Math.cos(ballAng);
+                const ballY = (cy - TH * 0.3) + ballOrbitRy * Math.sin(ballAng);
+
+                // Number text on result
+                const resultNum = rouletteRound?.result;
+                const resultColor = resultNum !== undefined ? rouletteColor(resultNum) : "black";
+
+                return (
+                  <g style={{ pointerEvents: "none" }}>
+                    {/* Bezel */}
+                    <ellipse cx={cx} cy={cy - TH * 0.3} rx={rx + 6} ry={ry + 3} fill="#111827" stroke="#374151" strokeWidth={2} />
+                    {/* Segments */}
+                    {segments}
+                    {/* Inner hub */}
+                    <ellipse cx={cx} cy={cy - TH * 0.3} rx={rx * 0.22} ry={ry * 0.22} fill="#1f2937" stroke="#4b5563" strokeWidth={1} />
+                    {/* Center cross */}
+                    <line x1={cx - rx * 0.12} y1={cy - TH * 0.3} x2={cx + rx * 0.12} y2={cy - TH * 0.3} stroke="#6b7280" strokeWidth={0.8} />
+                    <line x1={cx} y1={cy - TH * 0.3 - ry * 0.12} x2={cx} y2={cy - TH * 0.3 + ry * 0.12} stroke="#6b7280" strokeWidth={0.8} />
+                    {/* Dividers between segments */}
+                    {ROULETTE_WHEEL_ORDER.map((_, i) => {
+                      const a = (i / numSlots) * 2 * Math.PI - Math.PI / 2;
+                      const ox = cx + rx * Math.cos(a);
+                      const oy = (cy - TH * 0.3) + ry * Math.sin(a);
+                      return <line key={i} x1={cx} y1={cy - TH * 0.3} x2={ox} y2={oy} stroke="rgba(0,0,0,0.6)" strokeWidth={0.4} />;
+                    })}
+                    {/* Ball */}
+                    {(roulettePhase === "spinning" || roulettePhase === "finished") && (
+                      <circle cx={ballX} cy={ballY} r={4} fill="white" stroke="#e5e7eb" strokeWidth={0.8} />
+                    )}
+                    {/* Result or phase label */}
+                    {roulettePhase === "finished" && resultNum !== undefined && (
+                      <>
+                        <ellipse cx={cx} cy={cy - TH * 0.3} rx={rx * 0.18} ry={ry * 0.18}
+                          fill={resultColor === "red" ? "#ef4444" : resultColor === "green" ? "#10b981" : "#111827"} />
+                        <text x={cx} y={cy - TH * 0.3 + 4}
+                          textAnchor="middle" fontSize={11} fontWeight="900"
+                          fill="white" fontFamily="system-ui,sans-serif"
+                          stroke="rgba(0,0,0,0.8)" strokeWidth={2} paintOrder="stroke">
+                          {resultNum}
+                        </text>
+                      </>
+                    )}
+                    {roulettePhase === "betting" && (
+                      <text x={cx} y={cy - TH * 0.3 + 4}
+                        textAnchor="middle" fontSize={8} fontWeight="700"
+                        fill="#6b7280" fontFamily="system-ui,sans-serif">
+                        {rouletteTimeLeft}s
+                      </text>
+                    )}
+                    {roulettePhase === "spinning" && (
+                      <text x={cx} y={cy - TH * 0.3 + 4}
+                        textAnchor="middle" fontSize={7} fontWeight="700"
+                        fill="#fbbf24" fontFamily="system-ui,sans-serif"
+                        stroke="rgba(0,0,0,0.8)" strokeWidth={1.5} paintOrder="stroke">
+                        🎰
+                      </text>
+                    )}
+                  </g>
+                );
+              })()}
 
               {/* ── Depth-sorted sprite layer: items + bots + users ── */}
               {(() => {
@@ -3263,6 +3589,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 <Mail className="w-[22px] h-[22px]" />
                 {dmUnread > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{dmUnread}</span>}
               </button>
+              {activeRoomType === "casino" && (
+                <button onClick={() => setRightPanel(p => p === "roulette" ? "hidden" : "roulette")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "roulette" ? "text-amber-400 bg-amber-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Roulette">
+                  <span className="text-[22px] leading-none">🎰</span>
+                </button>
+              )}
               <div className="w-px h-6 bg-white/[0.08] mx-1" />
               <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ind"><ZoomIn className="w-[22px] h-[22px]" /></button>
               <span className="text-[12px] text-slate-600 w-8 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
@@ -3273,6 +3604,206 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           {/* Extension panel - overlays room area */}
           {extensionOpen && (
           <div className={`absolute right-2 top-2 bottom-2 z-30 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl w-[min(400px,calc(100%-16px))] flex flex-col bg-[#030912]/98 overflow-hidden`}>
+            {/* Roulette panel */}
+            {rightPanel === "roulette" && activeRoomType === "casino" && (
+              <>
+                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🎰</span>
+                    <span className="text-[14px] font-bold text-slate-200">Roulette</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${roulettePhase === "betting" ? "bg-emerald-500/20 text-emerald-400" : roulettePhase === "spinning" ? "bg-amber-500/20 text-amber-400 animate-pulse" : "bg-violet-500/20 text-violet-400"}`}>
+                      {roulettePhase === "betting" ? `Indsats · ${rouletteTimeLeft}s` : roulettePhase === "spinning" ? "Spinner..." : "Resultat"}
+                    </span>
+                  </div>
+                  <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto flex flex-col">
+                  {/* Win toast */}
+                  {rouletteLastWin !== null && (
+                    <div className="mx-3 mt-3 px-3 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center gap-2">
+                      <span className="text-lg">🏆</span>
+                      <div>
+                        <p className="text-[13px] font-bold text-emerald-400">Du vandt!</p>
+                        <p className="text-[12px] text-emerald-300">+{rouletteLastWin} 🪙</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Result display */}
+                  {roulettePhase !== "betting" && rouletteRound && (
+                    <div className="mx-3 mt-3 px-4 py-3 rounded-xl border text-center"
+                      style={{
+                        background: roulettePhase === "finished"
+                          ? (rouletteColor(rouletteRound.result) === "red" ? "rgba(127,29,29,0.3)" : rouletteColor(rouletteRound.result) === "green" ? "rgba(6,78,59,0.3)" : "rgba(17,24,39,0.5)")
+                          : "rgba(30,20,5,0.4)",
+                        borderColor: roulettePhase === "finished"
+                          ? (rouletteColor(rouletteRound.result) === "red" ? "rgba(239,68,68,0.3)" : rouletteColor(rouletteRound.result) === "green" ? "rgba(16,185,129,0.3)" : "rgba(107,114,128,0.3)")
+                          : "rgba(251,191,36,0.2)"
+                      }}>
+                      {roulettePhase === "spinning" && <p className="text-[13px] text-amber-400 font-bold animate-pulse">🎰 Spinner...</p>}
+                      {roulettePhase === "finished" && (
+                        <>
+                          <p className="text-[28px] font-black tabular-nums" style={{ color: rouletteColor(rouletteRound.result) === "red" ? "#ef4444" : rouletteColor(rouletteRound.result) === "green" ? "#10b981" : "#f9fafb" }}>{rouletteRound.result}</p>
+                          <p className="text-[12px] font-semibold mt-0.5" style={{ color: rouletteColor(rouletteRound.result) === "red" ? "#fca5a5" : rouletteColor(rouletteRound.result) === "green" ? "#6ee7b7" : "#9ca3af" }}>
+                            {rouletteColor(rouletteRound.result) === "red" ? "Rød" : rouletteColor(rouletteRound.result) === "green" ? "Grøn" : "Sort"} · {rouletteRound.result === 0 ? "—" : rouletteRound.result % 2 === 0 ? "Lige" : "Ulige"}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Bet form — only during betting phase */}
+                  {roulettePhase === "betting" && (
+                    <div className="mx-3 mt-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Placer indsats</p>
+
+                      {/* Bet type tabs */}
+                      <div className="flex flex-wrap gap-1 mb-2.5">
+                        {[
+                          { type: "red",    value: "red",    label: "Rød",   color: "bg-red-800/60 text-red-300 border-red-700/40" },
+                          { type: "black",  value: "black",  label: "Sort",  color: "bg-gray-800/80 text-gray-300 border-gray-600/40" },
+                          { type: "green",  value: "green",  label: "Grøn",  color: "bg-emerald-900/60 text-emerald-300 border-emerald-700/40" },
+                          { type: "odd",    value: "odd",    label: "Ulige", color: "bg-violet-900/40 text-violet-300 border-violet-700/40" },
+                          { type: "even",   value: "even",   label: "Lige",  color: "bg-violet-900/40 text-violet-300 border-violet-700/40" },
+                          { type: "low",    value: "low",    label: "1-18",  color: "bg-blue-900/40 text-blue-300 border-blue-700/40" },
+                          { type: "high",   value: "high",   label: "19-36", color: "bg-blue-900/40 text-blue-300 border-blue-700/40" },
+                          { type: "dozen1", value: "dozen1", label: "1-12",  color: "bg-orange-900/40 text-orange-300 border-orange-700/40" },
+                          { type: "dozen2", value: "dozen2", label: "13-24", color: "bg-orange-900/40 text-orange-300 border-orange-700/40" },
+                          { type: "dozen3", value: "dozen3", label: "25-36", color: "bg-orange-900/40 text-orange-300 border-orange-700/40" },
+                        ].map(opt => (
+                          <button key={opt.type}
+                            onClick={() => { setRouletteBetType(opt.type); setRouletteBetValue(opt.value); }}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition-all ${rouletteBetType === opt.type ? opt.color + " ring-1 ring-white/20" : "bg-white/[0.04] text-slate-500 border-white/[0.06] hover:bg-white/[0.08]"}`}>
+                            {opt.label}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => { setRouletteBetType("number"); setRouletteBetValue("0"); }}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition-all ${rouletteBetType === "number" ? "bg-amber-900/40 text-amber-300 border-amber-700/40 ring-1 ring-white/20" : "bg-white/[0.04] text-slate-500 border-white/[0.06] hover:bg-white/[0.08]"}`}>
+                          Tal
+                        </button>
+                      </div>
+
+                      {/* Number picker if "number" selected */}
+                      {rouletteBetType === "number" && (
+                        <div className="mb-2.5">
+                          <p className="text-[10px] text-slate-500 mb-1">Vælg tal (0-36)</p>
+                          <div className="flex flex-wrap gap-0.5 max-h-28 overflow-y-auto">
+                            {Array.from({ length: 37 }, (_, i) => {
+                              const col = rouletteColor(i);
+                              return (
+                                <button key={i}
+                                  onClick={() => setRouletteBetValue(String(i))}
+                                  className={`w-7 h-7 rounded text-[10px] font-bold transition-all ${rouletteBetValue === String(i) ? "ring-2 ring-white/50 scale-110" : ""}`}
+                                  style={{ background: col === "red" ? "#7f1d1d" : col === "green" ? "#064e3b" : "#111827", color: col === "red" ? "#fca5a5" : col === "green" ? "#6ee7b7" : "#d1d5db" }}>
+                                  {i}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Amount */}
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <span className="text-[11px] text-slate-500 flex-shrink-0">Indsats 🪙</span>
+                        <div className="flex items-center gap-1 flex-1">
+                          {[10, 25, 50, 100, 250].map(amt => (
+                            <button key={amt}
+                              onClick={() => setRouletteBetAmount(amt)}
+                              className={`flex-1 py-1 rounded text-[10px] font-bold transition-all ${rouletteBetAmount === amt ? "bg-amber-500/25 text-amber-300 border border-amber-500/30" : "bg-white/[0.04] text-slate-500 border border-white/[0.06] hover:bg-white/[0.08]"}`}>
+                              {amt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <input
+                        type="number" min={1} max={coins} value={rouletteBetAmount}
+                        onChange={e => setRouletteBetAmount(Math.max(1, Math.min(coins, parseInt(e.target.value) || 1)))}
+                        className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-1.5 text-[13px] text-white outline-none focus:border-amber-500/50 mb-2.5"
+                      />
+
+                      {/* Potential payout info */}
+                      <p className="text-[10px] text-slate-600 mb-2">
+                        Mulighed: {rouletteBetAmount * (rouletteBetType === "number" ? 36 : rouletteBetType === "green" ? 36 : rouletteBetType.startsWith("dozen") || rouletteBetType.startsWith("col") ? 3 : 2)} 🪙
+                        {" "}({rouletteBetType === "number" ? "35:1" : rouletteBetType === "green" ? "35:1" : rouletteBetType.startsWith("dozen") || rouletteBetType.startsWith("col") ? "2:1" : "1:1"})
+                      </p>
+
+                      {/* Place bet button */}
+                      <button
+                        disabled={coins < rouletteBetAmount || roulettePlacedRef.current.has(rouletteRound?.id ?? -1)}
+                        onClick={async () => {
+                          if (!rouletteRound || roulettePhase !== "betting") return;
+                          if (coins < rouletteBetAmount) return;
+                          const roundId = rouletteRound.id;
+                          // Deduct coins
+                          const newCoins = coinsRef.current - rouletteBetAmount;
+                          coinsRef.current = newCoins;
+                          setCoins(newCoins);
+                          await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
+                          // Insert bet
+                          await supabase.from("roulette_bets").insert({
+                            round_id: roundId,
+                            room_id: activeRoomId,
+                            user_id: currentProfile.id,
+                            display_name: currentProfile.display_name,
+                            avatar_color: myColor,
+                            bet_type: rouletteBetType,
+                            bet_value: rouletteBetValue,
+                            amount: rouletteBetAmount,
+                          });
+                        }}
+                        className={`w-full py-2 rounded-xl text-[13px] font-bold transition-all ${coins >= rouletteBetAmount ? "bg-gradient-to-r from-emerald-600 to-emerald-500 text-white hover:from-emerald-500 hover:to-emerald-400 shadow-[0_4px_16px_rgba(16,185,129,0.25)]" : "bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
+                        Sæt ind 🪙 {rouletteBetAmount}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Live bets section */}
+                  <div className="mx-3 mt-3 mb-3">
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Aktive indsatser ({rouletteBets.length})</p>
+                    {rouletteBets.length === 0 && (
+                      <p className="text-[12px] text-slate-700 italic">Ingen indsatser endnu</p>
+                    )}
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {rouletteBets.map(bet => {
+                        const isMe = bet.user_id === currentProfile.id;
+                        const betLabel = bet.bet_type === "number" ? `#${bet.bet_value}` : bet.bet_type === "red" ? "Rød" : bet.bet_type === "black" ? "Sort" : bet.bet_type === "green" ? "Grøn" : bet.bet_type === "odd" ? "Ulige" : bet.bet_type === "even" ? "Lige" : bet.bet_type === "low" ? "1-18" : bet.bet_type === "high" ? "19-36" : bet.bet_type === "dozen1" ? "1-12" : bet.bet_type === "dozen2" ? "13-24" : bet.bet_type === "dozen3" ? "25-36" : bet.bet_type;
+                        return (
+                          <div key={bet.id} className={`flex items-center gap-2 px-2.5 py-2 rounded-lg ${isMe ? "bg-violet-500/10 border border-violet-500/20" : "bg-white/[0.03] border border-white/[0.05]"}`}>
+                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: bet.avatar_color ?? "#8b5cf6" }} />
+                            <span className="text-[12px] font-semibold flex-1 truncate" style={{ color: bet.avatar_color ?? "#8b5cf6" }}>{bet.display_name}</span>
+                            <span className="text-[11px] text-slate-400">{betLabel}</span>
+                            <span className="text-[11px] font-bold text-amber-400">{bet.amount}🪙</span>
+                            {bet.won !== null && bet.won !== undefined && (
+                              <span className={`text-[11px] font-bold ${bet.won ? "text-emerald-400" : "text-rose-400"}`}>{bet.won ? `+${bet.payout}` : "-"}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* History */}
+                  <div className="mx-3 mb-3">
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Seneste 10 resultater</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {rouletteHistory.map(h => {
+                        const col = rouletteColor(h.result);
+                        return (
+                          <div key={h.id} className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-black"
+                            style={{ background: col === "red" ? "#7f1d1d" : col === "green" ? "#064e3b" : "#111827", color: col === "red" ? "#fca5a5" : col === "green" ? "#6ee7b7" : "#d1d5db", border: `1px solid ${col === "red" ? "#dc2626" : col === "green" ? "#059669" : "#374151"}` }}>
+                            {h.result}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
             {/* Online users */}
             {rightPanel === "online" && (
               <>
@@ -3446,6 +3977,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         <option value="normal">Normal</option>
                         <option value="shop">Butik</option>
                         <option value="solarie">☀️ Solarie</option>
+                        <option value="casino">🎰 Casino</option>
                       </select>
                       <p className="text-[11px] text-slate-500 mb-1">Farvetema</p>
                       <div className="grid grid-cols-5 gap-1.5 mb-2">
