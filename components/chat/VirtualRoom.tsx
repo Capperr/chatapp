@@ -601,10 +601,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const confirmedHoursRef = useRef(0);
   const [confirmedHours, setConfirmedHours] = useState(0);
   const [timeToNextHour, setTimeToNextHour] = useState(3600);
-  // Initialize from localStorage immediately so 30s timer never starts from 0
-  const _initTotalSeconds = (() => { try { const v = localStorage.getItem(`total_online_${currentProfile.id}`); return v ? (parseInt(v, 10) || 0) : 0; } catch { return 0; } })();
-  const totalSecondsRef = useRef(_initTotalSeconds);
-  const [totalSeconds, setTotalSeconds] = useState(_initTotalSeconds);
+  const totalSecondsRef = useRef(0);
+  const [totalSeconds, setTotalSeconds] = useState(0);
+  const accessTokenRef = useRef<string | null>(null);
   const [placingItem, setPlacingItem] = useState<{ item: RoomItem; rotation: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -636,6 +635,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       setSpaceshipOf(m);
     });
   }, [users]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep access token up to date for keepalive saves
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => { if (session) accessTokenRef.current = session.access_token; });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => { accessTokenRef.current = session?.access_token ?? null; });
+    return () => subscription.unsubscribe();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch own spaceship + auto-switch to it on first load
   // If we already started in the spaceship (passed via initialRoomType), skip the auto-switch
@@ -721,7 +727,6 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         setLevel(newLevel);
         channelRef.current?.send({ type: "broadcast", event: "level_up", payload: { user_id: currentProfile.id, level: newLevel } });
       }
-      localStorage.setItem(`total_online_${currentProfile.id}`, String(newTotal));
       supabase.from("profiles").update({ total_online_seconds: newTotal }).eq("id", currentProfile.id);
       // Online time achievements
       if (newTotal >= 36000) checkAchievement("online_10h");   // 10h
@@ -949,15 +954,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           supabase.from("profiles").update({ tan_level: 0, tan_expires_at: null, solarie_minutes: 0 }).eq("id", currentProfile.id);
         }
         if (data.total_online_seconds != null) {
-          const lsKey = `total_online_${currentProfile.id}`;
-          const lsVal = parseInt(localStorage.getItem(lsKey) ?? "0", 10);
-          const best = Math.max(data.total_online_seconds, isNaN(lsVal) ? 0 : lsVal);
-          // Sync DB if localStorage was ahead
-          if (best > data.total_online_seconds)
-            supabase.from("profiles").update({ total_online_seconds: best }).eq("id", currentProfile.id);
-          totalSecondsRef.current = best;
-          localStorage.setItem(lsKey, String(best));
-          setTotalSeconds(best);
+          totalSecondsRef.current = data.total_online_seconds;
+          setTotalSeconds(data.total_online_seconds);
           const lvTime = levelFromSeconds(data.total_online_seconds);
           const lvXp = Math.floor((data.xp ?? 0) / 100) + 1;
           const lv = Math.max(lvTime, lvXp);
@@ -989,10 +987,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           supabase.from("profiles").update({ last_login_date: today, login_streak: newStreak }).eq("id", currentProfile.id);
         }
         setLoginStreak(newStreak);
-        // Restore last hour confirm time from DB so the countdown survives refreshes
+        // Restore hourly bonus countdown — position within current hour based on total online time
         const lhca = (data as { last_hour_confirm_at?: string | null }).last_hour_confirm_at;
         if (lhca) {
+          // Last confirmed hour known — use it directly
           lastHourConfirmRef.current = new Date(lhca).getTime();
+        } else if (data.total_online_seconds > 0) {
+          // No confirmation on record, but has online time: derive position in current hour
+          // e.g. 5400s total → 1800s into 2nd hour → pretend last bonus was 1800s ago
+          const secondsIntoHour = data.total_online_seconds % 3600;
+          lastHourConfirmRef.current = Date.now() - secondsIntoHour * 1000;
         }
         // Pending hourly confirmation — move lastHourConfirmRef so modal shows in 1-3 min
         if ((data as { confirm_pending?: boolean }).confirm_pending) {
@@ -1004,13 +1008,21 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Save total_online_seconds to DB on page unload (refresh / tab close)
+  // Save total_online_seconds on page unload using keepalive fetch (guaranteed to complete)
   useEffect(() => {
     const save = () => {
-      if (totalSecondsRef.current > 0) {
-        localStorage.setItem(`total_online_${currentProfile.id}`, String(totalSecondsRef.current));
-        supabase.from("profiles").update({ total_online_seconds: totalSecondsRef.current }).eq("id", currentProfile.id);
-      }
+      if (totalSecondsRef.current <= 0 || !accessTokenRef.current) return;
+      fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${currentProfile.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          "Authorization": `Bearer ${accessTokenRef.current}`,
+          "Prefer": "return=minimal",
+        },
+        body: JSON.stringify({ total_online_seconds: totalSecondsRef.current }),
+        keepalive: true,
+      }).catch(() => {});
     };
     window.addEventListener("pagehide", save);
     window.addEventListener("beforeunload", save);
