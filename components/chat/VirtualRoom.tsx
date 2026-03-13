@@ -436,6 +436,8 @@ const SPACESHIP_VARIANTS: { id: string; name: string; emoji: string; desc: strin
 interface VirtualRoomProps {
   roomId: string;
   roomName: string;
+  initialRoomType?: string;
+  initialRoomOwnerId?: string | null;
   currentProfile: Profile;
   onClose: () => void;
 }
@@ -460,7 +462,7 @@ interface DmMessage {
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
-export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: VirtualRoomProps) {
+export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwnerId, currentProfile, onClose }: VirtualRoomProps) {
   // Store client in a ref so it never changes reference between renders.
   // createBrowserClient creates a new object each call, which would cause
   // useEffect dependency arrays to see a "changed" value on every render,
@@ -549,8 +551,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [createBotForm, setCreateBotForm] = useState<{ name: string; color: string; message: string; moves_randomly: boolean; gives_clothing_id: string } | null>(null);
   const [movingBotId, setMovingBotId] = useState<string | null>(null);
   const [coins, setCoins] = useState(1000);
-  const [activeRoomType, setActiveRoomType] = useState("normal");
-  const [activeRoomOwnerId, setActiveRoomOwnerId] = useState<string | null>(null);
+  const [activeRoomType, setActiveRoomType] = useState(initialRoomType ?? "normal");
+  const [activeRoomOwnerId, setActiveRoomOwnerId] = useState<string | null>(initialRoomOwnerId ?? null);
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const xpRef = useRef(0);
@@ -599,8 +601,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const confirmedHoursRef = useRef(0);
   const [confirmedHours, setConfirmedHours] = useState(0);
   const [timeToNextHour, setTimeToNextHour] = useState(3600);
-  const totalSecondsRef = useRef(0);
-  const [totalSeconds, setTotalSeconds] = useState(0);
+  // Initialize from localStorage immediately so 30s timer never starts from 0
+  const _initTotalSeconds = (() => { try { const v = localStorage.getItem(`total_online_${currentProfile.id}`); return v ? (parseInt(v, 10) || 0) : 0; } catch { return 0; } })();
+  const totalSecondsRef = useRef(_initTotalSeconds);
+  const [totalSeconds, setTotalSeconds] = useState(_initTotalSeconds);
   const [placingItem, setPlacingItem] = useState<{ item: RoomItem; rotation: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -634,7 +638,8 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   }, [users]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch own spaceship + auto-switch to it on first load
-  const autoSwitchedToSpaceshipRef = useRef(false);
+  // If we already started in the spaceship (passed via initialRoomType), skip the auto-switch
+  const autoSwitchedToSpaceshipRef = useRef(initialRoomType === "spaceship");
   useEffect(() => {
     supabase.from("chat_rooms").select("*").eq("room_type", "spaceship").eq("owner_id", currentProfile.id).maybeSingle().then(({ data }) => {
       const ship = data as ChatRoom | null;

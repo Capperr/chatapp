@@ -6,7 +6,7 @@ import { VirtualRoom } from "@/components/chat/VirtualRoom";
 import { ChatGateway } from "@/components/chat/ChatGateway";
 import type { Profile } from "@/types";
 
-interface RoomMeta { id: string; name: string; cols: number; rows: number; is_default: boolean; }
+interface RoomMeta { id: string; name: string; cols: number; rows: number; is_default: boolean; room_type?: string; owner_id?: string | null; }
 
 export default function Home() {
   const [chatOpen, setChatOpen] = useState(false);
@@ -18,12 +18,16 @@ export default function Home() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) return false;
     const user = session.user;
-    const [{ data: p }, { data: rooms }] = await Promise.all([
+    const [{ data: p }, { data: rooms }, { data: spaceship }] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", user.id).single(),
       supabase.from("chat_rooms").select("id, name, cols, rows, is_default").order("created_at"),
+      supabase.from("chat_rooms").select("id, name, cols, rows, owner_id").eq("room_type", "spaceship").eq("owner_id", user.id).maybeSingle(),
     ]);
     if (p) setProfile(p as Profile);
-    if (rooms && rooms.length > 0) {
+    if (spaceship) {
+      // User has a spaceship — start there directly, no flash to default room
+      setDefaultRoom({ ...(spaceship as RoomMeta), room_type: "spaceship" });
+    } else if (rooms && rooms.length > 0) {
       const def = (rooms as RoomMeta[]).find(r => r.is_default) ?? rooms[0];
       setDefaultRoom(def as RoomMeta);
     }
@@ -178,6 +182,8 @@ export default function Home() {
         <VirtualRoom
           roomId={defaultRoom.id}
           roomName={defaultRoom.name}
+          initialRoomType={defaultRoom.room_type}
+          initialRoomOwnerId={defaultRoom.owner_id}
           currentProfile={profile}
           onClose={() => setChatOpen(false)}
         />
