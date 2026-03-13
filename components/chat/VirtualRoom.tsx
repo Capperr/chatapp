@@ -408,6 +408,9 @@ interface GlobalUser {
   color: string;
   room_id: string;
   room_name: string;
+  outfit?: Record<string, string>;
+  is_admin?: boolean;
+  room_joined_at?: number; // ms timestamp
 }
 interface ChatRoom {
   id: string;
@@ -485,6 +488,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const roomColsRef = useRef(DEFAULT_COLS);
   const roomRowsRef = useRef(DEFAULT_ROWS);
   const outfitRef = useRef<Record<string, string>>({});
+  const roomJoinedAtRef = useRef<number>(Date.now());
   const botsRef = useRef<RoomBot[]>([]);
   const usersRef = useRef<Map<string, PresenceUser>>(new Map());
   const coinsRef = useRef(1000);
@@ -1201,14 +1205,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         setTradeRequest(null); setTradePendingPartner(null);
       })
       .subscribe(() => {
-        globalCh.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
+        roomJoinedAtRef.current = Date.now();
+        globalCh.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName, outfit: outfitRef.current, is_admin: currentProfile.role === "admin", room_joined_at: roomJoinedAtRef.current });
       });
     return () => { supabase.removeChannel(globalCh); globalChannelRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    globalChannelRef.current?.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
+    roomJoinedAtRef.current = Date.now();
+    globalChannelRef.current?.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName, outfit: outfitRef.current, is_admin: currentProfile.role === "admin", room_joined_at: roomJoinedAtRef.current });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId, activeRoomName]);
 
@@ -2576,9 +2582,19 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 const frameW = 4;
                 const framePts = `${doorBL.x - frameW},${doorBL.y + 1} ${doorBR.x + frameW},${doorBR.y + 1} ${doorTR.x + frameW},${doorTR.y - frameW} ${doorTL.x - frameW},${doorTL.y - frameW}`;
 
+                // ── Wall thickness: "into-room" offset per wall ──
+                // Right wall is parallel to gx-axis; inward = -X direction = screen(-TW/2, +TH/2)
+                // Left  wall is parallel to gy-axis; inward = -Y direction = screen(+TW/2, +TH/2)
+                const WD_X = TW * 0.16;  // ≈ 12.8px screen-X per unit depth
+                const WD_Y = TH * 0.16;  // ≈  6.4px screen-Y per unit depth
+                // Right wall inward: left-diagonal direction
+                const rFX = -WD_X, rFY = WD_Y;
+                // Left wall inward: right-diagonal direction
+                const lFX = WD_X, lFY = WD_Y;
+
                 return (
                   <g>
-                    {/* ── RIGHT WALL (Habbo-style) ── */}
+                    {/* ── RIGHT WALL ── */}
                     {/* Main wall face */}
                     <polygon
                       points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
@@ -2586,7 +2602,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       onClick={e => handleWallClick(e, "right")}
                       style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
-                    {/* Panel division lines at 33% and 66% */}
+                    {/* Panel division lines */}
                     {[0.33, 0.66].map(frac => (
                       <line key={`rp-${frac}`}
                         x1={tcx} y1={tcy - frac * WALL_H}
@@ -2594,28 +2610,35 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         stroke={theme.color} strokeWidth={0.8} opacity={0.18}
                       />
                     ))}
-                    {/* Baseboard — darker strip at bottom */}
-                    <polygon
-                      points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 14} ${tcx},${tcy - 14}`}
-                      fill="rgba(0,0,0,0.35)"
-                    />
+                    {/* Baseboard */}
+                    <polygon points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 14} ${tcx},${tcy - 14}`} fill="rgba(0,0,0,0.35)" />
                     <line x1={tcx} y1={tcy - 14} x2={rBR.x} y2={rBR.y - 14} stroke={theme.color} strokeWidth={0.8} opacity={0.4} />
-                    {/* Top cap */}
-                    <polygon
-                      points={`${tcx},${tcy - WALL_H + 10} ${rBR.x},${rBR.y - WALL_H + 10} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
-                      fill="rgba(0,0,0,0.2)"
-                    />
+                    {/* Sci-fi circuit accent */}
+                    <line x1={tcx + (rBR.x - tcx)*0.15} y1={tcy + (rBR.y - tcy)*0.15 - WALL_H*0.5}
+                          x2={tcx + (rBR.x - tcx)*0.85} y2={rBR.y - WALL_H*0.5}
+                          stroke={theme.color} strokeWidth={0.5} strokeDasharray="8 6" opacity={0.15} />
                     {/* Wall outline edges */}
                     <line x1={tcx} y1={tcy} x2={rBR.x} y2={rBR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.5} />
                     <line x1={rBR.x} y1={rBR.y} x2={rBR.x} y2={rBR.y - WALL_H} stroke={theme.color} strokeWidth={1.2} opacity={0.4} />
                     <line x1={apex.x} y1={apex.y} x2={rBR.x} y2={rBR.y - WALL_H} stroke={theme.color} strokeWidth={1} opacity={0.4} />
-                    {/* Sci-fi alien accent: subtle circuit line */}
-                    <line x1={tcx + (rBR.x - tcx)*0.15} y1={tcy + (rBR.y - tcy)*0.15 - WALL_H*0.5}
-                          x2={tcx + (rBR.x - tcx)*0.85} y2={rBR.y - WALL_H*0.5}
-                          stroke={theme.color} strokeWidth={0.5} strokeDasharray="8 6" opacity={0.15} />
+                    {/* ── RIGHT WALL TOP SURFACE (horizontal cap showing thickness) ── */}
+                    {/* Goes from the wall top edge inward toward viewer (left-diagonal direction) */}
+                    <polygon
+                      points={`${apex.x},${apex.y} ${rBR.x},${rBR.y - WALL_H} ${rBR.x + rFX},${rBR.y - WALL_H + rFY} ${apex.x + rFX},${apex.y + rFY}`}
+                      fill="rgba(255,255,255,0.18)"
+                      style={{ pointerEvents: "none" }}
+                    />
+                    {/* Right wall outer side face — shows wall thickness at the outer edge */}
+                    <polygon
+                      points={`${rBR.x},${rBR.y - WALL_H} ${rBR.x},${rBR.y} ${rBR.x + rFX},${rBR.y + rFY} ${rBR.x + rFX},${rBR.y - WALL_H + rFY}`}
+                      fill="rgba(0,0,0,0.45)"
+                      style={{ pointerEvents: "none" }}
+                    />
+                    {/* Top cap edge highlight */}
+                    <line x1={apex.x + rFX} y1={apex.y + rFY} x2={rBR.x + rFX} y2={rBR.y - WALL_H + rFY} stroke={theme.color} strokeWidth={0.8} opacity={0.3} />
                     {isWallPlacing && <polygon points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`} fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.5)" strokeWidth={2} style={{ pointerEvents: "none" }} />}
 
-                    {/* ── LEFT WALL (Habbo-style, with door) ── */}
+                    {/* ── LEFT WALL ── */}
                     {/* Main wall face */}
                     <polygon
                       points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
@@ -2632,35 +2655,42 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       />
                     ))}
                     {/* Baseboard */}
-                    <polygon
-                      points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 14} ${tcx},${tcy - 14}`}
-                      fill="rgba(0,0,0,0.35)"
-                    />
+                    <polygon points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 14} ${tcx},${tcy - 14}`} fill="rgba(0,0,0,0.35)" />
                     <line x1={tcx} y1={tcy - 14} x2={lBL.x} y2={lBL.y - 14} stroke={theme.color} strokeWidth={0.8} opacity={0.3} />
-                    {/* Top cap */}
-                    <polygon
-                      points={`${tcx},${tcy - WALL_H + 10} ${lBL.x},${lBL.y - WALL_H + 10} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
-                      fill="rgba(0,0,0,0.2)"
-                    />
+                    {/* Sci-fi circuit accent */}
+                    <line x1={tcx - (tcx - lBL.x)*0.15} y1={tcy + (lBL.y - tcy)*0.15 - WALL_H*0.5}
+                          x2={tcx - (tcx - lBL.x)*0.85} y2={lBL.y - WALL_H*0.5}
+                          stroke={theme.color} strokeWidth={0.5} strokeDasharray="8 6" opacity={0.12} />
                     {/* Wall outline edges */}
                     <line x1={tcx} y1={tcy} x2={lBL.x} y2={lBL.y} stroke={theme.color} strokeWidth={1.2} opacity={0.4} />
                     <line x1={lBL.x} y1={lBL.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke={theme.color} strokeWidth={1.2} opacity={0.35} />
                     <line x1={apex.x} y1={apex.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke={theme.color} strokeWidth={1} opacity={0.35} />
-                    {/* Sci-fi alien accent */}
-                    <line x1={tcx - (tcx - lBL.x)*0.15} y1={tcy + (lBL.y - tcy)*0.15 - WALL_H*0.5}
-                          x2={tcx - (tcx - lBL.x)*0.85} y2={lBL.y - WALL_H*0.5}
-                          stroke={theme.color} strokeWidth={0.5} strokeDasharray="8 6" opacity={0.12} />
+                    {/* ── LEFT WALL TOP SURFACE (horizontal cap showing thickness) ── */}
+                    <polygon
+                      points={`${apex.x},${apex.y} ${lBL.x},${lBL.y - WALL_H} ${lBL.x + lFX},${lBL.y - WALL_H + lFY} ${apex.x + lFX},${apex.y + lFY}`}
+                      fill="rgba(255,255,255,0.11)"
+                      style={{ pointerEvents: "none" }}
+                    />
+                    {/* Left wall outer side face */}
+                    <polygon
+                      points={`${lBL.x},${lBL.y - WALL_H} ${lBL.x},${lBL.y} ${lBL.x + lFX},${lBL.y + lFY} ${lBL.x + lFX},${lBL.y - WALL_H + lFY}`}
+                      fill="rgba(0,0,0,0.45)"
+                      style={{ pointerEvents: "none" }}
+                    />
+                    {/* Top cap edge highlight */}
+                    <line x1={apex.x + lFX} y1={apex.y + lFY} x2={lBL.x + lFX} y2={lBL.y - WALL_H + lFY} stroke={theme.color} strokeWidth={0.8} opacity={0.25} />
+                    {/* ── CORNER top cap (small diamond at apex where two top surfaces meet) ── */}
+                    <polygon
+                      points={`${apex.x},${apex.y} ${apex.x + rFX},${apex.y + rFY} ${apex.x + rFX + lFX},${apex.y + rFY + lFY} ${apex.x + lFX},${apex.y + lFY}`}
+                      fill="rgba(255,255,255,0.24)"
+                      style={{ pointerEvents: "none" }}
+                    />
 
                     {/* ── DOOR on left wall ── */}
-                    {/* Door frame */}
                     <polygon points={framePts} fill={theme.color + "30"} />
-                    {/* Door opening (dark interior) */}
                     <polygon points={doorPts} fill="#000" opacity={0.95} />
-                    {/* Alien glow from door interior */}
                     <polygon points={doorPts} fill={theme.color} opacity={0.08} />
-                    {/* Door top glow line */}
                     <line x1={doorTL.x} y1={doorTL.y} x2={doorTR.x} y2={doorTR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.6} />
-                    {/* Door side lines */}
                     <line x1={doorBL.x} y1={doorBL.y} x2={doorTL.x} y2={doorTL.y} stroke={theme.color} strokeWidth={1} opacity={0.4} />
                     <line x1={doorBR.x} y1={doorBR.y} x2={doorTR.x} y2={doorTR.y} stroke={theme.color} strokeWidth={1} opacity={0.4} />
 
@@ -2701,8 +2731,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 const tileFill = isMyTile ? theme.highlight : isPlaceTarget ? "#1a2e48" : isBotTarget && isHov ? "#1a3020" : isHov ? theme.highlight + "80" : baseFill;
                 const tileStroke = isMyTile ? myColor : isPlaceTarget ? "#6366f1" : isBotTarget && isHov ? "#22c55e" : isHov ? theme.color + "90" : gridStroke;
 
+                // Tile front-left and front-right edge "side" panels — 3D raised look (Habbo-style)
+                const D = 4; // side depth in pixels
+                const leftSidePts  = `${x - TW/2},${y} ${x},${y + TH/2} ${x},${y + TH/2 + D} ${x - TW/2},${y + D}`;
+                const rightSidePts = `${x},${y + TH/2} ${x + TW/2},${y} ${x + TW/2},${y + D} ${x},${y + TH/2 + D}`;
+
                 return (
                   <g key={cellKey} style={{ pointerEvents: "none" }}>
+                    {/* Front edge panels for depth illusion */}
+                    <polygon points={leftSidePts}  fill="rgba(0,0,0,0.42)" />
+                    <polygon points={rightSidePts} fill="rgba(0,0,0,0.28)" />
                     <polygon points={tilePts(x, y)} fill={tileFill} stroke={tileStroke} strokeWidth={isMyTile || isPlaceTarget ? 1.5 : 1} />
                     {isHov && !hasUser && !cellBot && !movingBotId && !isFloorPlacing && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
                     {/* Locked tile overlay */}
@@ -3125,28 +3163,73 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             {/* Online users */}
             {rightPanel === "online" && (
               <>
-                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60">
-                  <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span className="text-[13px] font-bold text-slate-300 tracking-wide">Online — {globalUsers.size}</span></div>
+                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />
+                    <span className="text-[13px] font-bold text-slate-200 tracking-wide">Online</span>
+                    <span className="text-[12px] font-semibold text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">{globalUsers.size}</span>
+                  </div>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
-                <div className="flex-1 overflow-y-auto py-1">
-                  {Array.from(globalUsers.values()).map(u => {
-                    const isMe = u.user_id === currentProfile.id;
-                    const inSameRoom = u.room_id === activeRoomId;
-                    return (
-                      <div key={u.user_id} className="px-3 py-2 flex items-center gap-2 hover:bg-white/[0.03]">
-                        <div className="relative flex-shrink-0">
-                          <div className="w-5 h-5 rounded-full" style={{ backgroundColor: u.color }} />
-                          <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-[#07101c]" />
+                <div className="flex-1 overflow-y-auto">
+                  {Array.from(globalUsers.values())
+                    .sort((a, b) => {
+                      // Own entry first, then same room, then others
+                      const aMe = a.user_id === currentProfile.id ? 0 : 1;
+                      const bMe = b.user_id === currentProfile.id ? 0 : 1;
+                      if (aMe !== bMe) return aMe - bMe;
+                      const aSame = a.room_id === activeRoomId ? 0 : 1;
+                      const bSame = b.room_id === activeRoomId ? 0 : 1;
+                      return aSame - bSame;
+                    })
+                    .map(u => {
+                      const isMe = u.user_id === currentProfile.id;
+                      const inSameRoom = u.room_id === activeRoomId;
+                      const goToRoom = () => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id); };
+                      // Time in room
+                      const timeInRoom = (() => {
+                        if (!u.room_joined_at) return null;
+                        const secs = Math.floor((Date.now() - u.room_joined_at) / 1000);
+                        if (secs < 60) return `${secs}s`;
+                        if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+                        return `${Math.floor(secs / 3600)}t ${Math.floor((secs % 3600) / 60)}m`;
+                      })();
+                      const uOutfit = u.outfit ?? {};
+                      return (
+                        <div key={u.user_id} className={`px-3 py-2.5 flex items-center gap-3 border-b border-white/[0.03] hover:bg-white/[0.04] transition-colors group ${inSameRoom ? "bg-violet-500/[0.03]" : ""}`}>
+                          {/* Mini avatar */}
+                          <div className="relative flex-shrink-0">
+                            <div className="w-10 h-12 rounded-lg overflow-hidden flex items-end justify-center" style={{ background: u.color + "18", border: `1px solid ${u.color}30` }}>
+                              <svg width="36" height="44" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                                <PersonAvatar color={u.color} glow={!!u.is_admin} />
+                                {Object.keys(uOutfit).length > 0 && <ClothingOverlay outfit={uOutfit} catalog={clothingCatalog} />}
+                              </svg>
+                            </div>
+                            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#07101c] shadow-[0_0_4px_rgba(52,211,153,0.6)]" />
+                          </div>
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-[13px] font-semibold truncate" style={{ color: u.color }}>{u.display_name}{isMe ? " (dig)" : ""}</p>
+                              {u.is_admin && <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 flex-shrink-0">MOD</span>}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className={`text-[11px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</span>
+                              {timeInRoom && <span className="text-[10px] text-slate-700 flex-shrink-0">· {timeInRoom}</span>}
+                            </div>
+                          </div>
+                          {/* Go-to button */}
+                          {!isMe && !inSameRoom && (
+                            <button onClick={goToRoom} className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-[11px] font-semibold px-2 py-1 rounded-md bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 border border-violet-500/20">
+                              Gå til
+                            </button>
+                          )}
+                          {inSameRoom && !isMe && (
+                            <span className="flex-shrink-0 text-[10px] text-violet-500/60">Her</span>
+                          )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[14px] text-slate-300 truncate">{isMe ? `${u.display_name} (dig)` : u.display_name}</p>
-                          <p className={`text-[12px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</p>
-                        </div>
-                        {!inSameRoom && !isMe && <button onClick={() => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id); }} className="text-[12px] text-slate-500 hover:text-violet-400 flex-shrink-0">Gå til</button>}
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               </>
             )}
