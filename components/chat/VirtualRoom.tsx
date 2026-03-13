@@ -2711,19 +2711,21 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       onClick={() => handleTileClick(user.gx, user.gy)}
                       onContextMenu={e => { e.preventDefault(); e.stopPropagation(); handleRightClick(e, user, null, null); }}>
                       <g style={{ transform: `translate(${x}px, ${y}px)`, transition: "transform 0.38s cubic-bezier(0.22,1,0.36,1)" }}>
-                        {/* Aura glow */}
+                        {/* Aura glow — centered around avatar body */}
                         {(() => { const ac = isMe ? auraColor : (user.aura_color ?? null); return ac ? (
                           <g style={{ pointerEvents: "none" }}>
-                            <ellipse cx={0} cy={14} rx={30} ry={9} fill={ac} opacity={0.18}>
-                              <animate attributeName="opacity" values="0.18;0.08;0.18" dur="2.4s" repeatCount="indefinite" />
-                              <animate attributeName="rx" values="30;34;30" dur="2.4s" repeatCount="indefinite" />
+                            {/* Outer pulsing ring around body */}
+                            <ellipse cx={0} cy={-AR_S - AR * AVG_SCALE * 0.85} rx={AR * AVG_SCALE * 1.15} ry={AR * AVG_SCALE * 1.6} fill="none" stroke={ac} strokeWidth={3} opacity={0.65}>
+                              <animate attributeName="opacity" values="0.65;0.2;0.65" dur="2.2s" repeatCount="indefinite" />
+                              <animate attributeName="rx" values={`${AR * AVG_SCALE * 1.15};${AR * AVG_SCALE * 1.35};${AR * AVG_SCALE * 1.15}`} dur="2.2s" repeatCount="indefinite" />
+                              <animate attributeName="ry" values={`${AR * AVG_SCALE * 1.6};${AR * AVG_SCALE * 1.8};${AR * AVG_SCALE * 1.6}`} dur="2.2s" repeatCount="indefinite" />
                             </ellipse>
-                            <ellipse cx={0} cy={14} rx={22} ry={6.5} fill={ac} opacity={0.35}>
-                              <animate attributeName="opacity" values="0.35;0.18;0.35" dur="2.4s" repeatCount="indefinite" />
+                            {/* Inner soft fill */}
+                            <ellipse cx={0} cy={-AR_S - AR * AVG_SCALE * 0.85} rx={AR * AVG_SCALE * 0.85} ry={AR * AVG_SCALE * 1.25} fill={ac} opacity={0.14}>
+                              <animate attributeName="opacity" values="0.14;0.04;0.14" dur="2.2s" repeatCount="indefinite" />
                             </ellipse>
-                            <ellipse cx={0} cy={-AR_S / 2} rx={18} ry={32} fill={ac} opacity={0.08}>
-                              <animate attributeName="opacity" values="0.08;0.03;0.08" dur="2.4s" repeatCount="indefinite" />
-                            </ellipse>
+                            {/* Floor reflection */}
+                            <ellipse cx={0} cy={14} rx={20} ry={5.5} fill={ac} opacity={0.35} />
                           </g>
                         ) : null; })()}
                         <ellipse cx={0} cy={16} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
