@@ -19,16 +19,16 @@ const DEFAULT_ROWS = 8;
 
 // ─── Room design options ────────────────────────────────────────────────────────
 const ROOM_THEMES: { id: string; label: string; color: string; even: string; odd: string; highlight: string; wallA: string; wallB: string }[] = [
-  { id: "blue",      label: "Void",    color: "#818cf8", even: "#06060f", odd: "#050510", highlight: "#1a1640", wallA: "#0c0c22", wallB: "#080815" },
-  { id: "cyan",      label: "Plasma",  color: "#22d3ee", even: "#040e14", odd: "#030b10", highlight: "#062830", wallA: "#061c28", wallB: "#040f18" },
-  { id: "purple",    label: "Nebula",  color: "#c084fc", even: "#0c0814", odd: "#09060f", highlight: "#1e1038", wallA: "#140c28", wallB: "#0c0818" },
-  { id: "green",     label: "Matrix",  color: "#4ade80", even: "#040f06", odd: "#030c04", highlight: "#082210", wallA: "#061a0a", wallB: "#031006" },
-  { id: "orange",    label: "Inferno", color: "#fb923c", even: "#120600", odd: "#0d0400", highlight: "#281004", wallA: "#1c0a02", wallB: "#100602" },
-  { id: "red",       label: "Abyss",   color: "#f43f5e", even: "#100408", odd: "#0c0306", highlight: "#280a14", wallA: "#1c0610", wallB: "#10040a" },
-  { id: "teal",      label: "Arktis",  color: "#2dd4bf", even: "#040e0c", odd: "#030b09", highlight: "#082220", wallA: "#061c18", wallB: "#040f0c" },
-  { id: "pink",      label: "Aurora",  color: "#f472b6", even: "#100610", odd: "#0c040c", highlight: "#28082a", wallA: "#1c0820", wallB: "#100610" },
-  { id: "brown",     label: "Guld",    color: "#fbbf24", even: "#0f0902", odd: "#0b0701", highlight: "#241802", wallA: "#181002", wallB: "#0e0a01" },
-  { id: "dark",      label: "Stealth", color: "#94a3b8", even: "#050507", odd: "#040406", highlight: "#0e1018", wallA: "#09090f", wallB: "#05060c" },
+  { id: "blue",   label: "Void",    color: "#818cf8", even: "#141a2e", odd: "#0f1422", highlight: "#1e2a50", wallA: "#1c2646", wallB: "#141c38" },
+  { id: "cyan",   label: "Plasma",  color: "#22d3ee", even: "#0a1e28", odd: "#071620", highlight: "#0e3040", wallA: "#0e2e40", wallB: "#091e2e" },
+  { id: "purple", label: "Nebula",  color: "#c084fc", even: "#180e28", odd: "#120a1e", highlight: "#281644", wallA: "#221038", wallB: "#180c2a" },
+  { id: "green",  label: "Matrix",  color: "#4ade80", even: "#0a1e0e", odd: "#071608", highlight: "#103818", wallA: "#0e2a12", wallB: "#091e0a" },
+  { id: "orange", label: "Inferno", color: "#fb923c", even: "#220e02", odd: "#180a01", highlight: "#381602", wallA: "#2e1004", wallB: "#200c02" },
+  { id: "red",    label: "Abyss",   color: "#f43f5e", even: "#200608", odd: "#180406", highlight: "#341018", wallA: "#2a0810", wallB: "#1c040c" },
+  { id: "teal",   label: "Arktis",  color: "#2dd4bf", even: "#081e1c", odd: "#061614", highlight: "#0e3430", wallA: "#0e2c28", wallB: "#081e1c" },
+  { id: "pink",   label: "Aurora",  color: "#f472b6", even: "#200e20", odd: "#180a18", highlight: "#341436", wallA: "#2a1030", wallB: "#1e0c22" },
+  { id: "brown",  label: "Guld",    color: "#fbbf24", even: "#1e1604", odd: "#160e02", highlight: "#342200", wallA: "#281802", wallB: "#1c1001" },
+  { id: "dark",   label: "Stealth", color: "#94a3b8", even: "#0e1018", odd: "#0a0c14", highlight: "#181e2e", wallA: "#141824", wallB: "#0e1018" },
 ];
 const FLOOR_PATTERNS: { id: string; label: string }[] = [
   { id: "standard",     label: "Standard"  },
@@ -2539,53 +2539,111 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   );
                 };
 
+                // Door helpers for left wall
+                const doorT1 = 0.22, doorT2 = 0.42, doorH = 68;
+                const dlx = (t: number) => tcx - t * (tcx - lBL.x);
+                const dly = (t: number) => tcy + t * (lBL.y - tcy);
+                const doorBL = { x: dlx(doorT1), y: dly(doorT1) };
+                const doorBR = { x: dlx(doorT2), y: dly(doorT2) };
+                const doorTR = { x: doorBR.x, y: doorBR.y - doorH };
+                const doorTL = { x: doorBL.x, y: doorBL.y - doorH };
+                const doorPts = `${doorBL.x},${doorBL.y} ${doorBR.x},${doorBR.y} ${doorTR.x},${doorTR.y} ${doorTL.x},${doorTL.y}`;
+                const frameW = 4;
+                const framePts = `${doorBL.x - frameW},${doorBL.y + 1} ${doorBR.x + frameW},${doorBR.y + 1} ${doorTR.x + frameW},${doorTR.y - frameW} ${doorTL.x - frameW},${doorTL.y - frameW}`;
+
                 return (
                   <g>
-                    {/* Right wall (gy=0 edge) */}
+                    {/* ── RIGHT WALL (Habbo-style) ── */}
+                    {/* Main wall face */}
                     <polygon
                       points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
                       fill={theme.wallA}
-                      stroke={theme.color} strokeWidth={0.8} strokeOpacity={0.35}
                       onClick={e => handleWallClick(e, "right")}
                       style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
+                    {/* Panel division lines at 33% and 66% */}
+                    {[0.33, 0.66].map(frac => (
+                      <line key={`rp-${frac}`}
+                        x1={tcx} y1={tcy - frac * WALL_H}
+                        x2={rBR.x} y2={rBR.y - frac * WALL_H}
+                        stroke={theme.color} strokeWidth={0.8} opacity={0.18}
+                      />
+                    ))}
+                    {/* Baseboard — darker strip at bottom */}
+                    <polygon
+                      points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 14} ${tcx},${tcy - 14}`}
+                      fill="rgba(0,0,0,0.35)"
+                    />
+                    <line x1={tcx} y1={tcy - 14} x2={rBR.x} y2={rBR.y - 14} stroke={theme.color} strokeWidth={0.8} opacity={0.4} />
+                    {/* Top cap */}
+                    <polygon
+                      points={`${tcx},${tcy - WALL_H + 10} ${rBR.x},${rBR.y - WALL_H + 10} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
+                      fill="rgba(0,0,0,0.2)"
+                    />
+                    {/* Wall outline edges */}
+                    <line x1={tcx} y1={tcy} x2={rBR.x} y2={rBR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.5} />
+                    <line x1={rBR.x} y1={rBR.y} x2={rBR.x} y2={rBR.y - WALL_H} stroke={theme.color} strokeWidth={1.2} opacity={0.4} />
+                    <line x1={apex.x} y1={apex.y} x2={rBR.x} y2={rBR.y - WALL_H} stroke={theme.color} strokeWidth={1} opacity={0.4} />
+                    {/* Sci-fi alien accent: subtle circuit line */}
+                    <line x1={tcx + (rBR.x - tcx)*0.15} y1={tcy + (rBR.y - tcy)*0.15 - WALL_H*0.5}
+                          x2={tcx + (rBR.x - tcx)*0.85} y2={rBR.y - WALL_H*0.5}
+                          stroke={theme.color} strokeWidth={0.5} strokeDasharray="8 6" opacity={0.15} />
                     {isWallPlacing && <polygon points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`} fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.5)" strokeWidth={2} style={{ pointerEvents: "none" }} />}
-                    {/* Right wall baseboard neon glow */}
-                    <polygon
-                      points={`${tcx},${tcy} ${rBR.x},${rBR.y} ${rBR.x},${rBR.y - 10} ${tcx},${tcy - 10}`}
-                      fill={theme.color + "18"}
-                    />
-                    <line x1={tcx} y1={tcy} x2={rBR.x} y2={rBR.y} stroke={theme.color} strokeWidth={1.5} opacity={0.7} />
-                    {/* Right wall top stripe */}
-                    <polygon
-                      points={`${tcx},${tcy - WALL_H + 12} ${rBR.x},${rBR.y - WALL_H + 12} ${rBR.x},${rBR.y - WALL_H} ${apex.x},${apex.y}`}
-                      fill={theme.color + "0c"}
-                    />
-                    {/* Left wall (gx=0 edge) */}
+
+                    {/* ── LEFT WALL (Habbo-style, with door) ── */}
+                    {/* Main wall face */}
                     <polygon
                       points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
                       fill={theme.wallB}
-                      stroke={theme.color} strokeWidth={0.8} strokeOpacity={0.25}
                       onClick={e => handleWallClick(e, "left")}
                       style={{ cursor: isWallPlacing ? "crosshair" : "default" }}
                     />
+                    {/* Panel division lines */}
+                    {[0.33, 0.66].map(frac => (
+                      <line key={`lp-${frac}`}
+                        x1={tcx} y1={tcy - frac * WALL_H}
+                        x2={lBL.x} y2={lBL.y - frac * WALL_H}
+                        stroke={theme.color} strokeWidth={0.8} opacity={0.14}
+                      />
+                    ))}
+                    {/* Baseboard */}
+                    <polygon
+                      points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 14} ${tcx},${tcy - 14}`}
+                      fill="rgba(0,0,0,0.35)"
+                    />
+                    <line x1={tcx} y1={tcy - 14} x2={lBL.x} y2={lBL.y - 14} stroke={theme.color} strokeWidth={0.8} opacity={0.3} />
+                    {/* Top cap */}
+                    <polygon
+                      points={`${tcx},${tcy - WALL_H + 10} ${lBL.x},${lBL.y - WALL_H + 10} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
+                      fill="rgba(0,0,0,0.2)"
+                    />
+                    {/* Wall outline edges */}
+                    <line x1={tcx} y1={tcy} x2={lBL.x} y2={lBL.y} stroke={theme.color} strokeWidth={1.2} opacity={0.4} />
+                    <line x1={lBL.x} y1={lBL.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke={theme.color} strokeWidth={1.2} opacity={0.35} />
+                    <line x1={apex.x} y1={apex.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke={theme.color} strokeWidth={1} opacity={0.35} />
+                    {/* Sci-fi alien accent */}
+                    <line x1={tcx - (tcx - lBL.x)*0.15} y1={tcy + (lBL.y - tcy)*0.15 - WALL_H*0.5}
+                          x2={tcx - (tcx - lBL.x)*0.85} y2={lBL.y - WALL_H*0.5}
+                          stroke={theme.color} strokeWidth={0.5} strokeDasharray="8 6" opacity={0.12} />
+
+                    {/* ── DOOR on left wall ── */}
+                    {/* Door frame */}
+                    <polygon points={framePts} fill={theme.color + "30"} />
+                    {/* Door opening (dark interior) */}
+                    <polygon points={doorPts} fill="#000" opacity={0.95} />
+                    {/* Alien glow from door interior */}
+                    <polygon points={doorPts} fill={theme.color} opacity={0.08} />
+                    {/* Door top glow line */}
+                    <line x1={doorTL.x} y1={doorTL.y} x2={doorTR.x} y2={doorTR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.6} />
+                    {/* Door side lines */}
+                    <line x1={doorBL.x} y1={doorBL.y} x2={doorTL.x} y2={doorTL.y} stroke={theme.color} strokeWidth={1} opacity={0.4} />
+                    <line x1={doorBR.x} y1={doorBR.y} x2={doorTR.x} y2={doorTR.y} stroke={theme.color} strokeWidth={1} opacity={0.4} />
+
+                    {/* ── CORNER ridge ── */}
+                    <line x1={tcx} y1={tcy} x2={apex.x} y2={apex.y} stroke={theme.color} strokeWidth={2.5} opacity={0.7} />
+
                     {isWallPlacing && <polygon points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`} fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.5)" strokeWidth={2} style={{ pointerEvents: "none" }} />}
-                    {/* Left wall baseboard neon glow */}
-                    <polygon
-                      points={`${tcx},${tcy} ${lBL.x},${lBL.y} ${lBL.x},${lBL.y - 10} ${tcx},${tcy - 10}`}
-                      fill={theme.color + "14"}
-                    />
-                    <line x1={tcx} y1={tcy} x2={lBL.x} y2={lBL.y} stroke={theme.color} strokeWidth={1.5} opacity={0.55} />
-                    {/* Left wall top stripe */}
-                    <polygon
-                      points={`${tcx},${tcy - WALL_H + 12} ${lBL.x},${lBL.y - WALL_H + 12} ${lBL.x},${lBL.y - WALL_H} ${apex.x},${apex.y}`}
-                      fill={theme.color + "08"}
-                    />
-                    {/* Wall top ridge glow lines */}
-                    <line x1={apex.x} y1={apex.y} x2={rBR.x} y2={rBR.y - WALL_H} stroke={theme.color} strokeWidth={1.5} opacity={0.55} />
-                    <line x1={apex.x} y1={apex.y} x2={lBL.x} y2={lBL.y - WALL_H} stroke={theme.color} strokeWidth={1.5} opacity={0.45} />
-                    {/* Corner glow */}
-                    <line x1={tcx} y1={tcy} x2={apex.x} y2={apex.y} stroke={theme.color} strokeWidth={2} opacity={0.6} />
+
                     {/* Wall-mounted items */}
                     {wallItems.map(renderWallItemSvg)}
                   </g>
@@ -2614,13 +2672,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     default:             return (gx + gy) % 2 === 0 ? theme.even : theme.odd;
                   }
                 })();
-                const gridStroke = activeFloorPattern === "grid" ? theme.color + "40" : theme.color + "1a";
+                const gridStroke = activeFloorPattern === "grid" ? theme.color + "55" : theme.color + "32";
                 const tileFill = isMyTile ? theme.highlight : isPlaceTarget ? "#1a2e48" : isBotTarget && isHov ? "#1a3020" : isHov ? theme.highlight + "80" : baseFill;
                 const tileStroke = isMyTile ? myColor : isPlaceTarget ? "#6366f1" : isBotTarget && isHov ? "#22c55e" : isHov ? theme.color + "90" : gridStroke;
 
                 return (
                   <g key={cellKey} style={{ pointerEvents: "none" }}>
-                    <polygon points={tilePts(x, y)} fill={tileFill} stroke={tileStroke} strokeWidth={isMyTile || isPlaceTarget ? 1.5 : 0.7} />
+                    <polygon points={tilePts(x, y)} fill={tileFill} stroke={tileStroke} strokeWidth={isMyTile || isPlaceTarget ? 1.5 : 1} />
                     {isHov && !hasUser && !cellBot && !movingBotId && !isFloorPlacing && <polygon points={tilePts(x, y)} fill="rgba(80,140,255,0.08)" stroke="rgba(80,140,255,0.25)" strokeWidth={0.8} />}
                     {/* Locked tile overlay */}
                     {isLocked && (
