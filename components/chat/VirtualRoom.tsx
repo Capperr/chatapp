@@ -990,11 +990,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         // Restore hourly bonus countdown — position within current hour based on total online time
         const lhca = (data as { last_hour_confirm_at?: string | null }).last_hour_confirm_at;
         if (lhca) {
-          // Last confirmed hour known — use it directly
           lastHourConfirmRef.current = new Date(lhca).getTime();
         } else if (data.total_online_seconds > 0) {
-          // No confirmation on record, but has online time: derive position in current hour
-          // e.g. 5400s total → 1800s into 2nd hour → pretend last bonus was 1800s ago
           const secondsIntoHour = data.total_online_seconds % 3600;
           lastHourConfirmRef.current = Date.now() - secondsIntoHour * 1000;
         }
@@ -1003,6 +1000,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           const delay = (60 + Math.random() * 120) * 1000;
           lastHourConfirmRef.current = Date.now() - 3_600_000 + delay;
         }
+        // Update countdown UI immediately — don't wait for the 30s interval
+        setTimeToNextHour(Math.max(0, 3600 - Math.floor((Date.now() - lastHourConfirmRef.current) / 1000)));
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
