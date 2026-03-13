@@ -342,6 +342,7 @@ interface PresenceUser {
   outfit?: Record<string, string>; // slot → clothing_id
   tan_level?: number;
   name_color?: string | null;
+  aura_color?: string | null;
   invisible?: boolean;
 }
 interface SpeechBubble { id: number; text: string; ts: number; }
@@ -554,10 +555,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [isInvisible, setIsInvisible] = useState(false);
   const isInvisibleRef = useRef(false);
   const [nameColor, setNameColor] = useState<string | null>(null);
+  const [auraColor, setAuraColor] = useState<string | null>(null);
   const [adminSearchQuery, setAdminSearchQuery] = useState("");
   const [adminSearchResults, setAdminSearchResults] = useState<Profile[]>([]);
   const [adminEditTarget, setAdminEditTarget] = useState<Profile | null>(null);
-  const [adminEditForm, setAdminEditForm] = useState<{ xp: string; coins: string; total_online_seconds: string; tan_level: string; muted_until: string }>({ xp: "", coins: "", total_online_seconds: "", tan_level: "", muted_until: "" });
+  const [adminEditForm, setAdminEditForm] = useState<{ xp: string; coins: string; total_online_seconds: string; tan_level: string; muted_until: string; name_color: string | null; aura_color: string | null }>({ xp: "", coins: "", total_online_seconds: "", tan_level: "", muted_until: "", name_color: null, aura_color: null });
   const [adminMoveTarget, setAdminMoveTarget] = useState<{ user_id: string; display_name: string } | null>(null);
   const [adminMoveTile, setAdminMoveTile] = useState<{ gx: string; gy: string }>({ gx: "", gy: "" });
   const [adminMoveRoom, setAdminMoveRoom] = useState<string>("");
@@ -916,7 +918,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   const changeMood = (mood: string) => {
     myMoodRef.current = mood; setMyMood(mood);
-    if (!isInvisibleRef.current) channelRef.current?.send({ type: "broadcast", event: "move", payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood, outfit: outfitRef.current, name_color: nameColor, invisible: false } satisfies PresenceUser });
+    if (!isInvisibleRef.current) channelRef.current?.send({ type: "broadcast", event: "move", payload: { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood, outfit: outfitRef.current, name_color: nameColor, aura_color: auraColor, invisible: false } satisfies PresenceUser });
   };
 
   // ─── Data fetches ──────────────────────────────────────────────────────────
@@ -953,7 +955,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     supabase.from("user_achievements").select("achievement_id").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyAchievements(new Set(data.map((a: { achievement_id: string }) => a.achievement_id)));
     });
-    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, last_hour_confirm_at, muted_until, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending, name_color").eq("id", currentProfile.id).single().then(({ data }) => {
+    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, last_hour_confirm_at, muted_until, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending, name_color, aura_color").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
         // Load tan — reset if expired
@@ -987,6 +989,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         if (mu && new Date(mu) > new Date()) { setMyMutedUntil(mu); myMutedUntilRef.current = mu; }
         const nc = (data as { name_color?: string | null }).name_color;
         if (nc) setNameColor(nc);
+        const ac = (data as { aura_color?: string | null }).aura_color;
+        if (ac) setAuraColor(ac);
         // Load message count
         const mc = (data as { message_count?: number }).message_count ?? 0;
         messageCountRef.current = mc;
@@ -1087,6 +1091,21 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           setMyMutedUntil(mu);
           myMutedUntilRef.current = mu;
         }
+      })
+      .on("broadcast", { event: "user_style" }, ({ payload }) => {
+        const p = payload as { user_id: string; name_color: string | null; aura_color: string | null };
+        // If I am the target, update my own style immediately
+        if (p.user_id === currentProfile.id) {
+          setNameColor(p.name_color);
+          setAuraColor(p.aura_color);
+        }
+        // Update the users map so others in the room also see the change
+        setUsers(prev => {
+          const m = new Map(prev);
+          const u = m.get(p.user_id);
+          if (u) m.set(p.user_id, { ...u, name_color: p.name_color, aura_color: p.aura_color });
+          return m;
+        });
       })
       .on("broadcast", { event: "trade_request" }, ({ payload }) => {
         const p = payload as TradeRequest & { to_id: string };
@@ -1425,11 +1444,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const broadcastMove = useCallback((gx: number, gy: number) => {
     // Don't broadcast position when invisible — skip both move event and presence track
     if (isInvisibleRef.current) return;
-    const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, invisible: false };
+    const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx, gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, aura_color: auraColor, invisible: false };
     channelRef.current?.send({ type: "broadcast", event: "move", payload });
     // Also re-track presence so joining users always see the current position
     channelRef.current?.track(payload);
-  }, [currentProfile.id, currentProfile.display_name, myColor, nameColor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentProfile.id, currentProfile.display_name, myColor, nameColor, auraColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Always-current ref so the presence join handler can call broadcastMove without stale closure
   const broadcastMoveRef = useRef(broadcastMove);
@@ -1441,7 +1460,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     const ch = supabase.channel(`virtual-${activeRoomId}`, { config: { presence: { key: currentProfile.id } } });
     channelRef.current = ch;
     const startPos = myPosRef.current;
-    const myData: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: startPos.gx, gy: startPos.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, invisible: isInvisibleRef.current };
+    const myData: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: startPos.gx, gy: startPos.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, aura_color: auraColor, invisible: isInvisibleRef.current };
     ch
       .on("presence", { event: "sync" }, () => {
         const state = ch.presenceState<PresenceUser>();
@@ -2674,6 +2693,21 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       onClick={() => handleTileClick(user.gx, user.gy)}
                       onContextMenu={e => { e.preventDefault(); e.stopPropagation(); handleRightClick(e, user, null, null); }}>
                       <g style={{ transform: `translate(${x}px, ${y}px)`, transition: "transform 0.38s cubic-bezier(0.22,1,0.36,1)" }}>
+                        {/* Aura glow */}
+                        {(() => { const ac = isMe ? auraColor : (user.aura_color ?? null); return ac ? (
+                          <g style={{ pointerEvents: "none" }}>
+                            <ellipse cx={0} cy={14} rx={30} ry={9} fill={ac} opacity={0.18}>
+                              <animate attributeName="opacity" values="0.18;0.08;0.18" dur="2.4s" repeatCount="indefinite" />
+                              <animate attributeName="rx" values="30;34;30" dur="2.4s" repeatCount="indefinite" />
+                            </ellipse>
+                            <ellipse cx={0} cy={14} rx={22} ry={6.5} fill={ac} opacity={0.35}>
+                              <animate attributeName="opacity" values="0.35;0.18;0.35" dur="2.4s" repeatCount="indefinite" />
+                            </ellipse>
+                            <ellipse cx={0} cy={-AR_S / 2} rx={18} ry={32} fill={ac} opacity={0.08}>
+                              <animate attributeName="opacity" values="0.08;0.03;0.08" dur="2.4s" repeatCount="indefinite" />
+                            </ellipse>
+                          </g>
+                        ) : null; })()}
                         <ellipse cx={0} cy={16} rx={18} ry={5} fill="rgba(0,0,0,0.45)" />
                         <g transform={`translate(0,${-AR_S}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={user.color} glow={false} mood={user.mood} tanLevel={userTanLevel} />
@@ -3186,7 +3220,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             const q = e.target.value;
                             setAdminSearchQuery(q);
                             if (!q.trim()) { setAdminSearchResults([]); return; }
-                            const { data } = await supabase.from("profiles").select("id, display_name, avatar_color, role, coins, xp, level, total_online_seconds, muted_until, is_banned, tan_level, name_color").ilike("display_name", `%${q}%`).limit(20);
+                            const { data } = await supabase.from("profiles").select("id, display_name, avatar_color, role, coins, xp, level, total_online_seconds, muted_until, is_banned, tan_level, name_color, aura_color").ilike("display_name", `%${q}%`).limit(20);
                             setAdminSearchResults((data ?? []) as Profile[]);
                           }}
                           placeholder="Søg bruger..."
@@ -3203,7 +3237,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           <button onClick={() => setAdminEditTarget(null)} className="text-slate-600 hover:text-slate-300"><X className="w-3 h-3" /></button>
                         </div>
                         <div className="grid grid-cols-2 gap-1.5 mb-2">
-                          {([["XP", "xp"], ["Mønter", "coins"], ["Online sek.", "total_online_seconds"], ["Solarie lv.", "tan_level"]] as [string, keyof typeof adminEditForm][]).map(([label, key]) => (
+                          {([["XP", "xp"], ["Mønter", "coins"], ["Online sek.", "total_online_seconds"], ["Solarie lv.", "tan_level"]] as [string, "xp" | "coins" | "total_online_seconds" | "tan_level"][]).map(([label, key]) => (
                             <div key={key}>
                               <p className="text-[10px] text-slate-500 mb-0.5">{label}</p>
                               <input
@@ -3218,6 +3252,26 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           <p className="text-[10px] text-slate-500 mb-0.5">Muttet indtil (ISO)</p>
                           <input value={adminEditForm.muted_until} onChange={e => setAdminEditForm(f => ({ ...f, muted_until: e.target.value }))} placeholder="tom = ikke muttet" className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg px-2 py-1 text-[12px] text-slate-200 outline-none focus:border-rose-500/40" />
                         </div>
+                        <div className="mb-2">
+                          <p className="text-[10px] text-slate-500 mb-1">Navn farve</p>
+                          <div className="flex flex-wrap gap-1">
+                            {([["#ffffff", "Hvid"], ["#c4b5fd", "Lilla"], ["#f87171", "Rød"], ["#fbbf24", "Guld"], ["#34d399", "Grøn"], ["#38bdf8", "Cyan"], ["#fb923c", "Orange"], [null, "Standard"]] as [string | null, string][]).map(([color, label]) => (
+                              <button key={label} onClick={() => setAdminEditForm(f => ({ ...f, name_color: color }))}
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-all ${adminEditForm.name_color === color ? "border-white/40 bg-white/[0.15]" : "border-white/[0.06] bg-white/[0.03]"}`}
+                                style={{ color: color ?? "#94a3b8" }}>{label}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mb-2">
+                          <p className="text-[10px] text-slate-500 mb-1">Aura farve</p>
+                          <div className="flex flex-wrap gap-1">
+                            {([["#c4b5fd", "Lilla"], ["#f87171", "Rød"], ["#fbbf24", "Guld"], ["#34d399", "Grøn"], ["#38bdf8", "Cyan"], ["#fb923c", "Orange"], ["#f472b6", "Pink"], [null, "Ingen"]] as [string | null, string][]).map(([color, label]) => (
+                              <button key={label} onClick={() => setAdminEditForm(f => ({ ...f, aura_color: color }))}
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-all ${adminEditForm.aura_color === color ? "border-white/40 bg-white/[0.15]" : "border-white/[0.06] bg-white/[0.03]"}`}
+                                style={{ color: color ?? "#94a3b8" }}>{label}</button>
+                            ))}
+                          </div>
+                        </div>
                         <button
                           onClick={async () => {
                             const patch: Record<string, number | string | null> = {};
@@ -3226,14 +3280,18 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             if (adminEditForm.total_online_seconds !== "") patch.total_online_seconds = parseInt(adminEditForm.total_online_seconds) || 0;
                             if (adminEditForm.tan_level !== "") patch.tan_level = parseInt(adminEditForm.tan_level) || 0;
                             patch.muted_until = adminEditForm.muted_until.trim() || null;
+                            patch.name_color = adminEditForm.name_color;
+                            patch.aura_color = adminEditForm.aura_color;
                             if (adminEditForm.muted_until.trim()) {
                               globalChannelRef.current?.send({ type: "broadcast", event: "user_muted", payload: { user_id: adminEditTarget.id, muted_until: adminEditForm.muted_until.trim() } });
                             }
+                            // Broadcast style update so target user sees changes in real-time
+                            globalChannelRef.current?.send({ type: "broadcast", event: "user_style", payload: { user_id: adminEditTarget.id, name_color: adminEditForm.name_color, aura_color: adminEditForm.aura_color } });
                             await supabase.from("profiles").update(patch).eq("id", adminEditTarget.id);
                             setAdminEditTarget(null);
                             // Refresh search results
                             if (adminSearchQuery) {
-                              const { data } = await supabase.from("profiles").select("id, display_name, avatar_color, role, coins, xp, level, total_online_seconds, muted_until, is_banned, tan_level, name_color").ilike("display_name", `%${adminSearchQuery}%`).limit(20);
+                              const { data } = await supabase.from("profiles").select("id, display_name, avatar_color, role, coins, xp, level, total_online_seconds, muted_until, is_banned, tan_level, name_color, aura_color").ilike("display_name", `%${adminSearchQuery}%`).limit(20);
                               setAdminSearchResults((data ?? []) as Profile[]);
                             }
                           }}
@@ -3317,7 +3375,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                 <button onClick={() => { setAdminMoveTarget({ user_id: user.id, display_name: user.display_name }); setAdminMoveTile({ gx: "", gy: "" }); setAdminMoveRoom(""); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors">Flyt</button>
                               )}
                               {/* Edit */}
-                              <button onClick={() => { setAdminEditTarget(user); setAdminEditForm({ xp: String(user.xp ?? ""), coins: String(user.coins ?? ""), total_online_seconds: String(user.total_online_seconds ?? ""), tan_level: String((user as Profile & { tan_level?: number }).tan_level ?? ""), muted_until: user.muted_until ?? "" }); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 border border-violet-500/20 transition-colors">Rediger</button>
+                              <button onClick={() => { setAdminEditTarget(user); setAdminEditForm({ xp: String(user.xp ?? ""), coins: String(user.coins ?? ""), total_online_seconds: String(user.total_online_seconds ?? ""), tan_level: String((user as Profile & { tan_level?: number }).tan_level ?? ""), muted_until: user.muted_until ?? "", name_color: user.name_color ?? null, aura_color: (user as Profile & { aura_color?: string | null }).aura_color ?? null }); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 border border-violet-500/20 transition-colors">Rediger</button>
                             </div>
                           </div>
                         );
@@ -3447,7 +3505,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                               channelRef.current?.untrack();
                               globalChannelRef.current?.untrack();
                             } else {
-                              const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, invisible: false };
+                              const payload: PresenceUser = { user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, gx: myPosRef.current.gx, gy: myPosRef.current.gy, mood: myMoodRef.current, outfit: outfitRef.current, tan_level: tanLevelRef.current, name_color: nameColor, aura_color: auraColor, invisible: false };
                               channelRef.current?.track(payload);
                               globalChannelRef.current?.track({ user_id: currentProfile.id, display_name: currentProfile.display_name, color: myColor, room_id: activeRoomId, room_name: activeRoomName });
                             }
@@ -3480,6 +3538,28 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         ))}
                       </div>
                       <p className="text-[11px] text-slate-500 mt-2">Navn preview: <span style={{ color: nameColor ?? "white", fontWeight: 700 }}>{currentProfile.display_name}</span></p>
+                    </div>
+
+                    {/* Aura color */}
+                    <div className="p-3 bg-white/[0.03] border border-white/[0.07] rounded-xl">
+                      <p className="text-[13px] font-semibold text-slate-200 mb-2">Aura farve</p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([["#c4b5fd", "Lilla"], ["#f87171", "Rød"], ["#fbbf24", "Guld"], ["#34d399", "Grøn"], ["#38bdf8", "Cyan"], ["#fb923c", "Orange"], ["#f472b6", "Pink"], [null, "Ingen"]] as [string | null, string][]).map(([color, label]) => (
+                          <button
+                            key={label}
+                            onClick={async () => {
+                              setAuraColor(color);
+                              await supabase.from("profiles").update({ aura_color: color }).eq("id", currentProfile.id);
+                              broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
+                            }}
+                            className={`py-1.5 rounded-lg text-[11px] font-semibold transition-all border ${auraColor === color ? "border-white/40 bg-white/[0.12]" : "border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.07]"}`}
+                            style={{ color: color ?? "#94a3b8" }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {auraColor && <p className="text-[11px] text-slate-500 mt-2">Aura aktiv — synlig for alle i rummet</p>}
                     </div>
                   </div>
                 )}

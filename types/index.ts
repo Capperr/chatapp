@@ -18,6 +18,7 @@ export interface Profile {
   message_count?: number;
   tan_level?: number;
   name_color?: string | null;
+  aura_color?: string | null;
 }
 
 export interface Achievement {
