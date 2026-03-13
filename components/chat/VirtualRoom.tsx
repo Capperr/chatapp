@@ -4051,19 +4051,25 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     <div className="h-16 w-full" style={{ background: pvIsAdmin ? "linear-gradient(135deg,#1e0a3c,#2d1060,#1a0a2e)" : "linear-gradient(135deg,#050d1f,#0a1628,#060e1c)" }} />
                     {pvIsAdmin && <div className="absolute inset-0 h-16 opacity-20" style={{ backgroundImage: "repeating-linear-gradient(45deg,#7c3aed 0,#7c3aed 1px,transparent 0,transparent 50%)", backgroundSize: "10px 10px" }} />}
                     <div className="absolute top-3 left-4 flex items-center gap-1.5">
-                      {pvIsAdmin
-                        ? <span className="text-[10px] font-black uppercase tracking-[0.2em] px-2 py-1 rounded-lg" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", color: "#e0c8ff", boxShadow: "0 0 12px rgba(124,58,237,0.5)" }}>🛡 ADMIN</span>
-                        : <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 bg-white/[0.05] px-2 py-1 rounded-lg border border-white/[0.06]">Bruger</span>
-                      }
+                      {pvIsAdmin && (
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] px-2 py-1 rounded-lg" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", color: "#e0c8ff", boxShadow: "0 0 12px rgba(124,58,237,0.5)" }}>🛡 ADMIN</span>
+                      )}
                       {profileView.is_banned && <span className="text-[10px] font-bold uppercase tracking-wide text-rose-400 bg-rose-500/10 px-2 py-1 rounded-lg border border-rose-500/20">Udelukket</span>}
                       {isMutedNow && <span className="text-[10px] font-bold uppercase tracking-wide text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">🔇 Muttet</span>}
                     </div>
                     <div className="flex flex-col items-center -mt-8 pb-3">
-                      <div className="w-16 h-16 rounded-full border-2 flex items-center justify-center" style={{ borderColor: pvIsAdmin ? "#7c3aed" : "#1e293b", background: "#07101c", boxShadow: pvIsAdmin ? "0 0 16px rgba(124,58,237,0.4)" : "0 4px 16px rgba(0,0,0,0.6)" }}>
-                        <svg width="48" height="50" viewBox="-14 -30 28 50">
-                          <PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} glow={pvIsAdmin} />
-                        </svg>
-                      </div>
+                      {(() => {
+                        const pvOutfit = profileView.id === currentProfile.id ? myOutfit : (users.get(profileView.id)?.outfit ?? {});
+                        const hasOutfit = Object.keys(pvOutfit).length > 0;
+                        return (
+                          <div className="rounded-full border-2 flex items-center justify-center overflow-visible" style={{ borderColor: pvIsAdmin ? "#7c3aed" : "#1e293b", background: "#07101c", boxShadow: pvIsAdmin ? "0 0 16px rgba(124,58,237,0.4)" : "0 4px 16px rgba(0,0,0,0.6)", width: hasOutfit ? 72 : 64, height: hasOutfit ? 76 : 64 }}>
+                            <svg width={hasOutfit ? 60 : 48} height={hasOutfit ? 64 : 50} viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                              <PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} glow={pvIsAdmin} />
+                              {hasOutfit && <ClothingOverlay outfit={pvOutfit} catalog={clothingCatalog} />}
+                            </svg>
+                          </div>
+                        );
+                      })()}
                       <p className="text-[16px] font-black text-white mt-2 tracking-tight">{profileView.display_name}</p>
                       <p className="text-[12px] text-slate-500">@{profileView.username}</p>
                       {/* Quick stats */}
