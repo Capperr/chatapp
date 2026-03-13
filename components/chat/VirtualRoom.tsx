@@ -953,7 +953,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     supabase.from("user_achievements").select("achievement_id").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyAchievements(new Set(data.map((a: { achievement_id: string }) => a.achievement_id)));
     });
-    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, last_hour_confirm_at, muted_until, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending").eq("id", currentProfile.id).single().then(({ data }) => {
+    supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, last_hour_confirm_at, muted_until, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending, name_color").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
         if (data.xp != null) { xpRef.current = data.xp; setXp(data.xp); }
         // Load tan — reset if expired
