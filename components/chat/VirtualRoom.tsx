@@ -510,6 +510,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   const [otherLevelUps, setOtherLevelUps] = useState<Map<string, number>>(new Map());
   const [mutedUsers, setMutedUsers] = useState<Set<string>>(new Set());
   const [myMutedUntil, setMyMutedUntil] = useState<string | null>(null);
+  const myMutedUntilRef = useRef<string | null>(null);
   const [mySpaceship, setMySpaceship] = useState<ChatRoom | null>(null);
   const [spaceshipOf, setSpaceshipOf] = useState<Map<string, { id: string; name: string }>>(new Map());
   const [visitRequest, setVisitRequest] = useState<VisitRequest | null>(null);
@@ -715,6 +716,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         setLevel(newLevel);
         channelRef.current?.send({ type: "broadcast", event: "level_up", payload: { user_id: currentProfile.id, level: newLevel } });
       }
+      localStorage.setItem(`total_online_${currentProfile.id}`, String(newTotal));
       supabase.from("profiles").update({ total_online_seconds: newTotal }).eq("id", currentProfile.id);
       // Online time achievements
       if (newTotal >= 36000) checkAchievement("online_10h");   // 10h
@@ -942,8 +944,15 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
           supabase.from("profiles").update({ tan_level: 0, tan_expires_at: null, solarie_minutes: 0 }).eq("id", currentProfile.id);
         }
         if (data.total_online_seconds != null) {
-          totalSecondsRef.current = data.total_online_seconds;
-          setTotalSeconds(data.total_online_seconds);
+          const lsKey = `total_online_${currentProfile.id}`;
+          const lsVal = parseInt(localStorage.getItem(lsKey) ?? "0", 10);
+          const best = Math.max(data.total_online_seconds, isNaN(lsVal) ? 0 : lsVal);
+          // Sync DB if localStorage was ahead
+          if (best > data.total_online_seconds)
+            supabase.from("profiles").update({ total_online_seconds: best }).eq("id", currentProfile.id);
+          totalSecondsRef.current = best;
+          localStorage.setItem(lsKey, String(best));
+          setTotalSeconds(best);
           const lvTime = levelFromSeconds(data.total_online_seconds);
           const lvXp = Math.floor((data.xp ?? 0) / 100) + 1;
           const lv = Math.max(lvTime, lvXp);
@@ -959,7 +968,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
         if (la) lastCoinAwardRef.current = new Date(la);
         // Load own mute status
         const mu = (data as { muted_until?: string | null }).muted_until;
-        if (mu && new Date(mu) > new Date()) setMyMutedUntil(mu);
+        if (mu && new Date(mu) > new Date()) { setMyMutedUntil(mu); myMutedUntilRef.current = mu; }
         // Load message count
         const mc = (data as { message_count?: number }).message_count ?? 0;
         messageCountRef.current = mc;
@@ -993,8 +1002,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
   // Save total_online_seconds to DB on page unload (refresh / tab close)
   useEffect(() => {
     const save = () => {
-      if (totalSecondsRef.current > 0)
+      if (totalSecondsRef.current > 0) {
+        localStorage.setItem(`total_online_${currentProfile.id}`, String(totalSecondsRef.current));
         supabase.from("profiles").update({ total_online_seconds: totalSecondsRef.current }).eq("id", currentProfile.id);
+      }
     };
     window.addEventListener("pagehide", save);
     window.addEventListener("beforeunload", save);
@@ -1470,7 +1481,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
-      if (myMutedUntil && new Date(myMutedUntil) > new Date()) return;
+      if (myMutedUntilRef.current && new Date(myMutedUntilRef.current) > new Date()) return;
       if (e.key === "Enter") { sendDraftRef.current(); return; }
       if (e.key === "Escape") {
         if (placingItem) { setPlacingItem(null); return; }
@@ -1579,8 +1590,12 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
 
   const startTrade = (user: PresenceUser) => {
     setCtxMenu(null);
+    // Close any existing trade/pending state first
+    setTradeSession(null);
+    tradeSessionRef.current = null;
+    setTradePendingPartner(null);
     const trade_id = `${currentProfile.id}-${Date.now()}`;
-    // Store a minimal pending session ref so trade_response can match the trade_id
+    // Store session ref so trade_response can match it — but do NOT set tradeSession state (that opens the box)
     tradeSessionRef.current = {
       trade_id,
       partner_id: user.user_id, partner_name: user.display_name, partner_color: user.color,
@@ -1588,7 +1603,7 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
       their_offer: { coins: 0, clothing_ids: [], item_ids: [] },
       my_confirmed: false, their_confirmed: false,
     };
-    // Show "waiting for response" banner — do NOT open the trade box yet
+    // Show "waiting for response" banner — trade box stays closed until partner accepts
     setTradePendingPartner({ partner_id: user.user_id, partner_name: user.display_name, partner_color: user.color, trade_id });
     setTimeout(() => setTradePendingPartner(prev => prev?.trade_id === trade_id ? null : prev), 30000);
     globalChannelRef.current?.send({ type: "broadcast", event: "trade_request", payload: { to_id: user.user_id, from_id: currentProfile.id, from_name: currentProfile.display_name, from_color: myColor, trade_id } });
@@ -3868,10 +3883,10 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                         </div>
                       );
                       return (
-                        <div key={msg.id}>
+                        <div key={msg.id} className="w-full">
                           {showTime && <p className="text-center text-[11px] text-slate-600 my-3">{new Date(msg.created_at).toLocaleString("da-DK", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</p>}
-                          <div className={`flex items-end gap-1.5 ${isMe ? "justify-end" : "justify-start"}`}>
-                            {!isMe && avatarSlot}
+                          <div className={`flex items-end gap-1.5 w-full ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+                            {avatarSlot}
                             <div className={`max-w-[72%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed ${isMe ? "bg-violet-600 text-white rounded-br-sm" : "bg-white/[0.09] text-slate-200 rounded-bl-sm"}`}>
                               {msg.content}
                               {isMe && (
@@ -3880,7 +3895,6 @@ export function VirtualRoom({ roomId, roomName, currentProfile, onClose }: Virtu
                                 </span>
                               )}
                             </div>
-                            {isMe && avatarSlot}
                           </div>
                         </div>
                       );
