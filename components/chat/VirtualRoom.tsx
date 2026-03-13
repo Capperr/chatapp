@@ -624,6 +624,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [placingItem, setPlacingItem] = useState<{ item: RoomItem; rotation: number } | null>(null);
   const [movingFloorItemId, setMovingFloorItemId] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const roomDivRef = useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = useState({ w: 800, h: 600 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panRef = useRef({ x: 0, y: 0 });
   const dragStartRef = useRef<{ cx: number; cy: number; px: number; py: number } | null>(null);
@@ -778,6 +780,18 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const svgW = useMemo(() => (Math.max(roomCols, roomRows) + 1) * TW, [roomCols, roomRows]);
   const svgH = useMemo(() => (roomCols + roomRows) * (TH / 2) + OFFSET_Y + TH * 2, [roomCols, roomRows]);
 
+  // Track container size so bubble overlay can account for preserveAspectRatio letterboxing
+  useEffect(() => {
+    const el = roomDivRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      setContainerSize({ w: width, h: height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const stars = useMemo(() => {
     let seed = 98273;
     const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
@@ -811,6 +825,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   }, [roomCols, roomRows, svgW, zoom, pan.x, pan.y]);
 
   // Viewbox params for SVG→screen coordinate conversion (used by HTML bubble overlay)
+  // Accounts for preserveAspectRatio="xMidYMid meet" letterboxing inside the container div.
   const vbParams = useMemo(() => {
     const pad = 14;
     const tcx = svgW / 2;
@@ -823,8 +838,17 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     const rw = right - left; const rh = bottom - top;
     const cx = (left + right) / 2; const cy = (top + bottom) / 2;
     const vbW = rw / zoom; const vbH = rh / zoom;
-    return { vbX: cx - vbW / 2 + pan.x, vbY: cy - vbH / 2 + pan.y, vbW, vbH };
-  }, [roomCols, roomRows, svgW, zoom, pan.x, pan.y]);
+    const vbX = cx - vbW / 2 + pan.x;
+    const vbY = cy - vbH / 2 + pan.y;
+    // Compute actual rendered SVG area accounting for xMidYMid meet letterboxing
+    const { w: cW, h: cH } = containerSize;
+    const scale = Math.min(cW / vbW, cH / vbH);
+    const renderW = vbW * scale;
+    const renderH = vbH * scale;
+    const offsetX = (cW - renderW) / 2;
+    const offsetY = (cH - renderH) / 2;
+    return { vbX, vbY, vbW, vbH, scale, renderW, renderH, offsetX, offsetY };
+  }, [roomCols, roomRows, svgW, zoom, pan.x, pan.y, containerSize]);
 
   const setRoomDimensions = (cols: number, rows: number) => {
     roomColsRef.current = cols; roomRowsRef.current = rows;
@@ -2331,6 +2355,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
           {/* Isometric room */}
           <div
+            ref={roomDivRef}
             className="flex-1 min-h-0 flex items-center justify-center overflow-hidden relative cursor-grab active:cursor-grabbing select-none"
             style={{ background: activeRoomType === "solarie" ? "#0f0a02" : theme.even }}
             onPointerDown={e => {
@@ -2870,19 +2895,20 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
             {/* ── HTML Bubble Overlay — fixed pixel size regardless of SVG zoom ── */}
             {(() => {
+              // Convert SVG coordinate to container-relative pixels,
+              // accounting for xMidYMid meet letterboxing in the SVG element.
               const toP = (svgX: number, svgY: number) => ({
-                left: `${((svgX - vbParams.vbX) / vbParams.vbW * 100).toFixed(3)}%`,
-                top:  `${((svgY - vbParams.vbY) / vbParams.vbH * 100).toFixed(3)}%`,
+                left: `${(vbParams.offsetX + (svgX - vbParams.vbX) / vbParams.vbW * vbParams.renderW).toFixed(1)}px`,
+                top:  `${(vbParams.offsetY + (svgY - vbParams.vbY) / vbParams.vbH * vbParams.renderH).toFixed(1)}px`,
               });
               const BUBBLE_ANCHOR_Y = -AR_S * 2.8; // above head in SVG units
-              const transition = "left 0.38s cubic-bezier(0.22,1,0.36,1), top 0.38s cubic-bezier(0.22,1,0.36,1)";
 
               const renderBubble = (key: string, svgX: number, svgY: number, messages: { text: string; id: number }[], bc: string, isDraft?: boolean, isTypingDots?: boolean) => {
                 const pos = toP(svgX, svgY + BUBBLE_ANCHOR_Y);
                 const textColor = bc === "#ffffff" || bc === "#fde68a" || bc === "#86efac" || bc === "#93c5fd" || bc === "#fca5a5" ? "#111827" : "#ffffff";
                 const tailColor = bc;
                 return (
-                  <div key={key} style={{ position: "absolute", ...pos, transform: "translate(-50%, -100%)", transition, pointerEvents: "none", zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                  <div key={key} style={{ position: "absolute", ...pos, transform: "translate(-50%, -100%)", pointerEvents: "none", zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                     {messages.map((m, i) => {
                       const isNewest = i === messages.length - 1;
                       const opacity = i === 0 && messages.length === 3 ? 0.55 : i === 1 && messages.length >= 2 ? 0.78 : 1;
