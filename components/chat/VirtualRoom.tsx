@@ -142,6 +142,27 @@ function simulateDartThrow(remainingScore: number): { segment: number; multiplie
   return { segment: seg, multiplier: mult, points: seg * mult };
 }
 
+interface DartFlightAnim {
+  id: number;
+  fromX: number; fromY: number;
+  toX: number; toY: number;
+  angleDeg: number;
+  phase: "flying" | "stuck";
+}
+function dartLandingOffset(segment: number, multiplier: number, R: number): { lx: number; ly: number } {
+  const a2 = Math.random() * Math.PI * 2;
+  if (segment === 0) { const r = R * (1.18 + Math.random() * 0.18); return { lx: r * Math.cos(a2), ly: r * Math.sin(a2) }; }
+  if (segment === 50) { const r = R * (0.03 + Math.random() * 0.03); return { lx: r * Math.cos(a2), ly: r * Math.sin(a2) }; }
+  if (segment === 25) { const r = R * (0.10 + Math.random() * 0.05); return { lx: r * Math.cos(a2), ly: r * Math.sin(a2) }; }
+  const segIdx = DART_WHEEL.indexOf(segment);
+  const ca = (segIdx + 0.5) / 20 * 2 * Math.PI - Math.PI / 2;
+  const a = ca + (Math.random() - 0.5) * 0.14;
+  const r = multiplier === 2 ? R * (0.90 + Math.random() * 0.05)
+          : multiplier === 3 ? R * (0.52 + Math.random() * 0.05)
+          :                    R * (0.67 + Math.random() * 0.09);
+  return { lx: r * Math.cos(a), ly: r * Math.sin(a) };
+}
+
 // ─── Room themes ───────────────────────────────────────────────────────────────
 type RoomTheme = { id?: string; label?: string; color?: string; even: string; odd: string; highlight: string; wallA: string; wallB: string };
 function getShopTheme(): RoomTheme {
@@ -745,6 +766,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [dartHistoryModal, setDartHistoryModal] = useState<{ gameId: string } | null>(null);
   const [dartThrowEffects, setDartThrowEffects] = useState<Map<string, string>>(new Map());
   const [dartAnimating, setDartAnimating] = useState(false);
+  const [dartFlightAnim, setDartFlightAnim] = useState<DartFlightAnim | null>(null);
+  const dartBoardPositionsRef = useRef<Map<string, { cx: number; cy: number; R: number }>>(new Map());
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const xpRef = useRef(0);
@@ -2145,6 +2168,21 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     const isP1 = game.player1_id === currentProfile.id;
     const scoreBefore = isP1 ? game.player1_score : game.player2_score;
     const { segment, multiplier, points } = simulateDartThrow(scoreBefore);
+    // ── Dart flight animation ──
+    const boardPos = dartBoardPositionsRef.current.get(game.item_id);
+    if (boardPos) {
+      const playerIso = isoCenter(myPos.gx, myPos.gy, svgW);
+      const fromX = playerIso.x;
+      const fromY = playerIso.y - AR_S;
+      const { lx, ly } = dartLandingOffset(segment, multiplier, boardPos.R);
+      const toX = boardPos.cx + lx;
+      const toY = boardPos.cy + ly;
+      const angleDeg = Math.atan2(toY - fromY, toX - fromX) * 180 / Math.PI;
+      const animId = Date.now();
+      setDartFlightAnim({ id: animId, fromX, fromY, toX, toY, angleDeg, phase: "flying" });
+      setTimeout(() => setDartFlightAnim(prev => prev?.id === animId ? { ...prev, phase: "stuck" } : prev), 480);
+      setTimeout(() => setDartFlightAnim(prev => prev?.id === animId ? null : prev), 1900);
+    }
     const rawNew = scoreBefore - points;
     const isBust = rawNew < 0 || rawNew === 1 || (rawNew === 0 && !(multiplier === 2 || segment === 50));
     const scoreAfter = isBust ? scoreBefore : rawNew;
@@ -3303,6 +3341,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   // ── Dartboard ──
                   if (item.item_type === "dartboard") {
                     const R = 22 * scale;
+                    dartBoardPositionsRef.current.set(item.id, { cx, cy, R });
                     const game = dartGames.find(g => g.item_id === item.id && (g.status === "active" || g.status === "pending"));
                     // Scoreboard offset: along wall direction
                     const wallDirX = item.wall_side === "right" ? TW / 2 : -TW / 2;
@@ -4000,6 +4039,49 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   />
                 );
               })}
+
+              {/* ── Dart flight animation overlay ── */}
+              {dartFlightAnim && (() => {
+                const { id, fromX, fromY, toX, toY, angleDeg, phase } = dartFlightAnim;
+                const midX = (fromX + toX) / 2;
+                const midY = Math.min(fromY, toY) - 30;
+                const pathD = `M ${fromX},${fromY} Q ${midX},${midY} ${toX},${toY}`;
+                const dartShape = (
+                  <>
+                    {/* Tip */}
+                    <polygon points="10,0 5,-2 5,2" fill="#9ca3af" />
+                    {/* Barrel */}
+                    <rect x={-5} y={-1.8} width={10} height={3.6} rx={1.2} fill="#c8a045" stroke="#8b6914" strokeWidth={0.5} />
+                    {/* Shaft */}
+                    <line x1={-5} y1={0} x2={-9} y2={0} stroke="#d4d4d4" strokeWidth={1.4} />
+                    {/* Upper flight */}
+                    <polygon points="-9,0 -17,-7 -12,0" fill="#dc2626" opacity={0.9} />
+                    {/* Lower flight */}
+                    <polygon points="-9,0 -17,7 -12,0" fill="#991b1b" opacity={0.9} />
+                  </>
+                );
+                if (phase === "flying") {
+                  return (
+                    <g key={`df-${id}`} style={{ pointerEvents: "none" }}>
+                      <g>
+                        <animateMotion dur="0.48s" fill="freeze" rotate="auto" path={pathD} />
+                        {dartShape}
+                      </g>
+                    </g>
+                  );
+                }
+                return (
+                  <g key={`ds-${id}`} style={{ pointerEvents: "none" }}>
+                    <g transform={`translate(${toX},${toY})`}>
+                      <g transform={`rotate(${angleDeg})`}>
+                        <animateTransform attributeName="transform" type="rotate"
+                          values="0;-7;5;-3;2;-1;0" dur="0.45s" repeatCount="1" additive="sum" />
+                        {dartShape}
+                      </g>
+                    </g>
+                  </g>
+                );
+              })()}
             </svg>
 
             {/* ── HTML Bubble Overlay — fixed pixel size regardless of SVG zoom ── */}
