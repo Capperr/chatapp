@@ -682,6 +682,23 @@ interface DartThrow {
   is_bust: boolean; created_at: string;
 }
 
+interface GuestbookEntry {
+  id: string;
+  profile_id: string;
+  author_id: string;
+  author_display_name: string;
+  author_avatar_color: string | null;
+  content: string;
+  created_at: string;
+}
+interface PartnerRecord {
+  id: string;
+  requester_id: string;
+  recipient_id: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  created_at: string;
+}
+
 const SPACESHIP_VARIANTS: { id: string; name: string; emoji: string; desc: string; cols: number; rows: number; theme: string; price: number }[] = [
   { id: "scout",    name: "Scout",    emoji: "🛸", desc: "Kompakt og hurtigt",      cols: 8,  rows: 6,  theme: "blue",   price: 2000  },
   { id: "cruiser",  name: "Cruiser",  emoji: "🚀", desc: "Komfortabelt og rummeligt", cols: 10, rows: 8,  theme: "cyan",   price: 4500  },
@@ -775,6 +792,19 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [profileView, setProfileView] = useState<Profile | null>(null);
   const [profileViewAchievements, setProfileViewAchievements] = useState<Set<string>>(new Set());
+  const [profileTab, setProfileTab] = useState<"profil"|"gaestebog"|"rumkaereste">("profil");
+  const [guestbookEntries, setGuestbookEntries] = useState<GuestbookEntry[]>([]);
+  const [guestbookInput, setGuestbookInput] = useState("");
+  const [guestbookLoading, setGuestbookLoading] = useState(false);
+  const [partnerData, setPartnerData] = useState<PartnerRecord | null>(null);
+  const [partnerProfile, setPartnerProfile] = useState<Profile | null>(null);
+  const [myPartnerData, setMyPartnerData] = useState<PartnerRecord | null>(null);
+  const [myPartnerProfile, setMyPartnerProfile] = useState<Profile | null>(null);
+  const [myGuestbook, setMyGuestbook] = useState<GuestbookEntry[]>([]);
+  const [myGuestbookLoading, setMyGuestbookLoading] = useState(false);
+  const [ownProfileTab, setOwnProfileTab] = useState<"profil"|"gaestebog"|"rumkaereste">("profil");
+  const [editingBio, setEditingBio] = useState(false);
+  const [bioDraft, setBioDraft] = useState("");
   const [hovered, setHovered] = useState<string | null>(null);
   const [logMessages, setLogMessages] = useState<LogMessage[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
@@ -2641,7 +2671,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (userId === currentProfile.id) { setRightPanel("profile"); return; }
     const { data } = await supabase.from("profiles").select("*").eq("id", userId).single();
     if (data) {
-      setProfileView(data as Profile); setRightPanel("userprofile");
+      setProfileView(data as Profile); setProfileTab("profil"); setRightPanel("userprofile");
       supabase.from("user_achievements").select("achievement_id").eq("user_id", userId).then(({ data: ach }) => {
         setProfileViewAchievements(new Set((ach ?? []).map((a: { achievement_id: string }) => a.achievement_id)));
       });
@@ -6945,10 +6975,29 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               const updatePV = async (patch: Partial<Profile>) => {
                 const { data } = await supabase.from("profiles").update(patch).eq("id", profileView.id).select().single();
                 if (data) setProfileView(data as Profile);
-                // Broadcast mute changes so all clients update in real time
                 if ("muted_until" in patch) {
                   globalChannelRef.current?.send({ type: "broadcast", event: "user_muted", payload: { user_id: profileView.id, muted_until: patch.muted_until ?? null } });
                 }
+              };
+              const loadGuestbook = async () => {
+                setGuestbookLoading(true);
+                const { data } = await supabase.from("profile_guestbook").select("*").eq("profile_id", profileView.id).order("created_at", { ascending: false });
+                if (data) setGuestbookEntries(data as GuestbookEntry[]);
+                setGuestbookLoading(false);
+              };
+              const loadPartner = async () => {
+                const { data } = await supabase.from("profile_partners").select("*").or(`requester_id.eq.${profileView.id},recipient_id.eq.${profileView.id}`).eq("status", "accepted").maybeSingle();
+                setPartnerData(data as PartnerRecord | null);
+                if (data) {
+                  const otherId = (data as PartnerRecord).requester_id === profileView.id ? (data as PartnerRecord).recipient_id : (data as PartnerRecord).requester_id;
+                  const { data: prof } = await supabase.from("profiles").select("*").eq("id", otherId).single();
+                  setPartnerProfile(prof as Profile | null);
+                } else { setPartnerProfile(null); }
+              };
+              const sendPartnerRequest = async () => {
+                await supabase.from("profile_partners").insert({ requester_id: currentProfile.id, recipient_id: profileView.id, status: "pending" });
+                try { await supabase.from("notifications").insert({ user_id: profileView.id, type: "partner_request", emoji: "💕", title: "Rumkæreste-anmodning", subtitle: `${currentProfile.display_name} vil være din rumkæreste!`, color: "#ec4899", read: false }); } catch { /* ignore */ }
+                loadPartner();
               };
               return (
                 <>
@@ -6958,137 +7007,184 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
                   </div>
 
-                  {/* Banner + avatar */}
-                  <div className="flex-shrink-0 relative">
-                    <div className="h-16 w-full" style={{ background: pvIsAdmin ? "linear-gradient(135deg,#1e0a3c,#2d1060,#1a0a2e)" : "linear-gradient(135deg,#050d1f,#0a1628,#060e1c)" }} />
-                    {pvIsAdmin && <div className="absolute inset-0 h-16 opacity-20" style={{ backgroundImage: "repeating-linear-gradient(45deg,#7c3aed 0,#7c3aed 1px,transparent 0,transparent 50%)", backgroundSize: "10px 10px" }} />}
-                    <div className="absolute top-3 left-4 flex items-center gap-1.5">
-                      {pvIsAdmin && (
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] px-2 py-1 rounded-lg" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", color: "#e0c8ff", boxShadow: "0 0 12px rgba(124,58,237,0.5)" }}>🛡 ADMIN</span>
-                      )}
-                      {profileView.is_banned && <span className="text-[10px] font-bold uppercase tracking-wide text-rose-400 bg-rose-500/10 px-2 py-1 rounded-lg border border-rose-500/20">Udelukket</span>}
-                      {isMutedNow && <span className="text-[10px] font-bold uppercase tracking-wide text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">🔇 Muttet</span>}
-                    </div>
-                    <div className="flex flex-col items-center -mt-8 pb-3">
-                      {(() => {
-                        const pvOutfit = profileView.id === currentProfile.id ? myOutfit : (users.get(profileView.id)?.outfit ?? {});
-                        const hasOutfit = Object.keys(pvOutfit).length > 0;
-                        return (
-                          <div className="rounded-full border-2 flex items-center justify-center overflow-visible" style={{ borderColor: pvIsAdmin ? "#7c3aed" : "#1e293b", background: "#07101c", boxShadow: pvIsAdmin ? "0 0 16px rgba(124,58,237,0.4)" : "0 4px 16px rgba(0,0,0,0.6)", width: hasOutfit ? 72 : 64, height: hasOutfit ? 76 : 64 }}>
-                            <svg width={hasOutfit ? 60 : 48} height={hasOutfit ? 64 : 50} viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
-                              <PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} glow={pvIsAdmin} />
-                              {hasOutfit && <ClothingOverlay outfit={pvOutfit} catalog={clothingCatalog} />}
-                            </svg>
-                          </div>
-                        );
-                      })()}
-                      <p className="text-[16px] font-black text-white mt-2 tracking-tight">{profileView.display_name}</p>
-                      <p className="text-[12px] text-slate-500">@{profileView.username}</p>
-                      {/* Quick stats */}
-                      <div className="flex items-center gap-3 mt-2">
-                        {profileView.level != null && <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20"><span className="text-[11px] font-black text-violet-300">LV {profileView.level}</span></div>}
-                        {profileView.coins != null && <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20"><span className="text-sm">🪙</span><span className="text-[11px] font-black text-amber-300">{profileView.coins.toLocaleString()}</span></div>}
-                        {profileView.xp != null && <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.07]"><span className="text-[11px] font-semibold text-slate-400">{profileView.xp} XP</span></div>}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                    {/* XP bar */}
-                    {profileView.xp != null && (() => {
-                      const pvXp = profileView.xp;
-                      const pvLv = levelFromXp(pvXp);
-                      const pvInLv = xpInCurrentLevel(pvXp);
-                      const pvNeeded = xpForNextLevel(pvXp);
-                      const pct = pvNeeded > 0 ? Math.min(100, pvInLv / pvNeeded * 100) : 100;
-                      return (
-                        <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-[12px] font-bold text-violet-300">Niveau {pvLv}</span>
-                            <span className="text-[12px] text-slate-500 tabular-nums">{pvInLv} / {pvNeeded > 0 ? pvNeeded : "MAX"} XP</span>
-                          </div>
-                          <div className="w-full bg-white/[0.06] rounded-full h-2.5 overflow-hidden">
-                            <div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400" style={{ width: `${pct}%` }} />
-                          </div>
-                          <p className="text-[11px] text-slate-600 mt-1">{pvNeeded > 0 ? `${pvNeeded - pvInLv} XP til niveau ${pvLv + 1}` : "Max niveau nået!"}</p>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Achievements */}
-                    {pvEarned.length > 0 && (
-                      <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2.5">Bedrifter ({pvEarned.length})</p>
-                        <div className="flex flex-wrap gap-2">
-                          {pvEarned.map(a => (
-                            <div key={a.id} title={`${a.name}: ${a.description}`}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border cursor-default hover:scale-105 transition-transform"
-                              style={{ background: a.badge_color + "15", borderColor: a.badge_color + "35" }}>
-                              <span className="text-base leading-none">{a.badge_emoji}</span>
-                              <span className="text-[11px] font-semibold" style={{ color: a.badge_color }}>{a.name}</span>
-                            </div>
-                          ))}
-                        </div>
+                  {/* Scrollable area with optional full-height admin bg */}
+                  <div className="flex-1 overflow-y-auto relative">
+                    {pvIsAdmin && (
+                      <div className="absolute inset-0 pointer-events-none z-0" style={{ background: "linear-gradient(160deg,#0e0520,#160830,#0a0318)" }}>
+                        <div className="absolute inset-0 opacity-[0.13]" style={{ backgroundImage: "repeating-linear-gradient(45deg,#7c3aed 0,#7c3aed 1px,transparent 0,transparent 50%)", backgroundSize: "12px 12px" }} />
                       </div>
                     )}
-
-                    {/* Info */}
-                    {(profileView.total_online_seconds != null || profileView.bio) && (
-                      <div className="bg-white/[0.03] rounded-xl border border-white/[0.05] overflow-hidden">
-                        <div className="px-3 py-2 border-b border-white/[0.05] bg-white/[0.02]">
-                          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Info</p>
+                    <div className="relative z-10">
+                      {/* Banner + avatar */}
+                      <div className="flex-shrink-0 relative">
+                        <div className="h-14 w-full" style={{ background: pvIsAdmin ? "linear-gradient(135deg,#2d1060,#1e0a3c,#2d1060)" : "linear-gradient(135deg,#050d1f,#0a1628,#060e1c)" }} />
+                        {pvIsAdmin && <div className="absolute top-0 left-0 right-0 h-14 opacity-25" style={{ backgroundImage: "repeating-linear-gradient(45deg,#7c3aed 0,#7c3aed 1px,transparent 0,transparent 50%)", backgroundSize: "10px 10px" }} />}
+                        <div className="absolute top-3 left-4 flex items-center gap-1.5">
+                          {pvIsAdmin && <span className="text-[10px] font-black uppercase tracking-[0.2em] px-2 py-1 rounded-lg" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", color: "#e0c8ff", boxShadow: "0 0 12px rgba(124,58,237,0.5)" }}>🛡 ADMIN</span>}
+                          {profileView.is_banned && <span className="text-[10px] font-bold uppercase text-rose-400 bg-rose-500/10 px-2 py-1 rounded-lg border border-rose-500/20">Udelukket</span>}
+                          {isMutedNow && <span className="text-[10px] font-bold uppercase text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">🔇 Muttet</span>}
                         </div>
-                        <div className="p-3 space-y-2">
+                        <div className="flex flex-col items-center -mt-8 pb-2">
+                          {(() => {
+                            const pvOutfit = profileView.id === currentProfile.id ? myOutfit : (users.get(profileView.id)?.outfit ?? {});
+                            const hasOutfit = Object.keys(pvOutfit).length > 0;
+                            return (
+                              <div className="rounded-full border-2 flex items-center justify-center overflow-visible" style={{ borderColor: pvIsAdmin ? "#7c3aed" : "#1e293b", background: "#07101c", boxShadow: pvIsAdmin ? "0 0 16px rgba(124,58,237,0.4)" : "0 4px 16px rgba(0,0,0,0.6)", width: hasOutfit ? 72 : 64, height: hasOutfit ? 76 : 64 }}>
+                                <svg width={hasOutfit ? 60 : 48} height={hasOutfit ? 64 : 50} viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                                  <PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} glow={pvIsAdmin} />
+                                  {hasOutfit && <ClothingOverlay outfit={pvOutfit} catalog={clothingCatalog} />}
+                                </svg>
+                              </div>
+                            );
+                          })()}
+                          <p className="text-[16px] font-black text-white mt-2 tracking-tight">{profileView.display_name}</p>
+                          <p className="text-[12px] text-slate-500">@{profileView.username}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            {profileView.level != null && <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20"><span className="text-[11px] font-black text-violet-300">LV {profileView.level}</span></div>}
+                            {profileView.xp != null && <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.07]"><span className="text-[11px] font-semibold text-slate-400">{profileView.xp} XP</span></div>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Tabs */}
+                      <div className="flex border-b border-white/[0.07] px-3 gap-0 mb-0">
+                        {(["profil","gaestebog","rumkaereste"] as const).map(tab => (
+                          <button key={tab} onClick={() => { setProfileTab(tab); if (tab === "gaestebog") loadGuestbook(); if (tab === "rumkaereste") loadPartner(); }}
+                            className={`px-3 py-2 text-[12px] font-semibold border-b-2 transition-colors ${profileTab === tab ? "border-violet-500 text-violet-300" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
+                            {tab === "profil" ? "Profil" : tab === "gaestebog" ? "Gæstebog" : "Rumkæreste"}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Tab: Profil */}
+                      {profileTab === "profil" && (
+                        <div className="p-3 space-y-3">
+                          {profileView.xp != null && (() => {
+                            const pvXp = profileView.xp; const pvLv = levelFromXp(pvXp); const pvInLv = xpInCurrentLevel(pvXp); const pvNeeded = xpForNextLevel(pvXp); const pct = pvNeeded > 0 ? Math.min(100, pvInLv / pvNeeded * 100) : 100;
+                            return (
+                              <div className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07]">
+                                <div className="flex items-center justify-between mb-1.5"><span className="text-[12px] font-bold text-violet-300">Niveau {pvLv}</span><span className="text-[12px] text-slate-500 tabular-nums">{pvInLv} / {pvNeeded > 0 ? pvNeeded : "MAX"} XP</span></div>
+                                <div className="w-full bg-white/[0.06] rounded-full h-2 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400" style={{ width: `${pct}%` }} /></div>
+                              </div>
+                            );
+                          })()}
+                          {profileView.bio && (
+                            <div className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07]">
+                              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Om mig</p>
+                              <p className="text-[13px] text-slate-300 leading-relaxed">{profileView.bio}</p>
+                            </div>
+                          )}
+                          {pvEarned.length > 0 && (
+                            <div className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07]">
+                              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Bedrifter ({pvEarned.length})</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {pvEarned.map(a => (
+                                  <div key={a.id} title={`${a.name}: ${a.description}`} className="flex items-center gap-1.5 px-2 py-1 rounded-lg border cursor-default hover:scale-105 transition-transform" style={{ background: a.badge_color + "15", borderColor: a.badge_color + "35" }}>
+                                    <span className="text-sm leading-none">{a.badge_emoji}</span><span className="text-[11px] font-semibold" style={{ color: a.badge_color }}>{a.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                           {profileView.total_online_seconds != null && profileView.total_online_seconds > 0 && (
-                            <div className="flex items-center justify-between">
+                            <div className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07] flex items-center justify-between">
                               <span className="text-[13px] text-slate-400">⏱ Online tid</span>
                               <span className="text-[13px] text-slate-200 font-medium">{(() => { const h = Math.floor(profileView.total_online_seconds! / 3600); const m = Math.floor((profileView.total_online_seconds! % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
                             </div>
                           )}
-                          {profileView.bio && <p className="text-[13px] text-slate-400 leading-relaxed pt-1 border-t border-white/[0.05]">{profileView.bio}</p>}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Send privat besked */}
-                    {profileView.id !== currentProfile.id && (
-                      <button
-                        onClick={() => startDmWith(profileView.id, profileView.display_name, profileView.avatar_color ?? "#8b5cf6")}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[14px] font-semibold text-white bg-violet-600 hover:bg-violet-500 transition-colors border border-violet-500/40"
-                      >
-                        <Mail className="w-4 h-4" /> Send privat besked
-                      </button>
-                    )}
-
-                    {/* Admin tools */}
-                    {isAdmin && (
-                      <div className="bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-hidden">
-                        <div className="px-3 py-2 border-b border-white/[0.05] bg-violet-500/[0.04]">
-                          <p className="text-[11px] font-bold text-violet-500 uppercase tracking-widest">🛡 Moderator</p>
-                        </div>
-                        <div className="p-2 space-y-1.5">
-                          {isMutedNow ? (
-                            <button onClick={() => updatePV({ muted_until: null })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">
-                              <Volume2 className="w-3.5 h-3.5" /> Fjern mute
+                          {profileView.id !== currentProfile.id && (
+                            <button onClick={() => startDmWith(profileView.id, profileView.display_name, profileView.avatar_color ?? "#8b5cf6")}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[14px] font-semibold text-white bg-violet-600 hover:bg-violet-500 transition-colors border border-violet-500/40">
+                              <Mail className="w-4 h-4" /> Send privat besked
                             </button>
-                          ) : (
-                            <div className="grid grid-cols-2 gap-1.5">
-                              {([["15 min", 15], ["1 time", 60], ["24 timer", 1440], ["Permanent", 5256000]] as [string, number][]).map(([l, m]) => (
-                                <button key={l} onClick={() => { const until = new Date(Date.now() + m * 60000).toISOString(); updatePV({ muted_until: until }); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"><VolumeX className="w-3 h-3 flex-shrink-0" />{l}</button>
-                              ))}
+                          )}
+                          {isAdmin && (
+                            <div className="bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-hidden">
+                              <div className="px-3 py-2 border-b border-white/[0.05] bg-violet-500/[0.04]"><p className="text-[11px] font-bold text-violet-500 uppercase tracking-widest">🛡 Moderator</p></div>
+                              <div className="p-2 space-y-1.5">
+                                {isMutedNow
+                                  ? <button onClick={() => updatePV({ muted_until: null })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"><Volume2 className="w-3.5 h-3.5" /> Fjern mute</button>
+                                  : <div className="grid grid-cols-2 gap-1.5">{([["15 min", 15], ["1 time", 60], ["24 timer", 1440], ["Permanent", 5256000]] as [string, number][]).map(([l, m]) => (<button key={l} onClick={() => { const until = new Date(Date.now() + m * 60000).toISOString(); updatePV({ muted_until: until }); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"><VolumeX className="w-3 h-3 flex-shrink-0" />{l}</button>))}</div>
+                                }
+                                {profileView.is_banned
+                                  ? <button onClick={() => updatePV({ is_banned: false })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"><UserCheck className="w-3.5 h-3.5" /> Fjern udelukkelse</button>
+                                  : <button onClick={() => { if (confirm(`Udeluk ${profileView.display_name}?`)) updatePV({ is_banned: true }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors"><Ban className="w-3.5 h-3.5" /> Udeluk bruger</button>
+                                }
+                                {pvIsAdmin
+                                  ? <button onClick={() => { if (confirm(`Fjern admin fra ${profileView.display_name}?`)) updatePV({ role: "user" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"><ShieldOff className="w-3.5 h-3.5" /> Fjern moderator</button>
+                                  : <button onClick={() => { if (confirm(`Gør ${profileView.display_name} til moderator?`)) updatePV({ role: "admin" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-colors"><Shield className="w-3.5 h-3.5" /> Gør til moderator</button>
+                                }
+                              </div>
                             </div>
                           )}
-                          {profileView.is_banned
-                            ? <button onClick={() => updatePV({ is_banned: false })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"><UserCheck className="w-3.5 h-3.5" /> Fjern udelukkelse</button>
-                            : <button onClick={() => { if (confirm(`Udeluk ${profileView.display_name}?`)) updatePV({ is_banned: true }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors"><Ban className="w-3.5 h-3.5" /> Udeluk bruger</button>
-                          }
-                          {pvIsAdmin
-                            ? <button onClick={() => { if (confirm(`Fjern admin fra ${profileView.display_name}?`)) updatePV({ role: "user" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"><ShieldOff className="w-3.5 h-3.5" /> Fjern moderator</button>
-                            : <button onClick={() => { if (confirm(`Gør ${profileView.display_name} til moderator?`)) updatePV({ role: "admin" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-colors"><Shield className="w-3.5 h-3.5" /> Gør til moderator</button>
-                          }
                         </div>
-                      </div>
-                    )}
+                      )}
+
+                      {/* Tab: Gæstebog */}
+                      {profileTab === "gaestebog" && (
+                        <div className="p-3 space-y-3">
+                          {profileView.id !== currentProfile.id && (
+                            <div className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07]">
+                              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Skriv i gæstebogen</p>
+                              <textarea value={guestbookInput} onChange={e => setGuestbookInput(e.target.value.slice(0, 300))} placeholder="Skriv en hilsen..." className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg p-2.5 text-[13px] text-slate-200 placeholder-slate-600 resize-none focus:outline-none focus:border-violet-500/40" rows={3} />
+                              <div className="flex flex-wrap gap-1 mt-2 mb-2">
+                                {["😊","😂","❤️","🔥","✨","🎉","😎","🥰","💯","🙌","👋","💪","🤣","😭","🥺","😅","🤔","💕","🌟","🤩","😴","🙏","💀","🫶","🫡","😤","🎯","👀","🎊","😁"].map(em => (
+                                  <button key={em} onClick={() => setGuestbookInput(p => (p + em).slice(0, 300))} className="text-base hover:scale-125 transition-transform leading-none">{em}</button>
+                                ))}
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] text-slate-600">{guestbookInput.length}/300</span>
+                                <button disabled={!guestbookInput.trim() || guestbookLoading} onClick={async () => { if (!guestbookInput.trim()) return; setGuestbookLoading(true); await supabase.from("profile_guestbook").insert({ profile_id: profileView.id, author_id: currentProfile.id, author_display_name: currentProfile.display_name, author_avatar_color: currentProfile.avatar_color ?? null, content: guestbookInput.trim() }); setGuestbookInput(""); await loadGuestbook(); }} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors">Send</button>
+                              </div>
+                            </div>
+                          )}
+                          {guestbookLoading && <p className="text-[12px] text-slate-600 text-center py-4">Indlæser...</p>}
+                          {!guestbookLoading && guestbookEntries.length === 0 && <p className="text-[12px] text-slate-600 text-center py-6">Ingen gæstekommentarer endnu</p>}
+                          {guestbookEntries.map(entry => (
+                            <div key={entry.id} className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07]">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: (entry.author_avatar_color ?? "#8b5cf6") + "22", border: `1px solid ${entry.author_avatar_color ?? "#8b5cf6"}44` }}>
+                                    <svg width="24" height="24" viewBox="-18 -22 36 40"><g transform="scale(0.56)"><PersonAvatar color={entry.author_avatar_color ?? "#8b5cf6"} /></g></svg>
+                                  </div>
+                                  <div><p className="text-[12px] font-bold text-slate-300">{entry.author_display_name}</p><p className="text-[10px] text-slate-600">{new Date(entry.created_at).toLocaleDateString("da-DK")}</p></div>
+                                </div>
+                                {(isAdmin || entry.author_id === currentProfile.id || profileView.id === currentProfile.id) && (
+                                  <button onClick={async () => { await supabase.from("profile_guestbook").delete().eq("id", entry.id); setGuestbookEntries(p => p.filter(e => e.id !== entry.id)); }} className="text-slate-700 hover:text-rose-400 transition-colors flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
+                                )}
+                              </div>
+                              <p className="text-[13px] text-slate-300 mt-2 leading-relaxed">{entry.content}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Tab: Rumkæreste */}
+                      {profileTab === "rumkaereste" && (
+                        <div className="p-3 space-y-3">
+                          {partnerData ? (
+                            <div className="bg-white/[0.04] rounded-xl p-4 border border-pink-500/20 text-center">
+                              <p className="text-[11px] font-bold text-pink-400 uppercase tracking-widest mb-3">Rumkæreste</p>
+                              <div className="flex items-center justify-center mb-3">
+                                <svg width="160" height="120" viewBox="0 0 160 120">
+                                  <path d="M80 105 C80 105 18 68 18 40 C18 22 32 8 52 8 C63 8 73 14 80 24 C87 14 97 8 108 8 C128 8 142 22 142 40 C142 68 80 105 80 105Z" fill="#ec4899" opacity="0.2" stroke="#ec4899" strokeWidth="1" />
+                                  <g transform="translate(35, 18) scale(0.88)"><PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} /></g>
+                                  <g transform="translate(87, 18) scale(0.88)"><PersonAvatar color={partnerProfile?.avatar_color ?? "#8b5cf6"} /></g>
+                                </svg>
+                              </div>
+                              <p className="text-[13px] text-pink-300 font-semibold">{profileView.display_name} ❤️ {partnerProfile?.display_name ?? "?"}</p>
+                            </div>
+                          ) : profileView.id !== currentProfile.id ? (
+                            <div className="bg-white/[0.04] rounded-xl p-4 border border-white/[0.07] text-center space-y-3">
+                              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Rumkæreste</p>
+                              <svg width="64" height="56" viewBox="0 0 64 56" className="mx-auto"><path d="M32 50 C32 50 4 32 4 16 C4 7 11 1 20 1 C25 1 29 4 32 10 C35 4 39 1 44 1 C53 1 60 7 60 16 C60 32 32 50 32 50Z" fill="#ec489918" stroke="#ec489940" strokeWidth="1.5" /></svg>
+                              <p className="text-[13px] text-slate-400">Send en kæreste-anmodning til {profileView.display_name}</p>
+                              <button onClick={sendPartnerRequest} className="px-4 py-2 rounded-xl text-[13px] font-semibold text-white bg-pink-600 hover:bg-pink-500 border border-pink-500/40 transition-colors">💕 Send anmodning</button>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </>
               );
@@ -7096,6 +7192,21 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
             {rightPanel === "profile" && (() => {
               const earnedAchievements = allAchievements.filter(a => myAchievements.has(a.id));
+              const loadMyGuestbook = async () => {
+                setMyGuestbookLoading(true);
+                const { data } = await supabase.from("profile_guestbook").select("*").eq("profile_id", currentProfile.id).order("created_at", { ascending: false });
+                if (data) setMyGuestbook(data as GuestbookEntry[]);
+                setMyGuestbookLoading(false);
+              };
+              const loadMyPartner = async () => {
+                const { data } = await supabase.from("profile_partners").select("*").or(`requester_id.eq.${currentProfile.id},recipient_id.eq.${currentProfile.id}`).eq("status", "accepted").maybeSingle();
+                setMyPartnerData(data as PartnerRecord | null);
+                if (data) {
+                  const otherId = (data as PartnerRecord).requester_id === currentProfile.id ? (data as PartnerRecord).recipient_id : (data as PartnerRecord).requester_id;
+                  const { data: prof } = await supabase.from("profiles").select("*").eq("id", otherId).single();
+                  setMyPartnerProfile(prof as Profile | null);
+                } else { setMyPartnerProfile(null); }
+              };
               return (
               <>
                 {/* Header */}
@@ -7104,108 +7215,161 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
 
-                {/* Banner + avatar */}
-                <div className="flex-shrink-0 relative">
-                  <div className="h-16 w-full" style={{ background: isAdmin ? "linear-gradient(135deg,#1e0a3c,#2d1060,#1a0a2e)" : "linear-gradient(135deg,#050d1f,#0a1628,#060e1c)" }} />
-                  {isAdmin && <div className="absolute inset-0 h-16 opacity-20" style={{ backgroundImage: "repeating-linear-gradient(45deg,#7c3aed 0,#7c3aed 1px,transparent 0,transparent 50%)", backgroundSize: "10px 10px" }} />}
-                  <div className="absolute top-3 left-4">
-                    {isAdmin
-                      ? <span className="text-[10px] font-black uppercase tracking-[0.2em] px-2 py-1 rounded-lg" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", color: "#e0c8ff", boxShadow: "0 0 12px rgba(124,58,237,0.5)" }}>🛡 ADMIN</span>
-                      : <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 bg-white/[0.05] px-2 py-1 rounded-lg border border-white/[0.06]">Bruger</span>
-                    }
-                  </div>
-                  {/* Avatar circle */}
-                  <div className="flex flex-col items-center -mt-8 pb-3">
-                    <div className="w-16 h-16 rounded-full border-2 flex items-center justify-center" style={{ borderColor: isAdmin ? "#7c3aed" : "#1e293b", background: "#07101c", boxShadow: isAdmin ? "0 0 16px rgba(124,58,237,0.4)" : "0 4px 16px rgba(0,0,0,0.6)" }}>
-                      <svg width="48" height="50" viewBox="-14 -30 28 50">
-                        <PersonAvatar color={myColor} glow={isAdmin} mood={myMood} />
-                        {Object.keys(myOutfit).length > 0 && <ClothingOverlay outfit={myOutfit} catalog={clothingCatalog} />}
-                      </svg>
+                <div className="flex-1 overflow-y-auto relative">
+                  {isAdmin && (
+                    <div className="absolute inset-0 pointer-events-none z-0" style={{ background: "linear-gradient(160deg,#0e0520,#160830,#0a0318)" }}>
+                      <div className="absolute inset-0 opacity-[0.13]" style={{ backgroundImage: "repeating-linear-gradient(45deg,#7c3aed 0,#7c3aed 1px,transparent 0,transparent 50%)", backgroundSize: "12px 12px" }} />
                     </div>
-                    <p className="text-[16px] font-black text-white mt-2 tracking-tight">{currentProfile.display_name}</p>
-                    <p className="text-[12px] text-slate-500">@{currentProfile.username}</p>
-                    {/* Quick stats row */}
-                    <div className="flex items-center gap-3 mt-2">
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20">
-                        <span className="text-[11px] font-black text-violet-300">LV {level}</span>
+                  )}
+                  <div className="relative z-10">
+                    {/* Banner + avatar */}
+                    <div className="flex-shrink-0 relative">
+                      <div className="h-14 w-full" style={{ background: isAdmin ? "linear-gradient(135deg,#2d1060,#1e0a3c,#2d1060)" : "linear-gradient(135deg,#050d1f,#0a1628,#060e1c)" }} />
+                      {isAdmin && <div className="absolute top-0 left-0 right-0 h-14 opacity-25" style={{ backgroundImage: "repeating-linear-gradient(45deg,#7c3aed 0,#7c3aed 1px,transparent 0,transparent 50%)", backgroundSize: "10px 10px" }} />}
+                      <div className="absolute top-3 left-4">
+                        {isAdmin
+                          ? <span className="text-[10px] font-black uppercase tracking-[0.2em] px-2 py-1 rounded-lg" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", color: "#e0c8ff", boxShadow: "0 0 12px rgba(124,58,237,0.5)" }}>🛡 ADMIN</span>
+                          : <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 bg-white/[0.05] px-2 py-1 rounded-lg border border-white/[0.06]">Bruger</span>
+                        }
                       </div>
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20">
-                        <span className="text-sm leading-none">🪙</span>
-                        <span className="text-[11px] font-black text-amber-300">{coins.toLocaleString()}</span>
-                      </div>
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.07]">
-                        <span className="text-[11px] font-semibold text-slate-400">{xp} XP</span>
+                      <div className="flex flex-col items-center -mt-8 pb-2">
+                        <div className="w-16 h-16 rounded-full border-2 flex items-center justify-center" style={{ borderColor: isAdmin ? "#7c3aed" : "#1e293b", background: "#07101c", boxShadow: isAdmin ? "0 0 16px rgba(124,58,237,0.4)" : "0 4px 16px rgba(0,0,0,0.6)" }}>
+                          <svg width="48" height="50" viewBox="-14 -30 28 50">
+                            <PersonAvatar color={myColor} glow={isAdmin} mood={myMood} />
+                            {Object.keys(myOutfit).length > 0 && <ClothingOverlay outfit={myOutfit} catalog={clothingCatalog} />}
+                          </svg>
+                        </div>
+                        <p className="text-[16px] font-black text-white mt-2 tracking-tight">{currentProfile.display_name}</p>
+                        <p className="text-[12px] text-slate-500">@{currentProfile.username}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20"><span className="text-[11px] font-black text-violet-300">LV {level}</span></div>
+                          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20"><span className="text-sm leading-none">🪙</span><span className="text-[11px] font-black text-amber-300">{coins.toLocaleString()}</span></div>
+                          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.07]"><span className="text-[11px] font-semibold text-slate-400">{xp} XP</span></div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                  {/* XP Progress */}
-                  <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[12px] font-bold text-violet-300">Niveau {level}</span>
-                      <span className="text-[12px] text-slate-500 tabular-nums">{xp % 100} / 100 XP</span>
+                    {/* Tabs */}
+                    <div className="flex border-b border-white/[0.07] px-3 gap-0 mb-0">
+                      {(["profil","gaestebog","rumkaereste"] as const).map(tab => (
+                        <button key={tab} onClick={() => { setOwnProfileTab(tab); if (tab === "gaestebog") loadMyGuestbook(); if (tab === "rumkaereste") loadMyPartner(); }}
+                          className={`px-3 py-2 text-[12px] font-semibold border-b-2 transition-colors ${ownProfileTab === tab ? "border-violet-500 text-violet-300" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
+                          {tab === "profil" ? "Profil" : tab === "gaestebog" ? "Gæstebog" : "Rumkæreste"}
+                        </button>
+                      ))}
                     </div>
-                    <div className="w-full bg-white/[0.06] rounded-full h-2.5 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all duration-500" style={{ width: `${xp % 100}%` }} />
-                    </div>
-                    <p className="text-[11px] text-slate-600 mt-1">{100 - (xp % 100)} XP til niveau {level + 1}</p>
-                  </div>
 
-                  {/* Achievements/badges */}
-                  {earnedAchievements.length > 0 && (
-                    <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2.5">Bedrifter ({earnedAchievements.length})</p>
-                      <div className="flex flex-wrap gap-2">
-                        {earnedAchievements.map(a => (
-                          <div key={a.id} title={`${a.name}: ${a.description}`}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all cursor-default hover:scale-105"
-                            style={{ background: a.badge_color + "15", borderColor: a.badge_color + "35" }}>
-                            <span className="text-base leading-none">{a.badge_emoji}</span>
-                            <span className="text-[11px] font-semibold" style={{ color: a.badge_color }}>{a.name}</span>
+                    {/* Tab: Profil */}
+                    {ownProfileTab === "profil" && (
+                      <div className="p-3 space-y-3">
+                        <div className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07]">
+                          <div className="flex items-center justify-between mb-1.5"><span className="text-[12px] font-bold text-violet-300">Niveau {level}</span><span className="text-[12px] text-slate-500 tabular-nums">{xp % 100} / 100 XP</span></div>
+                          <div className="w-full bg-white/[0.06] rounded-full h-2 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all duration-500" style={{ width: `${xp % 100}%` }} /></div>
+                          <p className="text-[11px] text-slate-600 mt-1">{100 - (xp % 100)} XP til niveau {level + 1}</p>
+                        </div>
+
+                        {/* Bio (editable) */}
+                        <div className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07]">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Om mig</p>
+                            {!editingBio && <button onClick={() => { setEditingBio(true); setBioDraft(currentProfile.bio ?? ""); }} className="text-[11px] text-violet-400 hover:text-violet-300">Rediger</button>}
+                          </div>
+                          {editingBio ? (
+                            <div className="space-y-2">
+                              <textarea value={bioDraft} onChange={e => setBioDraft(e.target.value.slice(0, 300))} className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg p-2 text-[13px] text-slate-200 placeholder-slate-600 resize-none focus:outline-none focus:border-violet-500/40" rows={3} placeholder="Beskriv dig selv..." autoFocus />
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] text-slate-600">{bioDraft.length}/300</span>
+                                <div className="flex gap-2">
+                                  <button onClick={() => setEditingBio(false)} className="px-2.5 py-1 rounded-lg text-[12px] text-slate-400 bg-white/[0.05] hover:bg-white/[0.08]">Annuller</button>
+                                  <button onClick={async () => { await supabase.from("profiles").update({ bio: bioDraft.trim() }).eq("id", currentProfile.id); setEditingBio(false); }} className="px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white bg-violet-600 hover:bg-violet-500">Gem</button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-[13px] text-slate-400 leading-relaxed">{currentProfile.bio || <span className="text-slate-600 italic">Ingen profiltekst endnu</span>}</p>
+                          )}
+                        </div>
+
+                        {earnedAchievements.length > 0 && (
+                          <div className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07]">
+                            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Bedrifter ({earnedAchievements.length})</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {earnedAchievements.map(a => (
+                                <div key={a.id} title={`${a.name}: ${a.description}`} className="flex items-center gap-1.5 px-2 py-1 rounded-lg border transition-all cursor-default hover:scale-105" style={{ background: a.badge_color + "15", borderColor: a.badge_color + "35" }}>
+                                  <span className="text-sm leading-none">{a.badge_emoji}</span><span className="text-[11px] font-semibold" style={{ color: a.badge_color }}>{a.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07] space-y-2">
+                          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Aktivitet</p>
+                          <div className="flex items-center justify-between"><span className="text-[13px] text-slate-400">⏱ Total online</span><span className="text-[13px] text-slate-200 font-medium tabular-nums">{(() => { const h = Math.floor(totalSeconds / 3600); const m = Math.floor((totalSeconds % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span></div>
+                          <div className="flex items-center justify-between"><span className="text-[13px] text-slate-400">💬 Beskeder</span><span className="text-[13px] text-slate-200 font-medium tabular-nums">{messageCountRef.current}</span></div>
+                          <div className="flex items-center justify-between"><span className="text-[13px] text-slate-400">🪙 Næste bonus om</span><span className="text-[13px] text-emerald-400 font-medium tabular-nums">{(() => { const m = Math.floor(timeToNextHour / 60); const s = timeToNextHour % 60; return `${m}:${String(s).padStart(2, "0")}`; })()}</span></div>
+                        </div>
+
+                        {tanLevel > 0 && (
+                          <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[13px] text-amber-300 font-semibold">☀️ {TAN_LEVELS[tanLevel]!.label}</span>
+                              <div className="flex gap-0.5">{TAN_LEVELS.slice(1).map((t, i) => (<div key={i + 1} className="w-2.5 h-2.5 rounded-full border border-amber-800/50" style={{ backgroundColor: (i + 1) <= tanLevel ? t!.color : "rgba(255,255,255,0.06)" }} />))}</div>
+                            </div>
+                            {tanExpiresAt && <p className="text-[11px] text-amber-700">Forsvinder om {Math.round((new Date(tanExpiresAt).getTime() - Date.now()) / 3600000)}t</p>}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tab: Gæstebog (own) */}
+                    {ownProfileTab === "gaestebog" && (
+                      <div className="p-3 space-y-3">
+                        {myGuestbookLoading && <p className="text-[12px] text-slate-600 text-center py-4">Indlæser...</p>}
+                        {!myGuestbookLoading && myGuestbook.length === 0 && <p className="text-[12px] text-slate-600 text-center py-6">Ingen gæstekommentarer endnu</p>}
+                        {myGuestbook.map(entry => (
+                          <div key={entry.id} className="bg-white/[0.04] rounded-xl p-3 border border-white/[0.07]">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: (entry.author_avatar_color ?? "#8b5cf6") + "22", border: `1px solid ${entry.author_avatar_color ?? "#8b5cf6"}44` }}>
+                                  <svg width="24" height="24" viewBox="-18 -22 36 40"><g transform="scale(0.56)"><PersonAvatar color={entry.author_avatar_color ?? "#8b5cf6"} /></g></svg>
+                                </div>
+                                <div><p className="text-[12px] font-bold text-slate-300">{entry.author_display_name}</p><p className="text-[10px] text-slate-600">{new Date(entry.created_at).toLocaleDateString("da-DK")}</p></div>
+                              </div>
+                              <button onClick={async () => { await supabase.from("profile_guestbook").delete().eq("id", entry.id); setMyGuestbook(p => p.filter(e => e.id !== entry.id)); }} className="text-slate-700 hover:text-rose-400 transition-colors flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
+                            </div>
+                            <p className="text-[13px] text-slate-300 mt-2 leading-relaxed">{entry.content}</p>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Activity */}
-                  <div className="bg-white/[0.03] rounded-xl border border-white/[0.05] overflow-hidden">
-                    <div className="px-3 py-2 border-b border-white/[0.05] bg-white/[0.02]">
-                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Aktivitet</p>
-                    </div>
-                    <div className="p-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[13px] text-slate-400">⏱ Total online</span>
-                        <span className="text-[13px] text-slate-200 font-medium tabular-nums">{(() => { const h = Math.floor(totalSeconds / 3600); const m = Math.floor((totalSeconds % 3600) / 60); return h > 0 ? `${h}t ${m}m` : `${m}m`; })()}</span>
+                    {/* Tab: Rumkæreste (own) */}
+                    {ownProfileTab === "rumkaereste" && (
+                      <div className="p-3 space-y-3">
+                        {myPartnerData ? (
+                          <div className="bg-white/[0.04] rounded-xl p-4 border border-pink-500/20 text-center space-y-3">
+                            <p className="text-[11px] font-bold text-pink-400 uppercase tracking-widest">Din rumkæreste</p>
+                            <div className="flex items-center justify-center">
+                              <svg width="160" height="120" viewBox="0 0 160 120">
+                                <path d="M80 105 C80 105 18 68 18 40 C18 22 32 8 52 8 C63 8 73 14 80 24 C87 14 97 8 108 8 C128 8 142 22 142 40 C142 68 80 105 80 105Z" fill="#ec4899" opacity="0.2" stroke="#ec4899" strokeWidth="1" />
+                                <g transform="translate(35, 18) scale(0.88)"><PersonAvatar color={myColor} /></g>
+                                <g transform="translate(87, 18) scale(0.88)"><PersonAvatar color={myPartnerProfile?.avatar_color ?? "#8b5cf6"} /></g>
+                              </svg>
+                            </div>
+                            <p className="text-[13px] text-pink-300 font-semibold">{currentProfile.display_name} ❤️ {myPartnerProfile?.display_name ?? "?"}</p>
+                            <button onClick={async () => { if (confirm("Vil du afslutte rumkæreste-forholdet?")) { await supabase.from("profile_partners").delete().eq("id", myPartnerData.id); setMyPartnerData(null); setMyPartnerProfile(null); } }} className="px-3 py-1.5 rounded-lg text-[12px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors">Afslut forhold</button>
+                          </div>
+                        ) : (
+                          <div className="bg-white/[0.04] rounded-xl p-4 border border-white/[0.07] text-center">
+                            <svg width="64" height="56" viewBox="0 0 64 56" className="mx-auto mb-3"><path d="M32 50 C32 50 4 32 4 16 C4 7 11 1 20 1 C25 1 29 4 32 10 C35 4 39 1 44 1 C53 1 60 7 60 16 C60 32 32 50 32 50Z" fill="#ec489918" stroke="#ec489940" strokeWidth="1.5" /></svg>
+                            <p className="text-[13px] text-slate-500">Du har ingen rumkæreste endnu</p>
+                            <p className="text-[12px] text-slate-600 mt-1">Åbn en anden brugers profil for at sende en anmodning</p>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[13px] text-slate-400">💬 Beskeder</span>
-                        <span className="text-[13px] text-slate-200 font-medium tabular-nums">{messageCountRef.current}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[13px] text-slate-400">🪙 Næste bonus om</span>
-                        <span className="text-[13px] text-emerald-400 font-medium tabular-nums">{(() => { const m = Math.floor(timeToNextHour / 60); const s = timeToNextHour % 60; return `${m}:${String(s).padStart(2, "0")}`; })()}</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
-
-                  {/* Solarie */}
-                  {tanLevel > 0 && (
-                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[13px] text-amber-300 font-semibold">☀️ {TAN_LEVELS[tanLevel]!.label}</span>
-                        <div className="flex gap-0.5">
-                          {TAN_LEVELS.slice(1).map((t, i) => (
-                            <div key={i + 1} className="w-2.5 h-2.5 rounded-full border border-amber-800/50"
-                              style={{ backgroundColor: (i + 1) <= tanLevel ? t!.color : "rgba(255,255,255,0.06)" }} />
-                          ))}
-                        </div>
-                      </div>
-                      {tanExpiresAt && <p className="text-[11px] text-amber-700">Forsvinder om {Math.round((new Date(tanExpiresAt).getTime() - Date.now()) / 3600000)}t</p>}
-                    </div>
-                  )}
                 </div>
               </>
               );
@@ -7242,7 +7406,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     const openProfile = () => {
                       if (isMe) return;
                       supabase.from("profiles").select("*").eq("id", msg.user_id).single().then(({ data }) => {
-                        if (data) { setProfileView(data as Profile); setRightPanel("userprofile"); }
+                        if (data) { setProfileView(data as Profile); setProfileTab("profil"); setRightPanel("userprofile"); }
                       });
                     };
                     // Render content with all mention occurrences highlighted
