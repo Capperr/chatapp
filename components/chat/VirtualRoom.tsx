@@ -1749,8 +1749,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         for (const p of others) { if (!userLastActivityRef.current.has(p.user_id)) userLastActivityRef.current.set(p.user_id, now); }
         setUsers(prev => {
           const next = new Map(prev);
-          // Update ALL presence users (not just new ones) so position is always current
-          for (const p of others) { next.set(p.user_id, p); }
+          // Only add users we haven't seen yet — don't overwrite positions of known users
+          // (move broadcasts are the source of truth for position; presence data can be stale
+          //  because any user's track() call triggers sync for the whole room)
+          for (const p of others) { if (!next.has(p.user_id)) next.set(p.user_id, p); }
+          // Remove users who left the room
           const activeIds = new Set(others.map(p => p.user_id));
           for (const uid of Array.from(next.keys())) { if (!activeIds.has(uid)) next.delete(uid); }
           return next;
