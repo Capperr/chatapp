@@ -581,6 +581,7 @@ interface DartGame {
   current_player_id: string; throws_this_turn: number;
   status: "pending" | "active" | "finished";
   winner_id?: string | null; created_at: string;
+  wager?: number;
 }
 interface DartThrow {
   id: string; game_id: string; player_id: string;
@@ -772,6 +773,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [dartAnimating, setDartAnimating] = useState(false);
   const [dartFlightAnim, setDartFlightAnim] = useState<DartFlightAnim | null>(null);
   const dartBoardPositionsRef = useRef<Map<string, { cx: number; cy: number; R: number }>>(new Map());
+  const [dartStartWager, setDartStartWager] = useState(0);
+  const [dartPausedGames, setDartPausedGames] = useState<Map<string, { absentPlayerId: string; deadline: number }>>(new Map());
+  const [dartWinEffects, setDartWinEffects] = useState<Map<string, { wager: number }>>(new Map());
+  const dartPauseTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const dartGamesRef = useRef<DartGame[]>([]);
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const xpRef = useRef(0);
@@ -836,6 +842,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   // Keep refs in sync
   useEffect(() => { botsRef.current = bots; }, [bots]);
   useEffect(() => { usersRef.current = users; }, [users]);
+  useEffect(() => { dartGamesRef.current = dartGames; }, [dartGames]);
   useEffect(() => {
     const ids = Array.from(users.keys());
     if (ids.length === 0) { setMutedUsers(new Set()); return; }
@@ -1730,6 +1737,45 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           for (const uid of Array.from(next.keys())) { if (!activeIds.has(uid)) next.delete(uid); }
           return next;
         });
+        // ── Dart: detect player leave/return ──
+        const activeIdSet = new Set(others.map(p => p.user_id));
+        // Check for players returning to a paused game
+        setDartPausedGames(prev => {
+          const next = new Map(prev);
+          for (const [gid, entry] of Array.from(next.entries())) {
+            if (activeIdSet.has(entry.absentPlayerId)) {
+              // Player returned — clear their pause
+              const timer = dartPauseTimersRef.current.get(gid);
+              if (timer) clearTimeout(timer);
+              dartPauseTimersRef.current.delete(gid);
+              next.delete(gid);
+              channelRef.current?.send({ type: "broadcast", event: "dart_player_returned", payload: { game_id: gid } });
+            }
+          }
+          return next;
+        });
+        // Check for players who just left an active dart game
+        // Only the remaining player (who is still in room) should trigger the forfeit timer
+        for (const game of dartGamesRef.current.filter(g => g.status === "active")) {
+          const p1InRoom = activeIdSet.has(game.player1_id) || game.player1_id === currentProfile.id;
+          const p2InRoom = activeIdSet.has(game.player2_id) || game.player2_id === currentProfile.id;
+          const iAmInGame = game.player1_id === currentProfile.id || game.player2_id === currentProfile.id;
+          if (!iAmInGame) continue;
+          const absentId = !p1InRoom ? game.player1_id : !p2InRoom ? game.player2_id : null;
+          if (!absentId) continue;
+          if (dartPauseTimersRef.current.has(game.id)) continue; // already paused
+          // Start pause timer
+          const deadline = Date.now() + 60000;
+          setDartPausedGames(prev => { const m = new Map(prev); m.set(game.id, { absentPlayerId: absentId, deadline }); return m; });
+          channelRef.current?.send({ type: "broadcast", event: "dart_player_left", payload: { game_id: game.id, left_player_id: absentId, deadline } });
+          const timer = setTimeout(() => {
+            const currentGame = dartGamesRef.current.find(g => g.id === game.id);
+            if (!currentGame || currentGame.status !== "active") return;
+            const winnerId = absentId === game.player1_id ? game.player2_id : game.player1_id;
+            endDartGame(currentGame, winnerId);
+          }, 60000);
+          dartPauseTimersRef.current.set(game.id, timer);
+        }
         const cols = roomColsRef.current; const rows = roomRowsRef.current;
         const occupied = new Set(others.map(p => `${p.gx},${p.gy}`));
         const cur = myPosRef.current;
@@ -1809,6 +1855,23 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           const filtered = prev.filter(x => x.id !== g.id);
           return g.status === "finished" ? filtered : [...filtered, g];
         });
+      })
+      .on("broadcast", { event: "dart_player_left" }, ({ payload }) => {
+        const p = payload as { game_id: string; left_player_id: string; deadline: number };
+        if (!p?.game_id) return;
+        setDartPausedGames(prev => { const m = new Map(prev); m.set(p.game_id, { absentPlayerId: p.left_player_id, deadline: p.deadline }); return m; });
+      })
+      .on("broadcast", { event: "dart_player_returned" }, ({ payload }) => {
+        const p = payload as { game_id: string };
+        if (!p?.game_id) return;
+        setDartPausedGames(prev => { const m = new Map(prev); m.delete(p.game_id); return m; });
+      })
+      .on("broadcast", { event: "dart_win_effect" }, ({ payload }) => {
+        const p = payload as { game_id: string; winner_id: string; wager: number };
+        if (!p?.winner_id || p.winner_id === currentProfile.id) return;
+        showDartWinEffect(p.winner_id, p.wager);
+        setDartGames(prev => prev.filter(g => g.id !== p.game_id));
+        setDartPausedGames(prev => { const m = new Map(prev); m.delete(p.game_id); return m; });
       })
       .on("broadcast", { event: "spaceship_request" }, ({ payload }) => {
         const p = payload as VisitRequest & { to_id: string };
@@ -2226,11 +2289,49 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       current_player_id: turnDone ? (isP1 ? game.player2_id : game.player1_id) : game.current_player_id,
       ...(isWin ? { status: "finished" as const, winner_id: currentProfile.id } : {}),
     };
-    setDartGames(prev => prev.map(g => g.id === game.id ? newGame : g));
-    supabase.from("dart_games").update(updates).eq("id", game.id).then(() => {});
-    channelRef.current?.send({ type: "broadcast", event: "dart_game_update", payload: newGame });
+    if (isWin) {
+      endDartGame(newGame, currentProfile.id);
+    } else {
+      setDartGames(prev => prev.map(g => g.id === game.id ? newGame : g));
+      supabase.from("dart_games").update(updates).eq("id", game.id).then(() => {});
+      channelRef.current?.send({ type: "broadcast", event: "dart_game_update", payload: newGame });
+    }
     setTimeout(() => setDartAnimating(false), 900);
   };
+
+  const showDartWinEffect = useCallback((winnerId: string, wager: number) => {
+    setDartWinEffects(prev => { const m = new Map(prev); m.set(winnerId, { wager }); return m; });
+    setTimeout(() => setDartWinEffects(prev => { const m = new Map(prev); m.delete(winnerId); return m; }), 6000);
+  }, []);
+
+  const endDartGame = useCallback(async (game: DartGame, winnerId: string) => {
+    // Clear pause timer
+    const timer = dartPauseTimersRef.current.get(game.id);
+    if (timer) clearTimeout(timer);
+    dartPauseTimersRef.current.delete(game.id);
+    setDartPausedGames(prev => { const m = new Map(prev); m.delete(game.id); return m; });
+    // Remove from active games
+    setDartGames(prev => prev.filter(g => g.id !== game.id));
+    // Handle wager - each player put in wager, winner takes both
+    const wager = game.wager ?? 0;
+    if (wager > 0) {
+      const loserId = winnerId === game.player1_id ? game.player2_id : game.player1_id;
+      if (winnerId === currentProfile.id) {
+        const newCoins = coinsRef.current + wager;
+        coinsRef.current = newCoins; setCoins(newCoins);
+        supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id).then(() => {});
+      } else if (loserId === currentProfile.id) {
+        const newCoins = Math.max(0, coinsRef.current - wager);
+        coinsRef.current = newCoins; setCoins(newCoins);
+        supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id).then(() => {});
+      }
+    }
+    // Update DB
+    supabase.from("dart_games").update({ status: "finished", winner_id: winnerId }).eq("id", game.id).then(() => {});
+    // Broadcast win + show effect locally
+    channelRef.current?.send({ type: "broadcast", event: "dart_win_effect", payload: { game_id: game.id, winner_id: winnerId, wager } });
+    showDartWinEffect(winnerId, wager);
+  }, [currentProfile.id, showDartWinEffect]);
 
   const openProfile = async (userId: string) => {
     setCtxMenu(null);
@@ -3397,6 +3498,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                               {game.current_player_id === game.player2_id && <text x={-bw/2+4} y={-bh/2+47} fontSize={6} fill="#fbbf24">{"●".repeat(game.throws_this_turn)}{"○".repeat(3 - game.throws_this_turn)}</text>}
                               {/* Status */}
                               {game.status === "pending" && <text x={0} y={bh/2-4} textAnchor="middle" fontSize={6} fill="#f59e0b" fontStyle="italic">Afventer...</text>}
+                              {dartPausedGames.has(game.id) && (() => {
+                                const pause = dartPausedGames.get(game.id)!;
+                                const secsLeft = Math.max(0, Math.ceil((pause.deadline - Date.now()) / 1000));
+                                return <text x={0} y={bh/2-4} textAnchor="middle" fontSize={6} fill="#f87171" fontStyle="italic">PAUSE {secsLeft}s</text>;
+                              })()}
                             </g>
                           );
                         })()}
@@ -3974,6 +4080,34 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                 fill="#10b981" stroke="rgba(0,0,0,0.9)" strokeWidth={3} paintOrder="stroke"
                                 style={{ animation: "svgLevelUpText 3s ease-out forwards" }}>
                                 +{winAmt} 🪙
+                              </text>
+                            </g>
+                          );
+                        })()}
+                        {/* Dart win effect — trophy + fireworks above winner */}
+                        {(() => {
+                          const uid = isMe ? currentProfile.id : user.user_id;
+                          const effect = dartWinEffects.get(uid);
+                          if (!effect) return null;
+                          return (
+                            <g style={{ pointerEvents: "none" }}>
+                              {/* Expanding rings */}
+                              {([0, 0.4, 0.8] as const).map((delay, i) => (
+                                <circle key={i} cx={0} cy={-AR_S - 10} r={6} fill="none"
+                                  stroke={["#fbbf24", "#f59e0b", "#d97706"][i]} strokeWidth={2.5}>
+                                  <animate attributeName="r" from="6" to="65" dur="1.6s" begin={`${delay}s`} repeatCount="indefinite" />
+                                  <animate attributeName="opacity" from="0.9" to="0" dur="1.6s" begin={`${delay}s`} repeatCount="indefinite" />
+                                </circle>
+                              ))}
+                              {/* Trophy */}
+                              <text x={0} y={-AR_S - 30} textAnchor="middle" fontSize={18}
+                                style={{ animation: "svgLevelUpText 6s ease-out forwards" }}>🏆</text>
+                              {/* Label */}
+                              <text x={0} y={-AR_S - 52} textAnchor="middle" fontSize={9} fontWeight="900"
+                                fontFamily="system-ui,sans-serif"
+                                fill="#fbbf24" stroke="rgba(0,0,0,0.9)" strokeWidth={2.5} paintOrder="stroke"
+                                style={{ animation: "svgLevelUpText 6s ease-out forwards" }}>
+                                {effect.wager > 0 ? `+${effect.wager} 🪙` : "Vinder! 🏆"}
                               </text>
                             </g>
                           );
@@ -6936,12 +7070,12 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
       {/* ── Dart: Start Game Modal ── */}
       {dartStartModal && (
-        <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDartStartModal(null)}>
+        <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => { setDartStartWager(0); setDartStartModal(null); }}>
           <div className="w-80 bg-[#0d1117] border border-white/[0.12] rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.9)] overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-white/[0.08] flex items-center gap-3">
               <span className="text-2xl">🎯</span>
               <p className="text-[15px] font-black text-slate-100">Dart – Nyt spil</p>
-              <button onClick={() => setDartStartModal(null)} className="ml-auto text-slate-500 hover:text-slate-300"><X className="w-4 h-4" /></button>
+              <button onClick={() => { setDartStartWager(0); setDartStartModal(null); }} className="ml-auto text-slate-500 hover:text-slate-300"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-5 space-y-4">
               <div>
@@ -6968,8 +7102,27 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   ))}
                 </select>
               </div>
+              <div>
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Indsats</p>
+                <div className="flex gap-1.5">
+                  {([0, 25, 50, 100, 250] as const).map(amt => (
+                    <button key={amt} onClick={() => setDartStartWager(amt)}
+                      className="flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all"
+                      style={{
+                        background: dartStartWager === amt ? "rgba(251,191,36,0.15)" : "rgba(255,255,255,0.03)",
+                        borderColor: dartStartWager === amt ? "#fbbf24" : "rgba(255,255,255,0.07)",
+                        color: dartStartWager === amt ? "#fde68a" : "#64748b",
+                      }}>
+                      {amt === 0 ? "Gratis" : `${amt}🪙`}
+                    </button>
+                  ))}
+                </div>
+                {dartStartWager > 0 && coins < dartStartWager && (
+                  <p className="text-[10px] text-rose-400 mt-1.5">Du har kun {coins} 🪙</p>
+                )}
+              </div>
               <button
-                disabled={!dartStartOpponentId}
+                disabled={!dartStartOpponentId || (dartStartWager > 0 && coins < dartStartWager)}
                 onClick={async () => {
                   if (!dartStartOpponentId || !dartStartModal) return;
                   const opp = users.get(dartStartOpponentId);
@@ -6987,11 +7140,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     current_player_id: currentProfile.id,
                     throws_this_turn: 0,
                     status: "pending",
+                    wager: dartStartWager,
                   }).select().single();
                   if (data) {
                     setDartGames(prev => [...prev, data as DartGame]);
                     channelRef.current?.send({ type: "broadcast", event: "dart_invite", payload: { game: data, to_id: dartStartOpponentId } });
                   }
+                  setDartStartWager(0);
                   setDartStartModal(null);
                 }}
                 className={`w-full py-3 rounded-xl text-[14px] font-black transition-all ${dartStartOpponentId ? "bg-gradient-to-r from-amber-600 to-amber-500 text-white hover:from-amber-500 hover:to-amber-400 shadow-[0_4px_16px_rgba(245,158,11,0.3)]" : "bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
@@ -7013,6 +7168,17 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 <p className="text-[12px] text-slate-400">{dartInviteModal.game.player1_name} inviterer dig til {dartInviteModal.game.game_type}</p>
               </div>
             </div>
+            {(dartInviteModal.game.wager ?? 0) > 0 && (
+              <div className="px-5 py-3 border-b border-white/[0.06]">
+                <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2.5 flex items-center gap-2.5">
+                  <span className="text-xl">🪙</span>
+                  <div>
+                    <p className="text-[13px] font-black text-amber-300">Indsats: {dartInviteModal.game.wager} mønter</p>
+                    <p className="text-[10px] text-slate-500">Vinderen modtager indsatsen fra taberen</p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="p-5 flex gap-3">
               <button
                 onClick={async () => {
