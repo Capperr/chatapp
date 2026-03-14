@@ -2380,9 +2380,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       return;
     }
     if (movingBotId) {
-      supabase.from("virtual_room_bots").update({ gx, gy }).eq("id", movingBotId);
-      setBots(prev => prev.map(b => b.id === movingBotId ? { ...b, gx, gy } : b));
+      const botId = movingBotId;
       setMovingBotId(null);
+      setBots(prev => prev.map(b => b.id === botId ? { ...b, gx, gy } : b));
+      supabase.from("virtual_room_bots").update({ gx, gy }).eq("id", botId)
+        .then(({ error }) => { if (error) showToast("❌", "Bot kunne ikke flyttes", error.message, "#ef4444"); });
       return;
     }
     if (placingItem && !isWallItemType(placingItem.item.item_type)) {
@@ -6115,8 +6117,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                   <input type="color" defaultValue={bot.avatar_color ?? bot.color}
                                     onChange={async e => {
                                       const c = e.target.value;
-                                      await supabase.from("virtual_room_bots").update({ avatar_color: c }).eq("id", bot.id);
                                       setBots(prev => prev.map(b => b.id === bot.id ? { ...b, avatar_color: c } : b));
+                                      const { error } = await supabase.from("virtual_room_bots").update({ avatar_color: c }).eq("id", bot.id);
+                                      if (error) showToast("❌", "Farve ikke gemt", error.message, "#ef4444");
                                     }}
                                     className="w-8 h-6 rounded cursor-pointer bg-transparent border border-white/[0.08]" />
                                 </div>
@@ -6125,12 +6128,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                 {CLOTHING_SLOTS.map(slot => (
                                   <select key={slot.id}
                                     defaultValue={(bot.bot_outfit ?? {})[slot.id] ?? ""}
-                                    onChange={async e => {
+                                                    onChange={async e => {
                                       const val = e.target.value;
                                       const newOutfit = { ...(bot.bot_outfit ?? {}) };
                                       if (val) newOutfit[slot.id] = val; else delete newOutfit[slot.id];
-                                      await supabase.from("virtual_room_bots").update({ bot_outfit: newOutfit }).eq("id", bot.id);
                                       setBots(prev => prev.map(b => b.id === bot.id ? { ...b, bot_outfit: newOutfit } : b));
+                                      const { error } = await supabase.from("virtual_room_bots").update({ bot_outfit: newOutfit }).eq("id", bot.id);
+                                      if (error) showToast("❌", "Tøj ikke gemt", error.message, "#ef4444");
                                     }}
                                     className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none">
                                     <option value="">{slot.emoji} {slot.label} — ingen</option>
