@@ -524,11 +524,13 @@ interface RoomBot {
   room_id: string;
   name: string;
   color: string;
+  avatar_color?: string | null;
   gx: number;
   gy: number;
   message: string | null;
   moves_randomly: boolean;
   gives_clothing_id: string | null;
+  bot_outfit?: Record<string, string> | null;
 }
 interface CtxMenu {
   clientX: number;
@@ -808,7 +810,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [adminMoveTarget, setAdminMoveTarget] = useState<{ user_id: string; display_name: string } | null>(null);
   const [adminMoveTile, setAdminMoveTile] = useState<{ gx: string; gy: string }>({ gx: "", gy: "" });
   const [adminMoveRoom, setAdminMoveRoom] = useState<string>("");
-  const [createBotForm, setCreateBotForm] = useState<{ name: string; color: string; message: string; moves_randomly: boolean; gives_clothing_id: string } | null>(null);
+  const [createBotForm, setCreateBotForm] = useState<{ name: string; color: string; message: string; moves_randomly: boolean; gives_clothing_id: string; bot_outfit: Record<string, string> } | null>(null);
+  const [editBotId, setEditBotId] = useState<string | null>(null);
   const [movingBotId, setMovingBotId] = useState<string | null>(null);
   const [coins, setCoins] = useState(1000);
   const [activeRoomType, setActiveRoomType] = useState(initialRoomType ?? "normal");
@@ -870,6 +873,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [lockedTiles, setLockedTiles] = useState<Set<string>>(new Set());
+  const lockedTilesRef = useRef<Set<string>>(new Set());
   const [allAchievements, setAllAchievements] = useState<Achievement[]>([]);
   const [myAchievements, setMyAchievements] = useState<Set<string>>(new Set());
   const messageCountRef = useRef(0);
@@ -1726,7 +1730,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   useEffect(() => {
     supabase.from("chat_rooms").select("locked_tiles").eq("id", activeRoomId).single().then(({ data }) => {
       const newSet: Set<string> = new Set(data?.locked_tiles as string[] ?? []);
-      setLockedTiles(newSet);
+      setLockedTiles(newSet); lockedTilesRef.current = newSet;
       relocateOffLockedTiles(newSet);
     });
   }, [activeRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1785,7 +1789,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         for (const [dgx, dgy] of shuffled) {
           const ngx = Math.max(0, Math.min(roomColsRef.current - 1, bot.gx + dgx));
           const ngy = Math.max(0, Math.min(roomRowsRef.current - 1, bot.gy + dgy));
-          if (!occupied.has(`${ngx},${ngy}`)) {
+          if (!occupied.has(`${ngx},${ngy}`) && !lockedTilesRef.current.has(`${ngx},${ngy}`)) {
             occupied.delete(`${bot.gx},${bot.gy}`);
             occupied.add(`${ngx},${ngy}`);
             await supabase.from("virtual_room_bots").update({ gx: ngx, gy: ngy }).eq("id", bot.id);
@@ -2896,7 +2900,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     const key = `${gx},${gy}`;
     const newSet = new Set(lockedTiles);
     if (newSet.has(key)) newSet.delete(key); else newSet.add(key);
-    setLockedTiles(newSet);
+    setLockedTiles(newSet); lockedTilesRef.current = newSet;
     const arr = Array.from(newSet);
     await supabase.from("chat_rooms").update({ locked_tiles: arr }).eq("id", activeRoomId);
     channelRef.current?.send({ type: "broadcast", event: "locked_tiles_update", payload: { locked_tiles: arr } });
@@ -2912,8 +2916,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (!createBotForm?.name.trim()) return;
     await supabase.from("virtual_room_bots").insert({
       room_id: activeRoomId, name: createBotForm.name.trim(), color: createBotForm.color,
+      avatar_color: createBotForm.color,
       message: createBotForm.message.trim() || null, moves_randomly: createBotForm.moves_randomly,
       gives_clothing_id: createBotForm.gives_clothing_id || null,
+      bot_outfit: Object.keys(createBotForm.bot_outfit).length > 0 ? createBotForm.bot_outfit : null,
       gx: Math.floor(Math.random() * roomColsRef.current), gy: Math.floor(Math.random() * roomRowsRef.current),
       created_by: currentProfile.id,
     });
@@ -4360,16 +4366,23 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   }
                   if (s.kind === "bot") {
                     const cellBot = s.bot;
+                    const botAvatarColor = cellBot.avatar_color ?? cellBot.color;
+                    const botOutfit = cellBot.bot_outfit ?? {};
                     return (
-                      <g key={`bot-${cellBot.id}`} onContextMenu={e => handleRightClick(e, null, null, cellBot)}>
+                      <g key={`bot-${cellBot.id}`}
+                        onClick={() => handleTileClick(cellBot.gx, cellBot.gy)}
+                        onContextMenu={e => handleRightClick(e, null, null, cellBot)}>
                         <ellipse cx={ax} cy={y+16} rx={16} ry={4} fill="rgba(0,0,0,0.3)" />
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
-                          <PersonAvatar color={cellBot.color} glow={false} mood="happy" />
+                          <PersonAvatar color={AVATAR_TINT_COLORS.includes(botAvatarColor) ? "#9ca3af" : botAvatarColor} glow={false} mood="happy" />
+                          {Object.values(botOutfit).map(cid => {
+                            const ci = clothingCatalog.find(c => c.id === cid);
+                            if (!ci) return null;
+                            return <ClothingLayerSVG key={cid} styleKey={ci.style_key} color={ci.color} />;
+                          })}
                         </g>
                         <text x={ax} y={y + 9} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{cellBot.name}</text>
                         <text x={ax} y={y + 9} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" fill="#94a3b8">{cellBot.name}</text>
-                        <circle cx={ax + 15} cy={ay - AR_S - 8} r={5} fill="#1e293b" stroke="#475569" strokeWidth={0.8} />
-                        <text x={ax + 15} y={ay - AR_S - 5.5} textAnchor="middle" fontSize={6} fill="#94a3b8">⚙</text>
                         {cellBot.gives_clothing_id && <text x={ax} y={y + TH / 4 + 8} textAnchor="middle" fontSize={8}>🎁</text>}
                         {/* Bot bubble rendered in HTML overlay */}
                       </g>
@@ -6021,7 +6034,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   <>
                     <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
                       <span className="text-[12px] text-slate-400 font-semibold">Bots i rum</span>
-                      <button onClick={() => setCreateBotForm({ name: "", color: "#6366f1", message: "", moves_randomly: false, gives_clothing_id: "" })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => setCreateBotForm({ name: "", color: "#6366f1", message: "", moves_randomly: false, gives_clothing_id: "", bot_outfit: {} })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
                     </div>
                     {createBotForm && (
                       <div className="px-3 py-2 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0">
@@ -6040,7 +6053,20 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           <option value="">Giver intet</option>
                           {clothingCatalog.map(c => <option key={c.id} value={c.id}>{c.name} ({CLOTHING_SLOTS.find(s => s.id === c.slot)?.label})</option>)}
                         </select>
-                        <div className="flex gap-1">
+                        {/* Bot outfit — one item per slot */}
+                        <p className="text-[11px] font-bold text-slate-600 uppercase tracking-widest mb-1">Outfit</p>
+                        {CLOTHING_SLOTS.map(slot => (
+                          <select key={slot.id} value={createBotForm.bot_outfit[slot.id] ?? ""} onChange={e => {
+                            const val = e.target.value;
+                            const newOutfit = { ...createBotForm.bot_outfit };
+                            if (val) newOutfit[slot.id] = val; else delete newOutfit[slot.id];
+                            setCreateBotForm({ ...createBotForm, bot_outfit: newOutfit });
+                          }} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[12px] text-slate-300 outline-none mb-1">
+                            <option value="">{slot.emoji} {slot.label} — ingen</option>
+                            {clothingCatalog.filter(c => c.slot === slot.id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                        ))}
+                        <div className="flex gap-1 mt-1">
                           <button onClick={createBot} className="flex-1 py-1 bg-violet-600 hover:bg-violet-500 rounded text-[12px] text-white">Opret</button>
                           <button onClick={() => setCreateBotForm(null)} className="flex-1 py-1 bg-white/[0.06] hover:bg-white/[0.1] rounded text-[12px] text-slate-300">Annuller</button>
                         </div>
@@ -6050,17 +6076,52 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       {bots.length === 0 && <p className="text-[13px] text-slate-600 text-center mt-4">Ingen bots</p>}
                       {bots.map(bot => {
                         const givesItem = clothingCatalog.find(c => c.id === bot.gives_clothing_id);
+                        const isEditing = editBotId === bot.id;
                         return (
-                          <div key={bot.id} className="px-2 py-1.5 hover:bg-white/[0.03] group flex items-center gap-1.5">
-                            <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: bot.color }} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[13px] text-slate-300 truncate">{bot.name}</p>
-                              <p className="text-[11px] text-slate-600">{bot.moves_randomly ? "Bevæger sig · " : ""}{givesItem ? `🎁 ${givesItem.name}` : "Ingen gave"}</p>
+                          <div key={bot.id} className="border-b border-white/[0.04] last:border-0">
+                            <div className="px-2 py-1.5 hover:bg-white/[0.03] group flex items-center gap-1.5">
+                              <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: bot.avatar_color ?? bot.color }} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[13px] text-slate-300 truncate">{bot.name}</p>
+                                <p className="text-[11px] text-slate-600">{bot.moves_randomly ? "Bevæger sig · " : ""}{givesItem ? `🎁 ${givesItem.name}` : "Ingen gave"}</p>
+                              </div>
+                              <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => setEditBotId(isEditing ? null : bot.id)} className="p-1 text-slate-500 hover:text-violet-400" title="Rediger"><Settings className="w-2.5 h-2.5" /></button>
+                                <button onClick={() => { setMovingBotId(bot.id); showToast("🤖", "Klik et felt for at flytte botten", bot.name, "#6366f1"); }} className="p-1 text-slate-500 hover:text-blue-400" title="Flyt bot"><Bot className="w-2.5 h-2.5" /></button>
+                                <button onClick={() => deleteBot(bot.id)} className="p-1 text-slate-500 hover:text-rose-400"><Trash2 className="w-2.5 h-2.5" /></button>
+                              </div>
                             </div>
-                            <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => setMovingBotId(bot.id)} className="p-1 text-slate-500 hover:text-blue-400" title="Flyt bot"><Bot className="w-2.5 h-2.5" /></button>
-                              <button onClick={() => deleteBot(bot.id)} className="p-1 text-slate-500 hover:text-rose-400"><Trash2 className="w-2.5 h-2.5" /></button>
-                            </div>
+                            {isEditing && (
+                              <div className="px-2 pb-2 bg-violet-500/5 space-y-1.5">
+                                {/* Color picker */}
+                                <div className="flex items-center gap-2">
+                                  <label className="text-[11px] text-slate-500 w-14">Farve</label>
+                                  <input type="color" defaultValue={bot.avatar_color ?? bot.color}
+                                    onChange={async e => {
+                                      const c = e.target.value;
+                                      await supabase.from("virtual_room_bots").update({ avatar_color: c }).eq("id", bot.id);
+                                    }}
+                                    className="w-8 h-6 rounded cursor-pointer bg-transparent border border-white/[0.08]" />
+                                </div>
+                                {/* Outfit per slot */}
+                                <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Outfit</p>
+                                {CLOTHING_SLOTS.map(slot => (
+                                  <select key={slot.id}
+                                    defaultValue={(bot.bot_outfit ?? {})[slot.id] ?? ""}
+                                    onChange={async e => {
+                                      const val = e.target.value;
+                                      const newOutfit = { ...(bot.bot_outfit ?? {}) };
+                                      if (val) newOutfit[slot.id] = val; else delete newOutfit[slot.id];
+                                      await supabase.from("virtual_room_bots").update({ bot_outfit: newOutfit }).eq("id", bot.id);
+                                      setBots(prev => prev.map(b => b.id === bot.id ? { ...b, bot_outfit: newOutfit } : b));
+                                    }}
+                                    className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none">
+                                    <option value="">{slot.emoji} {slot.label} — ingen</option>
+                                    {clothingCatalog.filter(c => c.slot === slot.id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                  </select>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -6071,6 +6132,15 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 {/* ── Self tab ── */}
                 {adminTab === "self" && (
                   <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+                    {/* Give self clothing */}
+                    <div className="p-3 bg-white/[0.03] border border-white/[0.07] rounded-xl">
+                      <p className="text-[12px] font-bold text-slate-300 mb-2">👕 Giv mig tøj</p>
+                      <button
+                        onClick={() => { setGiveClothingTarget({ userId: currentProfile.id, userName: "dig selv" }); }}
+                        className="w-full py-2 bg-violet-600 hover:bg-violet-500 rounded-lg text-[12px] text-white font-bold transition-colors">
+                        Vælg tøj til mig selv
+                      </button>
+                    </div>
                     {/* Invisible mode */}
                     <div className="p-3 bg-white/[0.03] border border-white/[0.07] rounded-xl">
                       <div className="flex items-center justify-between mb-1">
