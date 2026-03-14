@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck, Settings, Rocket, Trophy, Mail, Send, ChevronLeft, Check, CheckCheck, Eye, EyeOff, Search, User, ArrowLeftRight, Gift } from "lucide-react";
+import { X, Users, Maximize2, Minimize2, RefreshCw, ZoomIn, ZoomOut, Hash, Wrench, Plus, Trash2, Pencil, Package, Minus, Shirt, Bot, LogOut, MessageSquare, VolumeX, Volume2, Ban, Shield, ShieldOff, UserCheck, Settings, Rocket, Trophy, Mail, Send, ChevronLeft, Check, CheckCheck, Eye, EyeOff, Search, User, ArrowLeftRight, Gift, Bell } from "lucide-react";
 import type { Profile, Achievement } from "@/types";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -606,6 +606,17 @@ const SPACESHIP_VARIANTS: { id: string; name: string; emoji: string; desc: strin
   { id: "flagship", name: "Flagship", emoji: "🌌", desc: "Massivt og imponerende",   cols: 12, rows: 10, theme: "purple", price: 9000  },
   { id: "titan",    name: "Titan",    emoji: "⚡", desc: "Det ultimative rumskib",   cols: 14, rows: 12, theme: "dark",   price: 18000 },
 ];
+interface AppNotification {
+  id: string;
+  user_id: string;
+  type: string;
+  emoji: string;
+  title: string;
+  subtitle?: string | null;
+  color: string;
+  read: boolean;
+  created_at: string;
+}
 interface VirtualRoomProps {
   roomId: string;
   roomName: string;
@@ -684,6 +695,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [hovered, setHovered] = useState<string | null>(null);
   const [logMessages, setLogMessages] = useState<LogMessage[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [rightPanel, setRightPanel] = useState<RightPanel>("hidden");
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
@@ -1124,6 +1137,29 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   useEffect(() => {
     if (channelRef.current) broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
   }, [myColor]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Notifications: fetch + realtime subscribe (global, not room-scoped) ─────
+  useEffect(() => {
+    supabase.from("notifications").select("*")
+      .eq("user_id", currentProfile.id)
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(({ data }) => { if (data) setNotifications(data as AppNotification[]); });
+
+    const notifCh = supabase.channel("notif-" + currentProfile.id)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${currentProfile.id}` }, (payload) => {
+        const n = payload.new as AppNotification;
+        setNotifications(prev => [n, ...prev]);
+        showToastRef.current(n.emoji, n.title, n.subtitle ?? undefined, n.color);
+        if (n.type === "clothing_received") {
+          supabase.from("virtual_user_wardrobe").select("id, clothing_id, equipped")
+            .eq("user_id", currentProfile.id)
+            .then(({ data }) => { if (data) setMyWardrobe(data as UserWardrobeEntry[]); });
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(notifCh); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load accumulated solarie minutes from DB on mount
   // (solarieMinutesRef is initially 0; will be overwritten once profiles fetch returns)
@@ -1996,7 +2032,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   }, []);
 
   useEffect(() => {
-    const h = () => setCtxMenu(null);
+    const h = () => { setCtxMenu(null); setNotifOpen(false); };
     window.addEventListener("click", h);
     return () => window.removeEventListener("click", h);
   }, []);
@@ -3009,6 +3045,55 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
               {/* Action buttons */}
               <div className="flex items-center gap-0.5">
+                {/* Notification bell */}
+                <div className="relative">
+                  <button onClick={() => {
+                    setNotifOpen(o => !o);
+                    // Mark all as read when opening
+                    if (!notifOpen) {
+                      const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
+                      if (unreadIds.length > 0) {
+                        supabase.from("notifications").update({ read: true }).in("id", unreadIds).then(() => {});
+                        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+                      }
+                    }
+                  }} className="relative p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">
+                    <Bell className="w-3.5 h-3.5" />
+                    {notifications.filter(n => !n.read).length > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full bg-violet-500 text-[9px] font-bold text-white flex items-center justify-center px-0.5 leading-none">
+                        {notifications.filter(n => !n.read).length > 9 ? "9+" : notifications.filter(n => !n.read).length}
+                      </span>
+                    )}
+                  </button>
+                  {notifOpen && (
+                    <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-xl border border-white/[0.08] bg-[#07101e] shadow-[0_16px_48px_rgba(0,0,0,0.7)] overflow-hidden" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06]">
+                        <span className="text-[12px] font-bold text-slate-300">Notifikationer</span>
+                        {notifications.length > 0 && (
+                          <button onClick={async () => {
+                            await supabase.from("notifications").delete().eq("user_id", currentProfile.id);
+                            setNotifications([]);
+                          }} className="text-[10px] text-slate-600 hover:text-rose-400 transition-colors">Ryd alle</button>
+                        )}
+                      </div>
+                      <div className="max-h-72 overflow-y-auto">
+                        {notifications.length === 0 ? (
+                          <p className="text-[12px] text-slate-600 text-center py-6">Ingen notifikationer</p>
+                        ) : notifications.map(n => (
+                          <div key={n.id} className={`flex items-start gap-2.5 px-3 py-2.5 border-b border-white/[0.04] last:border-0 ${n.read ? "opacity-60" : ""}`}>
+                            <span className="text-base leading-none mt-0.5 flex-shrink-0">{n.emoji}</span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[12px] font-semibold text-slate-200 leading-tight">{n.title}</p>
+                              {n.subtitle && <p className="text-[10px] text-slate-500 mt-0.5">{n.subtitle}</p>}
+                              <p className="text-[9px] text-slate-700 mt-0.5">{new Date(n.created_at).toLocaleString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+                            </div>
+                            {!n.read && <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: n.color }} />}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
                 <button onClick={handleLogout} className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-3.5 h-3.5" /></button>
                 <button onClick={onClose} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
@@ -5931,9 +6016,20 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             const slot = CLOTHING_SLOTS.find(s => s.id === c.slot);
                             return (
                               <button key={c.id} onClick={async () => {
-                                await supabase.from("virtual_user_wardrobe").upsert({ user_id: giveClothingTarget.userId, clothing_id: c.id, equipped: false });
-                                // Notify the recipient via broadcast
-                                channelRef.current?.send({ type: "broadcast", event: "clothing_received", payload: { recipient_id: giveClothingTarget.userId, clothing_id: c.id, clothing_name: c.name, from_name: currentProfile.display_name } });
+                                // Insert wardrobe entry for recipient
+                                await supabase.from("virtual_user_wardrobe").upsert(
+                                  { user_id: giveClothingTarget.userId, clothing_id: c.id, equipped: false },
+                                  { onConflict: "user_id,clothing_id" }
+                                );
+                                // Insert persistent notification (works across rooms + for offline users)
+                                await supabase.from("notifications").insert({
+                                  user_id: giveClothingTarget.userId,
+                                  type: "clothing_received",
+                                  emoji: "👕",
+                                  title: `Du modtog: ${c.name}`,
+                                  subtitle: `Givet af ${currentProfile.display_name}`,
+                                  color: "#6366f1"
+                                });
                                 setGiveClothingTarget(null);
                               }} className="w-full text-left px-3 py-2 hover:bg-white/[0.05] flex items-center gap-2 transition-colors">
                                 <div className="w-7 h-7 rounded bg-black/30 flex items-center justify-center flex-shrink-0">
