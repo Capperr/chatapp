@@ -1773,7 +1773,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       if ((e.key === "r" || e.key === "R") && placingItem) { e.preventDefault(); setPlacingItem(p => p ? { ...p, rotation: (p.rotation + 1) % 2 } : null); return; }
       if (e.key === "Backspace") { e.preventDefault(); setDraft(prev => { const n = prev.slice(0, -1); draftRef.current = n; return n; }); return; }
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (draftRef.current.length >= 40) return;
+        if (draftRef.current.length >= 100) return;
         e.preventDefault();
         setDraft(prev => { const n = prev + e.key; draftRef.current = n; return n; });
         if (Date.now() - lastTypingBroadcastRef.current > 1500) {
@@ -2497,7 +2497,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   };
 
   const renderSvgBubble = (ax: number, ay: number, text: string, _color: string, _opacity: number, yOffset: number = 0, showTail: boolean = true) => {
-    const truncated = text.length > 40 ? text.slice(0, 40) + "…" : text;
+    const truncated = text.length > 100 ? text.slice(0, 100) + "…" : text;
     // Break long words at 18 chars to prevent horizontal overflow
     const allWords: string[] = [];
     truncated.split(" ").forEach(w => { for (let i = 0; i < w.length; i += 18) allWords.push(w.slice(i, i + 18)); });
@@ -3829,7 +3829,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             {draft && cooldownSec === 0 && (
               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2.5 bg-[#040c19]/98 backdrop-blur-xl rounded-2xl border border-white/[0.12] shadow-[0_12px_40px_rgba(0,0,0,0.7)] max-w-[340px]">
                 <span className="text-[15px] text-slate-200 flex-1 truncate font-medium">{draft}</span>
-                <span className="text-[12px] text-slate-600 tabular-nums flex-shrink-0">{draft.length}/40</span>
+                <span className="text-[12px] text-slate-600 tabular-nums flex-shrink-0">{draft.length}/100</span>
                 <kbd className="text-[11px] text-slate-500 flex-shrink-0 bg-white/[0.07] border border-white/[0.08] px-1.5 py-0.5 rounded-md font-mono">↵</kbd>
                 <button onClick={() => { draftRef.current = ""; setDraft(""); }} className="text-slate-600 hover:text-rose-400 flex-shrink-0 transition-colors ml-0.5"><X className="w-3.5 h-3.5" /></button>
               </div>
