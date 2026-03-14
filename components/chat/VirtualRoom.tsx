@@ -719,7 +719,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [viewingInventory, setViewingInventory] = useState<{ userId: string; name: string; color: string; items: RoomItem[] } | null>(null);
   const [tradeTooltip, setTradeTooltip] = useState<{ x: number; y: number; item_id: string; is_clothing: boolean } | null>(null);
   const tradeSessionRef = useRef<TradeSession | null>(null);
-  const [settingsTab, setSettingsTab] = useState<"shop" | "profil">("shop");
+  const [settingsTab, setSettingsTab] = useState<"konto" | "profil" | "butik">("profil");
   const levelRef = useRef(1);
   const [tanLevel, setTanLevel] = useState(0);
   const tanLevelRef = useRef(0);
@@ -811,6 +811,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
   const [shopCategory, setShopCategory] = useState<string | null>(null);
   const [shopItemIdx, setShopItemIdx] = useState(0);
+  const [shopHoverItem, setShopHoverItem] = useState<string | null>(null);
   const [adminClothingForm, setAdminClothingForm] = useState<{ name: string; slot: string; price: number; level_required: number; in_shop: boolean; image_url: string; img_x: number; img_y: number; img_w: number; img_h: number; uploading: boolean; previewZoom: number } | null>(null);
   const [giveClothingTarget, setGiveClothingTarget] = useState<{ userId: string; userName: string } | null>(null);
   const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
@@ -5277,11 +5278,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           const meetsLevel = !item.level_required || level >= item.level_required;
                           const canBuy = !owned && canAfford && meetsLevel;
                           const previewOutfit = { ...myOutfit, [item.slot]: item.id };
+                          const isHovered = shopHoverItem === item.id;
                           return (
-                            <div key={item.id} className="flex items-center gap-2.5 px-3 py-2.5 border-b border-white/[0.04] last:border-0">
-                              {/* Avatar preview */}
-                              <div className="flex-shrink-0 w-[52px] h-[52px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
-                                <svg viewBox="-31 -36 62 77" width="52" height="52">
+                            <div key={item.id} className="relative flex items-center gap-3 px-3 py-3 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.03] transition-colors">
+                              {/* Avatar preview — hover for large tooltip */}
+                              <div
+                                className="relative flex-shrink-0 w-[68px] h-[68px] rounded-xl bg-black/40 border border-white/[0.07] flex items-center justify-center overflow-visible cursor-pointer"
+                                onMouseEnter={() => setShopHoverItem(item.id)}
+                                onMouseLeave={() => setShopHoverItem(null)}
+                              >
+                                <svg viewBox="-31 -36 62 77" width="68" height="68">
                                   <defs>
                                     {myColor && AVATAR_TINT_COLORS.includes(myColor) && (
                                       <filter id={`sp-tint-${item.id.slice(0,8)}`} colorInterpolationFilters="sRGB">
@@ -5296,24 +5302,50 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                   {Object.entries(previewOutfit).map(([, cid]) => {
                                     const ci = clothingCatalog.find(c => c.id === cid);
                                     if (!ci) return null;
-                                    return <ClothingLayerSVG key={cid} styleKey={ci.style_key} color={ci.color} />;
+                                    return <ClothingLayerSVG key={String(cid)} styleKey={ci.style_key} color={ci.color} />;
                                   })}
                                 </svg>
+                                {/* Large hover tooltip */}
+                                {isHovered && (
+                                  <div className="absolute left-[76px] top-1/2 -translate-y-1/2 z-50 w-[160px] bg-[#080f1e] border border-white/[0.12] rounded-2xl p-3 shadow-2xl pointer-events-none"
+                                    style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
+                                    <svg viewBox="-40 -55 80 100" width="140" height="140" style={{ display: "block", margin: "0 auto" }}>
+                                      <defs>
+                                        {myColor && AVATAR_TINT_COLORS.includes(myColor) && (
+                                          <filter id={`sp-lg-tint-${item.id.slice(0,8)}`} colorInterpolationFilters="sRGB">
+                                            <feFlood floodColor={myColor} result="flood"/>
+                                            <feComposite in="flood" in2="SourceAlpha" operator="in" result="mask"/>
+                                            <feBlend in="SourceGraphic" in2="mask" mode="color" />
+                                          </filter>
+                                        )}
+                                      </defs>
+                                      <image href="/alien.png" x="-31" y="-36" width="62" height="77"
+                                        filter={myColor && AVATAR_TINT_COLORS.includes(myColor) ? `url(#sp-lg-tint-${item.id.slice(0,8)})` : undefined} />
+                                      {Object.entries(previewOutfit).map(([, cid]) => {
+                                        const ci = clothingCatalog.find(c => c.id === cid);
+                                        if (!ci) return null;
+                                        return <ClothingLayerSVG key={String(cid)} styleKey={ci.style_key} color={ci.color} />;
+                                      })}
+                                    </svg>
+                                    <p className="text-[12px] font-bold text-slate-200 text-center mt-1 truncate">{item.name}</p>
+                                  </div>
+                                )}
                               </div>
                               {/* Info */}
                               <div className="flex-1 min-w-0">
-                                <p className="text-[12px] font-semibold text-slate-200 truncate">{item.name}</p>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <span className={`text-[11px] font-bold ${canAfford ? "text-amber-400" : "text-red-500"}`}>🪙{item.price}</span>
+                                <p className="text-[14px] font-semibold text-slate-200 truncate">{item.name}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className={`text-[13px] font-bold ${canAfford ? "text-amber-400" : "text-red-500"}`}>🪙{item.price}</span>
                                   {item.level_required && item.level_required > 1 && (
-                                    <span className={`text-[10px] font-semibold ${meetsLevel ? "text-slate-500" : "text-red-500"}`}>LV {item.level_required}</span>
+                                    <span className={`text-[11px] font-semibold ${meetsLevel ? "text-slate-500" : "text-red-500"}`}>LV {item.level_required}</span>
                                   )}
+                                  {owned && <span className="text-[11px] font-bold text-emerald-400">✓ Ejet</span>}
                                 </div>
                               </div>
                               {/* Buy button */}
                               <button onClick={() => { if (canBuy) buyItem(item); }} disabled={!canBuy}
-                                className={`flex-shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${owned ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 cursor-default" : canBuy ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30" : "bg-white/[0.04] text-slate-600 border border-white/[0.06] cursor-not-allowed"}`}>
-                                {owned ? "✓ Ejet" : !meetsLevel ? `LV ${item.level_required}` : !canAfford ? "Ikke råd" : `Køb`}
+                                className={`flex-shrink-0 px-3 py-2 rounded-xl text-[13px] font-bold transition-all ${owned ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 cursor-default" : canBuy ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30" : "bg-white/[0.04] text-slate-600 border border-white/[0.06] cursor-not-allowed"}`}>
+                                {owned ? "✓" : !meetsLevel ? `LV ${item.level_required}` : !canAfford ? "Ikke råd" : `Køb`}
                               </button>
                             </div>
                           );
@@ -6103,83 +6135,210 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             {/* Settings panel */}
             {rightPanel === "settings" && (
               <>
+                {/* Header */}
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
-                  <span className="text-[13px] font-bold text-slate-300 tracking-wide">Indstillinger</span>
+                  <div className="flex items-center gap-2">
+                    <Settings className="w-4 h-4 text-violet-400" />
+                    <span className="text-[13px] font-bold text-slate-200 tracking-wide">Indstillinger</span>
+                  </div>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
-                {/* Tabs */}
-                <div className="flex border-b border-white/[0.06] flex-shrink-0">
-                  {(["shop", "profil"] as const).map(tab => (
-                    <button key={tab} onClick={() => setSettingsTab(tab)} className={`flex-1 py-2 text-[13px] font-semibold capitalize transition-colors ${settingsTab === tab ? "text-violet-300 border-b-2 border-violet-500" : "text-slate-500 hover:text-slate-300"}`}>
-                      {tab === "shop" ? "🛒 Butik" : "👤 Profil"}
+                {/* Tab bar */}
+                <div className="flex border-b border-white/[0.06] flex-shrink-0 bg-black/20">
+                  {(["profil", "konto", "butik"] as const).map(tab => (
+                    <button key={tab} onClick={() => setSettingsTab(tab)}
+                      className={`flex-1 py-2.5 text-[11px] font-bold uppercase tracking-widest transition-colors ${settingsTab === tab ? "text-violet-300 border-b-2 border-violet-500 bg-violet-500/5" : "text-slate-600 hover:text-slate-300"}`}>
+                      {tab === "profil" ? "Profil" : tab === "konto" ? "Konto" : "Butik"}
                     </button>
                   ))}
                 </div>
-                <div className="flex-1 overflow-y-auto p-3 space-y-3">
+
+                <div className="flex-1 overflow-y-auto min-h-0">
+
+                  {/* ── PROFIL TAB ── */}
                   {settingsTab === "profil" && (
-                    <>
-                      <p className="text-[12px] font-bold text-slate-500 uppercase tracking-wide">Rigtigt navn</p>
-                      <form onSubmit={async e => { e.preventDefault(); const v = (e.currentTarget.elements.namedItem("rn") as HTMLInputElement).value.trim(); if (!v) return; await supabase.from("profiles").update({ real_name: v }).eq("id", currentProfile.id); }} className="space-y-2">
-                        <input name="rn" defaultValue={(currentProfile as Profile & { real_name?: string }).real_name ?? ""} placeholder="Dit rigtige navn..." maxLength={60} className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg px-3 py-1.5 text-[14px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
-                        <button type="submit" className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[13px] text-white font-semibold transition-colors">Gem navn</button>
-                      </form>
-                      <div className="border-t border-white/[0.06] pt-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-[12px] font-bold text-slate-500 uppercase tracking-wide">Alien farve</p>
+                    <div className="p-3 space-y-4">
+                      {/* Avatar preview */}
+                      <div className="flex items-center gap-3 p-3 bg-white/[0.03] rounded-xl border border-white/[0.05]">
+                        <div className="w-14 h-14 rounded-xl bg-black/40 flex items-center justify-center flex-shrink-0 border border-white/[0.06]">
+                          <svg viewBox="-31 -36 62 77" width="56" height="56">
+                            <defs>
+                              {myColor && AVATAR_TINT_COLORS.includes(myColor) && (
+                                <filter id="settings-tint" colorInterpolationFilters="sRGB">
+                                  <feFlood floodColor={myColor} result="flood"/>
+                                  <feComposite in="flood" in2="SourceAlpha" operator="in" result="mask"/>
+                                  <feBlend in="SourceGraphic" in2="mask" mode="color" />
+                                </filter>
+                              )}
+                            </defs>
+                            <image href="/alien.png" x="-31" y="-36" width="62" height="77"
+                              filter={myColor && AVATAR_TINT_COLORS.includes(myColor) ? "url(#settings-tint)" : undefined} />
+                            {Object.entries(myOutfit).map(([, cid]) => {
+                              const ci = clothingCatalog.find(c => c.id === cid);
+                              if (!ci) return null;
+                              return <ClothingLayerSVG key={String(cid)} styleKey={ci.style_key} color={ci.color} />;
+                            })}
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[14px] font-bold text-slate-200 truncate">{currentProfile.display_name}</p>
+                          <p className="text-[11px] text-slate-500">LV {level} · {coins} 🪙</p>
+                        </div>
+                      </div>
+
+                      {/* Display name */}
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Visningsnavn</p>
+                        <form onSubmit={async e => {
+                          e.preventDefault();
+                          const v = (e.currentTarget.elements.namedItem("dn") as HTMLInputElement).value.trim();
+                          if (!v) return;
+                          await supabase.from("profiles").update({ display_name: v }).eq("id", currentProfile.id);
+                          currentProfile.display_name = v;
+                          showToast("✏️", "Navn opdateret", v, "#6366f1");
+                        }} className="flex gap-2">
+                          <input name="dn" defaultValue={currentProfile.display_name} maxLength={50}
+                            className="flex-1 bg-white/[0.05] border border-white/[0.07] rounded-lg px-3 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
+                          <button type="submit" className="px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded-lg text-[12px] text-white font-bold transition-colors flex-shrink-0">Gem</button>
+                        </form>
+                      </div>
+
+                      {/* Bio */}
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Profiltekst</p>
+                        <form onSubmit={async e => {
+                          e.preventDefault();
+                          const v = (e.currentTarget.elements.namedItem("bio") as HTMLTextAreaElement).value.trim();
+                          await supabase.from("profiles").update({ bio: v }).eq("id", currentProfile.id);
+                          showToast("📝", "Profiltekst gemt", "", "#6366f1");
+                        }} className="space-y-2">
+                          <textarea name="bio" defaultValue={(currentProfile as Profile & { bio?: string }).bio ?? ""} maxLength={160}
+                            rows={3} placeholder="Skriv lidt om dig selv..."
+                            className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg px-3 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all resize-none" />
+                          <button type="submit" className="w-full py-2 bg-violet-600 hover:bg-violet-500 rounded-lg text-[12px] text-white font-bold transition-colors">Gem profiltekst</button>
+                        </form>
+                      </div>
+
+                      {/* Avatar color */}
+                      <div className="space-y-2 pt-1 border-t border-white/[0.06]">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Alien farve</p>
                           <span className="text-[11px] font-bold text-amber-400">25 🪙</span>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {/* Default / standard gray */}
-                          <button
-                            disabled={myColor === "none" || myColor === ""}
+                          <button disabled={myColor === "none" || myColor === ""}
                             onClick={async () => {
                               if (myColor === "none" || myColor === "") return;
                               if (coinsRef.current < 25) return;
-                              const nc = coinsRef.current - 25;
-                              coinsRef.current = nc; setCoins(nc);
+                              const nc = coinsRef.current - 25; coinsRef.current = nc; setCoins(nc);
                               setMyColor("none"); currentProfile.avatar_color = "none";
                               await supabase.from("profiles").update({ avatar_color: "none", coins: nc }).eq("id", currentProfile.id);
                             }}
-                            className="w-7 h-7 rounded-full transition-all border-2 flex-shrink-0 disabled:cursor-default flex items-center justify-center text-[10px] font-bold"
+                            className="w-7 h-7 rounded-full transition-all border-2 flex-shrink-0 disabled:cursor-default"
                             style={{ background: "linear-gradient(135deg,#6b7280,#9ca3af)", borderColor: (myColor === "none" || myColor === "") ? "white" : "transparent", boxShadow: (myColor === "none" || myColor === "") ? "0 0 8px #9ca3af" : "none", opacity: coins < 25 && myColor !== "none" ? 0.4 : 1 }}
-                            title="Standard (grå)"
-                          />
+                            title="Standard (grå)" />
                           {AVATAR_TINT_COLORS.map(c => (
-                            <button
-                              key={c}
-                              disabled={myColor === c}
+                            <button key={c} disabled={myColor === c}
                               onClick={async () => {
-                                if (myColor === c) return;
-                                if (coinsRef.current < 25) return;
-                                const nc = coinsRef.current - 25;
-                                coinsRef.current = nc; setCoins(nc);
+                                if (myColor === c || coinsRef.current < 25) return;
+                                const nc = coinsRef.current - 25; coinsRef.current = nc; setCoins(nc);
                                 setMyColor(c); currentProfile.avatar_color = c;
                                 await supabase.from("profiles").update({ avatar_color: c, coins: nc }).eq("id", currentProfile.id);
                               }}
                               className="w-7 h-7 rounded-full transition-all border-2 flex-shrink-0 disabled:cursor-default"
-                              style={{ backgroundColor: c, borderColor: myColor === c ? "white" : "transparent", boxShadow: myColor === c ? `0 0 8px ${c}` : "none", opacity: coins < 25 && myColor !== c ? 0.4 : 1 }}
-                            />
+                              style={{ backgroundColor: c, borderColor: myColor === c ? "white" : "transparent", boxShadow: myColor === c ? `0 0 8px ${c}` : "none", opacity: coins < 25 && myColor !== c ? 0.4 : 1 }} />
                           ))}
                         </div>
-                        <p className="text-[11px] text-slate-600 mt-1.5">{coins < 25 ? "Ikke nok mønter" : "Klik en farve for at skifte · 25 🪙 · Grå = standard"}</p>
+                        <p className="text-[11px] text-slate-600">{coins < 25 ? "Ikke nok mønter" : "Klik for at skifte · 25 🪙 · Grå = standard"}</p>
                       </div>
-                    </>
+                    </div>
                   )}
-                  {settingsTab === "shop" && (
-                    <>
-                      {/* Name change */}
-                      <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05] space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div><p className="text-[14px] font-bold text-slate-200">Navneændring</p><p className="text-[12px] text-slate-500">Skift dit visningsnavn</p></div>
-                          <span className="text-[13px] font-bold text-amber-400">500 🪙</span>
-                        </div>
-                        <form onSubmit={async e => { e.preventDefault(); const v = (e.currentTarget.elements.namedItem("dn") as HTMLInputElement).value.trim(); if (!v || coins < 500) return; const nc = coins - 500; coinsRef.current = nc; setCoins(nc); await supabase.from("profiles").update({ display_name: v, coins: nc }).eq("id", currentProfile.id); currentProfile.display_name = v; }} className="flex gap-2">
-                          <input name="dn" placeholder="Nyt navn..." maxLength={50} className="flex-1 bg-white/[0.05] border border-white/[0.07] rounded-lg px-2 py-1.5 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-amber-500/50 transition-all" />
-                          <button type="submit" disabled={coins < 500} className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 rounded-lg text-[13px] text-white font-semibold transition-colors flex-shrink-0">Køb</button>
+
+                  {/* ── KONTO TAB ── */}
+                  {settingsTab === "konto" && (
+                    <div className="p-3 space-y-4">
+                      {/* Email */}
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Skift e-mail</p>
+                        <form onSubmit={async e => {
+                          e.preventDefault();
+                          const v = (e.currentTarget.elements.namedItem("email") as HTMLInputElement).value.trim();
+                          if (!v) return;
+                          const { error } = await supabase.auth.updateUser({ email: v });
+                          if (error) { alert("Fejl: " + error.message); return; }
+                          showToast("📧", "Bekræftelsesmail sendt", v, "#6366f1");
+                          (e.currentTarget as HTMLFormElement).reset();
+                        }} className="space-y-2">
+                          <input name="email" type="email" placeholder="Ny e-mail adresse..."
+                            className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg px-3 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
+                          <button type="submit" className="w-full py-2 bg-violet-600 hover:bg-violet-500 rounded-lg text-[12px] text-white font-bold transition-colors">Skift e-mail</button>
+                        </form>
+                        <p className="text-[11px] text-slate-600">Du modtager en bekræftelsesmail på den nye adresse.</p>
+                      </div>
+
+                      {/* Password */}
+                      <div className="space-y-1.5 border-t border-white/[0.06] pt-4">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Skift kodeord</p>
+                        <form onSubmit={async e => {
+                          e.preventDefault();
+                          const pw = (e.currentTarget.elements.namedItem("pw") as HTMLInputElement).value;
+                          const pw2 = (e.currentTarget.elements.namedItem("pw2") as HTMLInputElement).value;
+                          if (pw.length < 6) { alert("Kodeord skal være mindst 6 tegn"); return; }
+                          if (pw !== pw2) { alert("Kodeordene matcher ikke"); return; }
+                          const { error } = await supabase.auth.updateUser({ password: pw });
+                          if (error) { alert("Fejl: " + error.message); return; }
+                          showToast("🔒", "Kodeord opdateret", "", "#10b981");
+                          (e.currentTarget as HTMLFormElement).reset();
+                        }} className="space-y-2">
+                          <input name="pw" type="password" placeholder="Nyt kodeord (min. 6 tegn)..."
+                            className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg px-3 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
+                          <input name="pw2" type="password" placeholder="Gentag nyt kodeord..."
+                            className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg px-3 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
+                          <button type="submit" className="w-full py-2 bg-violet-600 hover:bg-violet-500 rounded-lg text-[12px] text-white font-bold transition-colors">Skift kodeord</button>
                         </form>
                       </div>
-                      {/* Divider */}
-                      <p className="text-[12px] font-bold text-slate-500 uppercase tracking-wide pt-1">🚀 Rumskibe</p>
+
+                      {/* Sign out */}
+                      <div className="border-t border-white/[0.06] pt-4">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Session</p>
+                        <button onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }}
+                          className="w-full py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-lg text-[12px] text-rose-400 font-bold transition-colors">
+                          Log ud
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── BUTIK TAB ── */}
+                  {settingsTab === "butik" && (
+                    <div className="p-3 space-y-3">
+                      {/* Premium name change */}
+                      <div className="bg-amber-500/5 rounded-xl p-3 border border-amber-500/15 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-[13px] font-bold text-slate-200">✨ Premium navneændring</p>
+                            <p className="text-[11px] text-slate-500">Skift visningsnavn med særlig bekræftelse</p>
+                          </div>
+                          <span className="text-[13px] font-bold text-amber-400 flex-shrink-0">500 🪙</span>
+                        </div>
+                        <form onSubmit={async e => {
+                          e.preventDefault();
+                          const v = (e.currentTarget.elements.namedItem("dn") as HTMLInputElement).value.trim();
+                          if (!v || coins < 500) return;
+                          const nc = coins - 500; coinsRef.current = nc; setCoins(nc);
+                          await supabase.from("profiles").update({ display_name: v, coins: nc }).eq("id", currentProfile.id);
+                          currentProfile.display_name = v;
+                          showToast("✨", "Navn ændret!", v, "#f59e0b");
+                          (e.currentTarget as HTMLFormElement).reset();
+                        }} className="flex gap-2">
+                          <input name="dn" placeholder="Nyt navn..." maxLength={50}
+                            className="flex-1 bg-white/[0.05] border border-white/[0.07] rounded-lg px-2 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-amber-500/50 transition-all" />
+                          <button type="submit" disabled={coins < 500}
+                            className="px-3 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 rounded-lg text-[12px] text-white font-bold transition-colors flex-shrink-0">Køb</button>
+                        </form>
+                      </div>
+                      {/* Spaceships */}
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest pt-1">🚀 Rumskibe</p>
                       {mySpaceship ? (
                         <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-3 space-y-2">
                           <div className="flex items-center gap-2">
@@ -6223,8 +6382,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           </div>
                         ))
                       )}
-                    </>
+                    </div>
                   )}
+
                 </div>
               </>
             )}
