@@ -463,6 +463,7 @@ interface ClothingItem {
   img_y?: number;
   img_w?: number;
   img_h?: number;
+  in_shop?: boolean;
 }
 interface UserWardrobeEntry {
   id: string;
@@ -796,7 +797,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
   const [shopCategory, setShopCategory] = useState<string | null>(null);
   const [shopItemIdx, setShopItemIdx] = useState(0);
-  const [adminClothingForm, setAdminClothingForm] = useState<{ name: string; slot: string; price: number; level_required: number; image_url: string; img_x: number; img_y: number; img_w: number; img_h: number; uploading: boolean } | null>(null);
+  const [adminClothingForm, setAdminClothingForm] = useState<{ name: string; slot: string; price: number; level_required: number; in_shop: boolean; image_url: string; img_x: number; img_y: number; img_w: number; img_h: number; uploading: boolean } | null>(null);
   const [giveClothingTarget, setGiveClothingTarget] = useState<{ userId: string; userName: string } | null>(null);
   const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
@@ -5092,7 +5093,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     </div>
                     <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-2 content-start">
                       {CLOTHING_SLOTS.map(slot => {
-                        const slotItems = clothingCatalog.filter(c => c.slot === slot.id);
+                        const slotItems = clothingCatalog.filter(c => c.slot === slot.id && c.in_shop !== false);
                         if (slotItems.length === 0) return null;
                         const ownedCount = slotItems.filter(c => myWardrobe.some(w => w.clothing_id === c.id)).length;
                         return (
@@ -5109,7 +5110,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 ) : (() => {
                   /* ── Item detail view ── */
                   const slot = CLOTHING_SLOTS.find(s => s.id === shopCategory);
-                  const slotItems = clothingCatalog.filter(c => c.slot === shopCategory);
+                  const slotItems = clothingCatalog.filter(c => c.slot === shopCategory && c.in_shop !== false);
                   const item = slotItems[shopItemIdx];
                   if (!item) return null;
                   const owned = myWardrobe.some(w => w.clothing_id === item.id);
@@ -5781,7 +5782,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
                     <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
                       <span className="text-[12px] text-slate-400 font-semibold">Tøjkatalog ({clothingCatalog.length})</span>
-                      <button onClick={() => setAdminClothingForm({ name: "", slot: "hat", price: 100, level_required: 0, image_url: "", img_x: -31, img_y: -36, img_w: 62, img_h: 77, uploading: false })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => setAdminClothingForm({ name: "", slot: "hat", price: 100, level_required: 0, in_shop: true, image_url: "", img_x: -31, img_y: -36, img_w: 62, img_h: 77, uploading: false })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
                     </div>
 
                     {/* Create/edit form */}
@@ -5795,7 +5796,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           {CLOTHING_SLOTS.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.label}</option>)}
                         </select>
 
-                        {/* Price + level */}
+                        {/* Price + level + shop toggle */}
                         <div className="grid grid-cols-2 gap-1.5 mb-1.5">
                           <div>
                             <p className="text-[10px] text-slate-500 mb-0.5">Pris 🪙</p>
@@ -5806,6 +5807,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             <input type="number" value={adminClothingForm.level_required} min={0} onChange={e => setAdminClothingForm(f => f && ({ ...f, level_required: parseInt(e.target.value) || 0 }))} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[12px] text-slate-100 outline-none focus:border-violet-500/50" />
                           </div>
                         </div>
+
+                        {/* In shop toggle */}
+                        <button onClick={() => setAdminClothingForm(f => f && ({ ...f, in_shop: !f.in_shop }))}
+                          className={`w-full mb-2 py-1.5 rounded-lg text-[12px] font-semibold border transition-all flex items-center justify-center gap-2 ${adminClothingForm.in_shop ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400" : "bg-white/[0.04] border-white/[0.08] text-slate-500"}`}>
+                          <span>{adminClothingForm.in_shop ? "✓" : "○"}</span>
+                          {adminClothingForm.in_shop ? "Vises i butikken" : "Skjult fra butikken"}
+                        </button>
 
                         {/* Image upload */}
                         <div className="mb-2">
@@ -5828,36 +5836,32 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           {adminClothingForm.image_url && <p className="text-[10px] text-emerald-400 mt-0.5 truncate">✓ {adminClothingForm.image_url.split("/").pop()}</p>}
                         </div>
 
-                        {/* Position + size sliders */}
-                        {adminClothingForm.image_url && (
-                          <>
-                            <p className="text-[10px] text-slate-500 mb-1">Placering på figur</p>
-                            {([["X position", "img_x", -60, 60], ["Y position", "img_y", -60, 20], ["Bredde", "img_w", 20, 120], ["Højde", "img_h", 20, 120]] as [string, "img_x"|"img_y"|"img_w"|"img_h", number, number][]).map(([label, key, min, max]) => (
-                              <div key={key} className="mb-1.5">
-                                <div className="flex justify-between mb-0.5">
-                                  <span className="text-[10px] text-slate-500">{label}</span>
-                                  <span className="text-[10px] text-slate-400 tabular-nums">{adminClothingForm[key]}</span>
-                                </div>
-                                <input type="range" min={min} max={max} value={adminClothingForm[key]} onChange={e => setAdminClothingForm(f => f && ({ ...f, [key]: parseInt(e.target.value) }))} className="w-full accent-violet-500" />
-                              </div>
-                            ))}
-
-                            {/* Live avatar preview */}
-                            <p className="text-[10px] text-slate-500 mb-1">Preview</p>
-                            <div className="flex justify-center bg-black/30 rounded-lg py-2">
-                              <svg viewBox="-40 -55 80 100" style={{ width: 100, height: 100 }}>
-                                <image href="/alien.png" x="-31" y="-36" width="62" height="77" />
-                                <image href={adminClothingForm.image_url} x={adminClothingForm.img_x} y={adminClothingForm.img_y} width={adminClothingForm.img_w} height={adminClothingForm.img_h} />
-                              </svg>
+                        {/* Position + size — always visible */}
+                        <p className="text-[10px] text-slate-500 mb-1">Placering &amp; størrelse på figur</p>
+                        {([["X", "img_x", -60, 60], ["Y", "img_y", -60, 20], ["Bredde", "img_w", 10, 140], ["Højde", "img_h", 10, 140]] as [string, "img_x"|"img_y"|"img_w"|"img_h", number, number][]).map(([label, key, min, max]) => (
+                          <div key={key} className="mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-slate-500 w-10 flex-shrink-0">{label}</span>
+                              <input type="range" min={min} max={max} value={adminClothingForm[key]} onChange={e => setAdminClothingForm(f => f && ({ ...f, [key]: parseInt(e.target.value) }))} className="flex-1 accent-violet-500" />
+                              <input type="number" min={min} max={max} value={adminClothingForm[key]} onChange={e => setAdminClothingForm(f => f && ({ ...f, [key]: parseInt(e.target.value) || 0 }))} className="w-12 bg-white/[0.06] border border-white/[0.08] rounded px-1 py-0.5 text-[11px] text-slate-200 outline-none text-center tabular-nums focus:border-violet-500/50" />
                             </div>
-                          </>
-                        )}
+                          </div>
+                        ))}
+
+                        {/* Live avatar preview — always visible */}
+                        <p className="text-[10px] text-slate-500 mb-1 mt-1">Preview</p>
+                        <div className="flex justify-center bg-black/30 rounded-lg py-2">
+                          <svg viewBox="-40 -55 80 100" style={{ width: 100, height: 100 }}>
+                            <image href="/alien.png" x="-31" y="-36" width="62" height="77" />
+                            {adminClothingForm.image_url && <image href={adminClothingForm.image_url} x={adminClothingForm.img_x} y={adminClothingForm.img_y} width={adminClothingForm.img_w} height={adminClothingForm.img_h} />}
+                          </svg>
+                        </div>
 
                         <div className="flex gap-1 mt-2">
                           <button onClick={async () => {
                             const f = adminClothingForm;
                             if (!f.name.trim()) { alert("Navn mangler"); return; }
-                            const { error } = await supabase.from("virtual_clothing_items").insert({ name: f.name, slot: f.slot, style_key: "image", color: "#ffffff", price: f.price, level_required: f.level_required || null, image_url: f.image_url || null, img_x: f.img_x, img_y: f.img_y, img_w: f.img_w, img_h: f.img_h });
+                            const { error } = await supabase.from("virtual_clothing_items").insert({ name: f.name, slot: f.slot, style_key: "image", color: "#ffffff", price: f.price, level_required: f.level_required || null, image_url: f.image_url || null, img_x: f.img_x, img_y: f.img_y, img_w: f.img_w, img_h: f.img_h, in_shop: f.in_shop });
                             if (!error) {
                               const { data } = await supabase.from("virtual_clothing_items").select("*").order("slot");
                               if (data) setClothingCatalog(data as ClothingItem[]);
