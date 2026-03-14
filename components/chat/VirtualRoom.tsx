@@ -1978,7 +1978,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         // Flash the machine for others too
         setSlotStates(prev => {
           const m = new Map(prev);
-          const cur = m.get(p.item_id) ?? { spinning: false, reels: ["🎰","🎰","🎰"], winning: false, lastSpin: 0, autoCount: 0, autoRunning: false, bet: 10 };
+          const cur = m.get(p.item_id) ?? SLOT_DEFAULT;
           m.set(p.item_id, { ...cur, winning: true });
           return m;
         });
@@ -2381,6 +2381,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     }
     if (movingBotId) {
       supabase.from("virtual_room_bots").update({ gx, gy }).eq("id", movingBotId);
+      setBots(prev => prev.map(b => b.id === movingBotId ? { ...b, gx, gy } : b));
       setMovingBotId(null);
       return;
     }
@@ -4700,7 +4701,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
               const renderBubble = (key: string, svgX: number, svgY: number, messages: { text: string; id: number }[], bc: string, isDraft?: boolean, isTypingDots?: boolean) => {
                 const pos = toP(svgX, svgY + BUBBLE_ANCHOR_Y);
-                const textColor = bc === "#ffffff" || bc === "#fde68a" || bc === "#86efac" || bc === "#93c5fd" || bc === "#fca5a5" ? "#111827" : "#ffffff";
+                const textColor = bc === "#ffffff" || bc === "#f1f5f9" || bc === "#fde68a" || bc === "#86efac" || bc === "#93c5fd" || bc === "#fca5a5" ? "#111827" : "#ffffff";
                 const tailColor = bc;
                 return (
                   <div key={key} style={{ position: "absolute", ...pos, transform: "translate(-50%, -100%)", transition: "left 0.38s cubic-bezier(0.22,1,0.36,1), top 0.38s cubic-bezier(0.22,1,0.36,1)", pointerEvents: "none", zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -6115,6 +6116,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                     onChange={async e => {
                                       const c = e.target.value;
                                       await supabase.from("virtual_room_bots").update({ avatar_color: c }).eq("id", bot.id);
+                                      setBots(prev => prev.map(b => b.id === bot.id ? { ...b, avatar_color: c } : b));
                                     }}
                                     className="w-8 h-6 rounded cursor-pointer bg-transparent border border-white/[0.08]" />
                                 </div>
