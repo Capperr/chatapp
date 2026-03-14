@@ -553,6 +553,9 @@ interface RoomBot {
   moves_randomly: boolean;
   gives_clothing_id: string | null;
   bot_outfit?: Record<string, string> | null;
+  message_delay_ms?: number | null;
+  name_color?: string | null;
+  bubble_color?: string | null;
 }
 interface CtxMenu {
   clientX: number;
@@ -2144,9 +2147,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     return () => { clearInterval(cleanup); clearInterval(frame); };
   }, []);
 
-  // Bot message cycling (rotate through multi-line messages every 6s)
+  // Bot message cycling — tick every 1s so per-bot delays work at 1s precision
   useEffect(() => {
-    const iv = setInterval(() => setBotMsgTick(t => t + 1), 6000);
+    const iv = setInterval(() => setBotMsgTick(t => t + 1), 1000);
     return () => clearInterval(iv);
   }, []);
 
@@ -4396,7 +4399,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           <ClothingOverlay outfit={botOutfit} catalog={clothingCatalog} />
                         </g>
                         <text x={ax} y={y + 9} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{cellBot.name}</text>
-                        <text x={ax} y={y + 9} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" fill="#94a3b8">{cellBot.name}</text>
+                        <text x={ax} y={y + 9} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" fill={cellBot.name_color ?? "#94a3b8"}>{cellBot.name}</text>
                         {cellBot.gives_clothing_id && <text x={ax} y={y + TH / 4 + 8} textAnchor="middle" fontSize={8}>🎁</text>}
                         {/* Bot bubble rendered in HTML overlay */}
                       </g>
@@ -4767,8 +4770,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 if (!bot.message) return;
                 const { x: bx, y: by } = isoCenter(bot.gx, bot.gy, svgW);
                 const msgs = bot.message.split("\n").map((s: string) => s.trim()).filter(Boolean);
-                const msg = (msgs.length > 0 ? msgs[botMsgTick % msgs.length] : bot.message).replace(/\{navn\}/gi, currentProfile.display_name);
-                allBubbles.push(renderBubble(`bot-${bot.id}`, bx, by, [{ text: msg, id: bot.id.charCodeAt(0) }], "#f1f5f9"));
+                const delayMs = bot.message_delay_ms ?? 6000;
+                const tickIdx = delayMs > 0 ? Math.floor(Date.now() / delayMs) : botMsgTick;
+                const msg = (msgs.length > 0 ? msgs[tickIdx % msgs.length] : bot.message).replace(/\{navn\}/gi, currentProfile.display_name);
+                const bc = bot.bubble_color ?? "#f1f5f9";
+                allBubbles.push(renderBubble(`bot-${bot.id}`, bx, by, [{ text: msg, id: bot.id.charCodeAt(0) }], bc));
               });
 
               return <div className="absolute inset-0 overflow-hidden" style={{ pointerEvents: "none", zIndex: 15 }}>{allBubbles}</div>;
@@ -6107,6 +6113,85 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             </div>
                             {isEditing && (
                               <div className="px-2 pb-2 bg-violet-500/5 space-y-1.5">
+                                {/* Name */}
+                                <input
+                                  defaultValue={bot.name}
+                                  onBlur={async e => {
+                                    const v = e.target.value.trim();
+                                    if (!v || v === bot.name) return;
+                                    setBots(prev => prev.map(b => b.id === bot.id ? { ...b, name: v } : b));
+                                    const { error } = await supabase.from("virtual_room_bots").update({ name: v }).eq("id", bot.id);
+                                    if (error) showToast("❌", "Navn ikke gemt", error.message, "#ef4444");
+                                  }}
+                                  placeholder="Bot navn"
+                                  className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[12px] text-slate-200 outline-none focus:border-violet-500/50"
+                                />
+                                {/* Message */}
+                                <textarea
+                                  defaultValue={bot.message ?? ""}
+                                  onBlur={async e => {
+                                    const v = e.target.value;
+                                    if (v === (bot.message ?? "")) return;
+                                    setBots(prev => prev.map(b => b.id === bot.id ? { ...b, message: v || null } : b));
+                                    const { error } = await supabase.from("virtual_room_bots").update({ message: v || null }).eq("id", bot.id);
+                                    if (error) showToast("❌", "Besked ikke gemt", error.message, "#ef4444");
+                                  }}
+                                  rows={3}
+                                  placeholder={"Beskeder (én per linje)\nBrug {navn} for brugerens navn"}
+                                  className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[11px] text-slate-300 outline-none focus:border-violet-500/50 resize-none"
+                                />
+                                {/* Delay */}
+                                <div className="flex items-center gap-2">
+                                  <label className="text-[11px] text-slate-500 w-14 flex-shrink-0">Delay (s)</label>
+                                  <input
+                                    type="number" min={1} max={60} step={1}
+                                    defaultValue={Math.round((bot.message_delay_ms ?? 6000) / 1000)}
+                                    onBlur={async e => {
+                                      const secs = Math.max(1, Math.min(60, parseInt(e.target.value) || 6));
+                                      const ms = secs * 1000;
+                                      setBots(prev => prev.map(b => b.id === bot.id ? { ...b, message_delay_ms: ms } : b));
+                                      const { error } = await supabase.from("virtual_room_bots").update({ message_delay_ms: ms }).eq("id", bot.id);
+                                      if (error) showToast("❌", "Delay ikke gemt", error.message, "#ef4444");
+                                    }}
+                                    className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[12px] text-slate-300 outline-none focus:border-violet-500/50"
+                                  />
+                                </div>
+                                {/* Name color */}
+                                <div>
+                                  <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-1">Navn farve</p>
+                                  <div className="flex gap-1 flex-wrap">
+                                    {([["#94a3b8","Standard"], ["#ffffff","Hvid"], ["#f59e0b","Guld"], ["#c4b5fd","Lilla"], ["#86efac","Grøn"], ["#93c5fd","Blå"], ["#fca5a5","Rød"], ["#f9a8d4","Pink"]] as [string, string][]).map(([c, label]) => (
+                                      <button key={c}
+                                        onClick={async () => {
+                                          setBots(prev => prev.map(b => b.id === bot.id ? { ...b, name_color: c } : b));
+                                          const { error } = await supabase.from("virtual_room_bots").update({ name_color: c }).eq("id", bot.id);
+                                          if (error) showToast("❌", "Farve ikke gemt", error.message, "#ef4444");
+                                        }}
+                                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-all"
+                                        style={{ color: c, backgroundColor: (bot.name_color ?? "#94a3b8") === c ? "rgba(255,255,255,0.1)" : "transparent", borderColor: (bot.name_color ?? "#94a3b8") === c ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.06)" }}>
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                                {/* Bubble color */}
+                                <div>
+                                  <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-1">Boble farve</p>
+                                  <div className="grid grid-cols-4 gap-1">
+                                    {([["#f1f5f9","Standard"], ["#ffffff","Hvid"], ["#c4b5fd","Lilla"], ["#86efac","Grøn"], ["#93c5fd","Blå"], ["#fde68a","Gul"], ["#fca5a5","Rød"], ["#f9a8d4","Pink"]] as [string, string][]).map(([c, label]) => (
+                                      <button key={c}
+                                        onClick={async () => {
+                                          setBots(prev => prev.map(b => b.id === bot.id ? { ...b, bubble_color: c } : b));
+                                          const { error } = await supabase.from("virtual_room_bots").update({ bubble_color: c }).eq("id", bot.id);
+                                          if (error) showToast("❌", "Boble farve ikke gemt", error.message, "#ef4444");
+                                        }}
+                                        className="py-1 rounded text-[10px] font-semibold border transition-all"
+                                        style={{ backgroundColor: c, color: ["#f1f5f9","#ffffff","#86efac","#93c5fd","#fde68a","#fca5a5","#f9a8d4"].includes(c) ? "#111" : "#fff", borderColor: (bot.bubble_color ?? "#f1f5f9") === c ? "white" : "transparent" }}>
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
                                 {/* Color swatches */}
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <label className="text-[11px] text-slate-500 w-14 flex-shrink-0">Farve</label>
