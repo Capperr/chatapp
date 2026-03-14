@@ -7219,14 +7219,32 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             /* Accepted partnership */
                             <div className="bg-white/[0.04] rounded-xl p-4 border border-pink-500/20 text-center">
                               <p className="text-[11px] font-bold text-pink-400 uppercase tracking-widest mb-3">Rumkæreste</p>
-                              <div className="flex items-center justify-center mb-3">
-                                <svg width="160" height="120" viewBox="0 0 160 120">
-                                  <path d="M80 105 C80 105 18 68 18 40 C18 22 32 8 52 8 C63 8 73 14 80 24 C87 14 97 8 108 8 C128 8 142 22 142 40 C142 68 80 105 80 105Z" fill="#ec4899" opacity="0.2" stroke="#ec4899" strokeWidth="1" />
-                                  <g transform="translate(35, 18) scale(0.88)"><PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} /></g>
-                                  <g transform="translate(87, 18) scale(0.88)"><PersonAvatar color={partnerProfile?.avatar_color ?? "#8b5cf6"} /></g>
-                                </svg>
-                              </div>
-                              <p className="text-[13px] text-pink-300 font-semibold">{profileView.display_name} ❤️ {partnerProfile?.display_name ?? "?"}</p>
+                              {(() => {
+                                const pvOutfit = users.get(profileView.id)?.outfit ?? {};
+                                const ptOutfit = users.get(partnerProfile?.id ?? "")?.outfit ?? {};
+                                const HP = "M110 148 C110 148 18 98 18 52 C18 27 36 8 60 8 C76 8 92 17 110 36 C128 17 144 8 160 8 C184 8 202 27 202 52 C202 98 110 148 110 148Z";
+                                const stars = [{cx:35,cy:50,r:1.1,dur:"2.1s",delay:"0s"},{cx:45,cy:30,r:0.8,dur:"1.7s",delay:"0.4s"},{cx:108,cy:20,r:1.3,dur:"2.4s",delay:"0.1s"},{cx:125,cy:28,r:0.9,dur:"1.9s",delay:"0.7s"},{cx:175,cy:42,r:1.0,dur:"2.2s",delay:"0.3s"},{cx:188,cy:64,r:0.7,dur:"1.8s",delay:"0.9s"},{cx:163,cy:25,r:1.2,dur:"2.0s",delay:"0.5s"},{cx:22,cy:80,r:0.8,dur:"2.3s",delay:"1.1s"},{cx:28,cy:62,r:1.0,dur:"1.6s",delay:"0.2s"},{cx:196,cy:78,r:0.9,dur:"2.1s",delay:"0.8s"},{cx:110,cy:78,r:1.4,dur:"2.5s",delay:"0.6s"},{cx:110,cy:108,r:1.1,dur:"1.9s",delay:"0.3s"},{cx:110,cy:132,r:0.9,dur:"2.2s",delay:"0.8s"},{cx:82,cy:130,r:0.7,dur:"1.7s",delay:"1.0s"},{cx:138,cy:128,r:0.8,dur:"2.0s",delay:"0.4s"},{cx:88,cy:22,r:1.0,dur:"1.8s",delay:"0.6s"}];
+                                return (
+                                  <svg width="220" height="158" viewBox="0 0 220 158" style={{overflow:"visible"}} className="mx-auto mb-2">
+                                    <defs><clipPath id="hclip-pv"><path d={HP} /></clipPath></defs>
+                                    <path d={HP} fill="#1a0828" />
+                                    <g clipPath="url(#hclip-pv)">{stars.map((s,i)=><circle key={i} cx={s.cx} cy={s.cy} r={s.r} fill="white" opacity={0.5}><animate attributeName="opacity" values="0.5;0.04;0.5" dur={s.dur} repeatCount="indefinite" begin={s.delay}/></circle>)}</g>
+                                    <path d={HP} fill="none" stroke="#ec4899" strokeWidth="1.5" opacity="0.45" />
+                                    <g transform="translate(72,86) scale(1.35)">
+                                      <PersonAvatar color={profileView.avatar_color ?? "#8b5cf6"} />
+                                      {Object.keys(pvOutfit).length > 0 && <ClothingOverlay outfit={pvOutfit} catalog={clothingCatalog} />}
+                                    </g>
+                                    <g transform="translate(148,86) scale(1.35)">
+                                      <PersonAvatar color={partnerProfile?.avatar_color ?? "#8b5cf6"} />
+                                      {Object.keys(ptOutfit).length > 0 && <ClothingOverlay outfit={ptOutfit} catalog={clothingCatalog} />}
+                                    </g>
+                                  </svg>
+                                );
+                              })()}
+                              <p className="text-[13px] text-pink-300 font-semibold mb-3">{profileView.display_name} ❤️ {partnerProfile?.display_name ?? "?"}</p>
+                              {(partnerData.requester_id === currentProfile.id || partnerData.recipient_id === currentProfile.id) && (
+                                <button onClick={async () => { if (confirm("Vil du slå op?")) { await supabase.from("profile_partners").delete().eq("id", partnerData.id); setPartnerData(null); setPartnerProfile(null); } }} className="px-3 py-1.5 rounded-lg text-[12px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors">Slå op 💔</button>
+                              )}
                             </div>
                           ) : partnerPendingFromThem ? (
                             /* They sent me a request — accept/decline */
@@ -7425,15 +7443,29 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         {myPartnerData ? (
                           <div className="bg-white/[0.04] rounded-xl p-4 border border-pink-500/20 text-center space-y-3">
                             <p className="text-[11px] font-bold text-pink-400 uppercase tracking-widest">Din rumkæreste</p>
-                            <div className="flex items-center justify-center">
-                              <svg width="160" height="120" viewBox="0 0 160 120">
-                                <path d="M80 105 C80 105 18 68 18 40 C18 22 32 8 52 8 C63 8 73 14 80 24 C87 14 97 8 108 8 C128 8 142 22 142 40 C142 68 80 105 80 105Z" fill="#ec4899" opacity="0.2" stroke="#ec4899" strokeWidth="1" />
-                                <g transform="translate(35, 18) scale(0.88)"><PersonAvatar color={myColor} /></g>
-                                <g transform="translate(87, 18) scale(0.88)"><PersonAvatar color={myPartnerProfile?.avatar_color ?? "#8b5cf6"} /></g>
-                              </svg>
-                            </div>
+                            {(() => {
+                              const ptOutfit = users.get(myPartnerProfile?.id ?? "")?.outfit ?? {};
+                              const HP = "M110 148 C110 148 18 98 18 52 C18 27 36 8 60 8 C76 8 92 17 110 36 C128 17 144 8 160 8 C184 8 202 27 202 52 C202 98 110 148 110 148Z";
+                              const stars = [{cx:35,cy:50,r:1.1,dur:"2.1s",delay:"0s"},{cx:45,cy:30,r:0.8,dur:"1.7s",delay:"0.4s"},{cx:108,cy:20,r:1.3,dur:"2.4s",delay:"0.1s"},{cx:125,cy:28,r:0.9,dur:"1.9s",delay:"0.7s"},{cx:175,cy:42,r:1.0,dur:"2.2s",delay:"0.3s"},{cx:188,cy:64,r:0.7,dur:"1.8s",delay:"0.9s"},{cx:163,cy:25,r:1.2,dur:"2.0s",delay:"0.5s"},{cx:22,cy:80,r:0.8,dur:"2.3s",delay:"1.1s"},{cx:28,cy:62,r:1.0,dur:"1.6s",delay:"0.2s"},{cx:196,cy:78,r:0.9,dur:"2.1s",delay:"0.8s"},{cx:110,cy:78,r:1.4,dur:"2.5s",delay:"0.6s"},{cx:110,cy:108,r:1.1,dur:"1.9s",delay:"0.3s"},{cx:110,cy:132,r:0.9,dur:"2.2s",delay:"0.8s"},{cx:82,cy:130,r:0.7,dur:"1.7s",delay:"1.0s"},{cx:138,cy:128,r:0.8,dur:"2.0s",delay:"0.4s"},{cx:88,cy:22,r:1.0,dur:"1.8s",delay:"0.6s"}];
+                              return (
+                                <svg width="220" height="158" viewBox="0 0 220 158" style={{overflow:"visible"}} className="mx-auto">
+                                  <defs><clipPath id="hclip-own"><path d={HP} /></clipPath></defs>
+                                  <path d={HP} fill="#1a0828" />
+                                  <g clipPath="url(#hclip-own)">{stars.map((s,i)=><circle key={i} cx={s.cx} cy={s.cy} r={s.r} fill="white" opacity={0.5}><animate attributeName="opacity" values="0.5;0.04;0.5" dur={s.dur} repeatCount="indefinite" begin={s.delay}/></circle>)}</g>
+                                  <path d={HP} fill="none" stroke="#ec4899" strokeWidth="1.5" opacity="0.45" />
+                                  <g transform="translate(72,86) scale(1.35)">
+                                    <PersonAvatar color={myColor} />
+                                    {Object.keys(myOutfit).length > 0 && <ClothingOverlay outfit={myOutfit} catalog={clothingCatalog} />}
+                                  </g>
+                                  <g transform="translate(148,86) scale(1.35)">
+                                    <PersonAvatar color={myPartnerProfile?.avatar_color ?? "#8b5cf6"} />
+                                    {Object.keys(ptOutfit).length > 0 && <ClothingOverlay outfit={ptOutfit} catalog={clothingCatalog} />}
+                                  </g>
+                                </svg>
+                              );
+                            })()}
                             <p className="text-[13px] text-pink-300 font-semibold">{currentProfile.display_name} ❤️ {myPartnerProfile?.display_name ?? "?"}</p>
-                            <button onClick={async () => { if (confirm("Vil du afslutte rumkæreste-forholdet?")) { await supabase.from("profile_partners").delete().eq("id", myPartnerData.id); setMyPartnerData(null); setMyPartnerProfile(null); } }} className="px-3 py-1.5 rounded-lg text-[12px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors">Afslut forhold</button>
+                            <button onClick={async () => { if (confirm("Vil du slå op?")) { await supabase.from("profile_partners").delete().eq("id", myPartnerData.id); setMyPartnerData(null); setMyPartnerProfile(null); } }} className="px-3 py-1.5 rounded-lg text-[12px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors">Slå op 💔</button>
                           </div>
                         ) : (
                           <div className="bg-white/[0.04] rounded-xl p-4 border border-white/[0.07] text-center">
