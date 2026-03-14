@@ -6511,31 +6511,50 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     const color = isMe ? myColor : (prof?.avatar_color ?? "#8b5cf6");
                     const time = new Date(msg.created_at).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
                     const myName = currentProfile.display_name;
-                    const isMention = !isMe && msg.content.toLowerCase().includes(myName.toLowerCase());
-                    // Highlight name mention in message text
+                    const lowerContent = msg.content.toLowerCase();
+                    const lowerMyName = myName.toLowerCase();
+                    const isMention = !isMe && lowerMyName.length > 0 && lowerContent.includes(lowerMyName);
+                    const openProfile = () => {
+                      if (isMe) return;
+                      supabase.from("profiles").select("*").eq("id", msg.user_id).single().then(({ data }) => {
+                        if (data) { setProfileView(data as Profile); setRightPanel("userprofile"); }
+                      });
+                    };
+                    // Render content with all mention occurrences highlighted
                     const renderContent = () => {
-                      if (!isMention) return <span className="text-slate-300">{msg.content}</span>;
-                      const idx = msg.content.toLowerCase().indexOf(myName.toLowerCase());
-                      return (
-                        <>
-                          <span className="text-slate-300">{msg.content.slice(0, idx)}</span>
-                          <span className="font-bold text-amber-300 bg-amber-500/15 rounded px-0.5">{msg.content.slice(idx, idx + myName.length)}</span>
-                          <span className="text-slate-300">{msg.content.slice(idx + myName.length)}</span>
-                        </>
-                      );
+                      if (!isMention) return <span style={{ color: "#cbd5e1" }}>{msg.content}</span>;
+                      const parts: React.ReactNode[] = [];
+                      let remaining = msg.content;
+                      let lowerRemaining = remaining.toLowerCase();
+                      let key = 0;
+                      while (lowerRemaining.includes(lowerMyName)) {
+                        const idx = lowerRemaining.indexOf(lowerMyName);
+                        if (idx > 0) parts.push(<span key={key++} style={{ color: "#cbd5e1" }}>{remaining.slice(0, idx)}</span>);
+                        parts.push(<span key={key++} style={{ color: "#fcd34d", fontWeight: 700, background: "rgba(245,158,11,0.18)", borderRadius: 3, padding: "0 2px" }}>{remaining.slice(idx, idx + myName.length)}</span>);
+                        remaining = remaining.slice(idx + myName.length);
+                        lowerRemaining = remaining.toLowerCase();
+                      }
+                      if (remaining) parts.push(<span key={key++} style={{ color: "#cbd5e1" }}>{remaining}</span>);
+                      return <>{parts}</>;
                     };
                     return (
-                      <div key={msg.id} className={`flex gap-2.5 px-3 py-2.5 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors ${isMention ? "bg-amber-500/[0.05] border-l-2 border-l-amber-500/40" : ""}`}>
-                        {/* Avatar */}
-                        <div className="flex-shrink-0 w-7 h-7 rounded-full overflow-hidden flex items-center justify-center" style={{ background: color + "22", border: `1px solid ${color}44` }}>
+                      <div key={msg.id} style={isMention ? { borderLeft: "2px solid rgba(245,158,11,0.5)", background: "rgba(245,158,11,0.04)" } : {}}
+                        className="flex gap-2.5 px-3 py-2.5 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+                        {/* Avatar — clickable to open profile */}
+                        <button onClick={openProfile} disabled={isMe}
+                          className="flex-shrink-0 w-7 h-7 rounded-full overflow-hidden flex items-center justify-center transition-opacity hover:opacity-80 disabled:cursor-default"
+                          style={{ background: color + "22", border: `1px solid ${color}44` }}>
                           <svg width="28" height="28" viewBox="-18 -22 36 40">
                             <g transform="scale(0.56)"><PersonAvatar color={color} /></g>
                           </svg>
-                        </div>
+                        </button>
                         {/* Content */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-baseline justify-between gap-1 mb-0.5">
-                            <span className="text-[12px] font-bold truncate" style={{ color }}>{name}</span>
+                            {/* Name — clickable to open profile */}
+                            <button onClick={openProfile} disabled={isMe}
+                              className="text-[12px] font-bold truncate hover:underline disabled:cursor-default disabled:no-underline text-left"
+                              style={{ color }}>{name}</button>
                             <span className="text-[10px] text-slate-700 flex-shrink-0 tabular-nums">{time}</span>
                           </div>
                           <p className="text-[12px] leading-snug break-words">{renderContent()}</p>
