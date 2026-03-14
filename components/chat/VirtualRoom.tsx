@@ -768,7 +768,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const userLastActivityRef = useRef<Map<string, number>>(new Map());
   const botsRef = useRef<RoomBot[]>([]);
   const usersRef = useRef<Map<string, PresenceUser>>(new Map());
-  const coinsRef = useRef(1000);
+  const coinsRef = useRef(currentProfile.coins ?? 1000);
   const lastCoinAwardRef = useRef<Date | null>(null);
   const lastTypingBroadcastRef = useRef(0);
 
@@ -845,7 +845,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [tradeTooltip, setTradeTooltip] = useState<{ x: number; y: number; item_id: string; is_clothing: boolean } | null>(null);
   const tradeSessionRef = useRef<TradeSession | null>(null);
   const [settingsTab, setSettingsTab] = useState<"konto" | "profil" | "butik">("profil");
-  const levelRef = useRef(1);
+  const levelRef = useRef(currentProfile.level ?? 1);
   const [tanLevel, setTanLevel] = useState(0);
   const tanLevelRef = useRef(0);
   const [tanExpiresAt, setTanExpiresAt] = useState<string | null>(null);
@@ -885,7 +885,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [createBotForm, setCreateBotForm] = useState<{ name: string; color: string; message: string; moves_randomly: boolean; gives_clothing_id: string; bot_outfit: Record<string, string> } | null>(null);
   const [editBotId, setEditBotId] = useState<string | null>(null);
   const [movingBotId, setMovingBotId] = useState<string | null>(null);
-  const [coins, setCoins] = useState(1000);
+  const [coins, setCoins] = useState(currentProfile.coins ?? 1000);
   const [activeRoomType, setActiveRoomType] = useState(initialRoomType ?? "normal");
   const [activeRoomOwnerId, setActiveRoomOwnerId] = useState<string | null>(initialRoomOwnerId ?? null);
   // ─── Roulette state ─────────────────────────────────────────────────────────
@@ -932,9 +932,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [dartWinEffects, setDartWinEffects] = useState<Map<string, { wager: number }>>(new Map());
   const dartPauseTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const dartGamesRef = useRef<DartGame[]>([]);
-  const [xp, setXp] = useState(0);
-  const [level, setLevel] = useState(1);
-  const xpRef = useRef(0);
+  const [xp, setXp] = useState(currentProfile.xp ?? 0);
+  const [level, setLevel] = useState(currentProfile.level ?? 1);
+  const xpRef = useRef(currentProfile.xp ?? 0);
   const [wardrobeActiveSlot, setWardrobeActiveSlot] = useState<string | null>(null);
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
   const [shopCategory, setShopCategory] = useState<string | null>(null);
