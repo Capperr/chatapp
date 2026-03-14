@@ -1923,6 +1923,32 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           for (const uid of Array.from(next.keys())) { if (!activeIds.has(uid)) next.delete(uid); }
           return next;
         });
+        // ── Collision check: relocate if spawned on top of another user/bot/locked tile ──
+        {
+          const myGx = myPosRef.current.gx;
+          const myGy = myPosRef.current.gy;
+          const onUser = others.some(p => p.gx === myGx && p.gy === myGy);
+          const onBot  = botsRef.current.some(b => b.gx === myGx && b.gy === myGy);
+          const onLock = lockedTilesRef.current.has(`${myGx},${myGy}`);
+          if (onUser || onBot || onLock) {
+            const cols = roomColsRef.current;
+            const rows = roomRowsRef.current;
+            const taken = new Set([
+              ...others.map(p => `${p.gx},${p.gy}`),
+              ...botsRef.current.map(b => `${b.gx},${b.gy}`),
+              ...Array.from(lockedTilesRef.current),
+            ]);
+            let nx = myGx, ny = myGy;
+            for (let i = 0; i < 200; i++) {
+              const tx = Math.floor(Math.random() * cols);
+              const ty = Math.floor(Math.random() * rows);
+              if (!taken.has(`${tx},${ty}`)) { nx = tx; ny = ty; break; }
+            }
+            myPosRef.current = { gx: nx, gy: ny };
+            setMyPos({ gx: nx, gy: ny });
+            broadcastMoveRef.current(nx, ny);
+          }
+        }
         // ── Dart: detect player leave/return ──
         const activeIdSet = new Set(others.map(p => p.user_id));
         // Check for players returning to a paused game
