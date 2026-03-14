@@ -797,7 +797,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
   const [shopCategory, setShopCategory] = useState<string | null>(null);
   const [shopItemIdx, setShopItemIdx] = useState(0);
-  const [adminClothingForm, setAdminClothingForm] = useState<{ name: string; slot: string; price: number; level_required: number; in_shop: boolean; image_url: string; img_x: number; img_y: number; img_w: number; img_h: number; uploading: boolean } | null>(null);
+  const [adminClothingForm, setAdminClothingForm] = useState<{ name: string; slot: string; price: number; level_required: number; in_shop: boolean; image_url: string; img_x: number; img_y: number; img_w: number; img_h: number; uploading: boolean; previewZoom: number } | null>(null);
   const [giveClothingTarget, setGiveClothingTarget] = useState<{ userId: string; userName: string } | null>(null);
   const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
@@ -5785,7 +5785,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
                     <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
                       <span className="text-[12px] text-slate-400 font-semibold">Tøjkatalog ({clothingCatalog.length})</span>
-                      <button onClick={() => setAdminClothingForm({ name: "", slot: "hat", price: 100, level_required: 0, in_shop: true, image_url: "", img_x: -31, img_y: -36, img_w: 62, img_h: 77, uploading: false })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => setAdminClothingForm({ name: "", slot: "hat", price: 100, level_required: 0, in_shop: true, image_url: "", img_x: -31, img_y: -36, img_w: 62, img_h: 77, uploading: false, previewZoom: 1 })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
                     </div>
 
                     {/* Create/edit form */}
@@ -5851,13 +5851,22 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           </div>
                         ))}
 
-                        {/* Live avatar preview — always visible */}
+                        {/* Live avatar preview — zoomable */}
                         <p className="text-[10px] text-slate-500 mb-1 mt-1">Preview</p>
-                        <div className="flex justify-center bg-black/30 rounded-lg py-2">
-                          <svg viewBox="-40 -55 80 100" style={{ width: 100, height: 100 }}>
-                            <image href="/alien.png" x="-31" y="-36" width="62" height="77" />
-                            {adminClothingForm.image_url && <image href={adminClothingForm.image_url} x={adminClothingForm.img_x} y={adminClothingForm.img_y} width={adminClothingForm.img_w} height={adminClothingForm.img_h} />}
-                          </svg>
+                        <div className="flex flex-col items-center bg-black/30 rounded-lg py-2 gap-1.5">
+                          <div style={{ width: 160, height: 160, overflow: "hidden", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <div style={{ transform: `scale(${adminClothingForm.previewZoom})`, transformOrigin: "center center", transition: "transform 0.12s" }}>
+                              <svg viewBox="-40 -55 80 100" style={{ width: 160, height: 160, display: "block" }}>
+                                <image href="/alien.png" x="-31" y="-36" width="62" height="77" />
+                                {adminClothingForm.image_url && <image href={adminClothingForm.image_url} x={adminClothingForm.img_x} y={adminClothingForm.img_y} width={adminClothingForm.img_w} height={adminClothingForm.img_h} />}
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => setAdminClothingForm(f => f && ({ ...f, previewZoom: Math.max(0.5, parseFloat((f.previewZoom - 0.25).toFixed(2))) }))} className="w-6 h-6 rounded bg-white/[0.08] text-slate-300 hover:bg-white/[0.15] flex items-center justify-center text-base leading-none">−</button>
+                            <span className="text-[10px] text-slate-500 w-9 text-center tabular-nums">{Math.round(adminClothingForm.previewZoom * 100)}%</span>
+                            <button onClick={() => setAdminClothingForm(f => f && ({ ...f, previewZoom: Math.min(4, parseFloat((f.previewZoom + 0.25).toFixed(2))) }))} className="w-6 h-6 rounded bg-white/[0.08] text-slate-300 hover:bg-white/[0.15] flex items-center justify-center text-base leading-none">+</button>
+                          </div>
                         </div>
 
                         <div className="flex gap-1 mt-2">
