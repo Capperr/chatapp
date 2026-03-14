@@ -1793,21 +1793,6 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           }, 60000);
           dartPauseTimersRef.current.set(game.id, timer);
         }
-        const cols = roomColsRef.current; const rows = roomRowsRef.current;
-        const occupied = new Set(others.map(p => `${p.gx},${p.gy}`));
-        const cur = myPosRef.current;
-        if (occupied.has(`${cur.gx},${cur.gy}`)) {
-          outer: for (let dist = 1; dist < Math.max(cols, rows); dist++) {
-            for (let dgx = -dist; dgx <= dist; dgx++) {
-              for (let dgy = -dist; dgy <= dist; dgy++) {
-                if (Math.abs(dgx) !== dist && Math.abs(dgy) !== dist) continue;
-                const ngx = Math.max(0, Math.min(cols - 1, cur.gx + dgx));
-                const ngy = Math.max(0, Math.min(rows - 1, cur.gy + dgy));
-                if (!occupied.has(`${ngx},${ngy}`)) { moveMyPos(ngx, ngy); broadcastMove(ngx, ngy); break outer; }
-              }
-            }
-          }
-        }
       })
       .on("presence", { event: "join" }, () => {
         // Re-broadcast position immediately so joining users see us without waiting for a move
