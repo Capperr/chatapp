@@ -68,23 +68,18 @@ function hoursToNextLevel(totalSeconds: number): number {
 }
 
 // ─── XP-based level system ─────────────────────────────────────────────────────
-// Cumulative XP needed to reach each level (index 0 = level 1 = 0 XP)
-const XP_LEVELS = [0, 100, 300, 600, 1000, 1500, 2100, 2850, 3750, 4900, 6300, 8000, 10000, 12500, 15500];
+// 100 XP per level — matches Math.floor(xp/100)+1 used in DB
+const XP_PER_LEVEL = 100;
+const XP_MAX_LEVEL = 15;
+const XP_LEVELS = Array.from({ length: XP_MAX_LEVEL }, (_, i) => i * XP_PER_LEVEL); // [0, 100, 200, ..., 1400]
 function levelFromXp(xp: number): number {
-  let lv = 1;
-  for (let i = 1; i < XP_LEVELS.length; i++) {
-    if (xp >= XP_LEVELS[i]) lv = i + 1; else break;
-  }
-  return lv;
+  return Math.min(XP_MAX_LEVEL, Math.floor(xp / XP_PER_LEVEL) + 1);
 }
 function xpInCurrentLevel(xp: number): number {
-  const lv = levelFromXp(xp);
-  return xp - (XP_LEVELS[lv - 1] ?? 0);
+  return xp % XP_PER_LEVEL;
 }
-function xpForNextLevel(xp: number): number {
-  const lv = levelFromXp(xp);
-  if (lv >= XP_LEVELS.length) return 0;
-  return XP_LEVELS[lv] - (XP_LEVELS[lv - 1] ?? 0);
+function xpForNextLevel(_xp: number): number {
+  return XP_PER_LEVEL;
 }
 
 // ─── Roulette constants ─────────────────────────────────────────────────────────
@@ -1774,6 +1769,20 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         setDartThrowEffects(prev => { const m = new Map(prev); m.set(p.user_id, p.label); return m; });
         setTimeout(() => setDartThrowEffects(prev => { const m = new Map(prev); m.delete(p.user_id); return m; }), 3200);
       })
+      .on("broadcast", { event: "dart_invite" }, ({ payload }) => {
+        const p = payload as { game: DartGame; to_id: string };
+        if (!p?.to_id || p.to_id !== currentProfile.id) return;
+        setDartGames(prev => { if (prev.some(g => g.id === p.game.id)) return prev; return [...prev, p.game]; });
+        setDartInviteModal({ game: p.game });
+      })
+      .on("broadcast", { event: "dart_game_update" }, ({ payload }) => {
+        const g = payload as DartGame;
+        if (!g?.id) return;
+        setDartGames(prev => {
+          const filtered = prev.filter(x => x.id !== g.id);
+          return g.status === "finished" ? filtered : [...filtered, g];
+        });
+      })
       .on("broadcast", { event: "spaceship_request" }, ({ payload }) => {
         const p = payload as VisitRequest & { to_id: string };
         if (p.to_id !== currentProfile.id) return;
@@ -2168,7 +2177,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       ...(turnDone ? { current_player_id: isP1 ? game.player2_id : game.player1_id } : {}),
       ...(isWin ? { status: "finished", winner_id: currentProfile.id } : {}),
     };
+    const newGame: DartGame = {
+      ...game, ...updates as Partial<DartGame>,
+      ...(isP1 ? { player1_score: scoreAfter } : { player2_score: scoreAfter }),
+      throws_this_turn: turnDone ? 0 : throwNum,
+      current_player_id: turnDone ? (isP1 ? game.player2_id : game.player1_id) : game.current_player_id,
+      ...(isWin ? { status: "finished" as const, winner_id: currentProfile.id } : {}),
+    };
+    setDartGames(prev => prev.map(g => g.id === game.id ? newGame : g));
     supabase.from("dart_games").update(updates).eq("id", game.id).then(() => {});
+    channelRef.current?.send({ type: "broadcast", event: "dart_game_update", payload: newGame });
     setTimeout(() => setDartAnimating(false), 900);
   };
 
@@ -2453,7 +2471,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (achievement.reward_coins > 0 || achievement.reward_xp > 0) {
       const newCoins = coinsRef.current + achievement.reward_coins;
       const newXp = xpRef.current + achievement.reward_xp;
-      const newLevel = Math.max(levelRef.current, Math.floor(newXp / 100) + 1);
+      const newLevel = Math.max(levelRef.current, levelFromXp(newXp));
       coinsRef.current = newCoins; setCoins(newCoins);
       xpRef.current = newXp; setXp(newXp);
       levelRef.current = newLevel; setLevel(newLevel);
@@ -3128,18 +3146,31 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           })}
                           {/* Celestial body */}
                           {bodyType === 0 && (
-                            // Planet with bands
+                            // Planet with bands + slow drift + rotating atmosphere
                             <g>
+                              <animateTransform attributeName="transform" type="translate"
+                                values={`0 0; ${(rng(12)-0.5)*5} ${(rng(13)-0.5)*4}; ${(rng(14)-0.5)*4} ${(rng(15)-0.5)*5}; 0 0`}
+                                dur={`${22 + Math.floor(rng(16) * 12)}s`} repeatCount="indefinite" calcMode="spline"
+                                keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1" />
                               <circle cx={bodyX} cy={bodyY} r={bodyR * 1.4} fill={pDark} opacity={0.15} />
                               <circle cx={bodyX} cy={bodyY} r={bodyR} fill={pDark} />
-                              <ellipse cx={bodyX} cy={bodyY - bodyR * 0.15} rx={bodyR * 0.85} ry={bodyR * 0.2} fill={pLight} opacity={0.4} />
-                              <ellipse cx={bodyX} cy={bodyY + bodyR * 0.25} rx={bodyR * 0.7} ry={bodyR * 0.15} fill={pLight} opacity={0.25} />
+                              <ellipse cx={bodyX} cy={bodyY - bodyR * 0.15} rx={bodyR * 0.85} ry={bodyR * 0.2} fill={pLight} opacity={0.4}>
+                                <animate attributeName="rx" values={`${bodyR * 0.85};${bodyR * 0.95};${bodyR * 0.85}`} dur={`${12 + rng(17)*6}s`} repeatCount="indefinite" />
+                                <animate attributeName="opacity" values="0.4;0.55;0.4" dur={`${9 + rng(18)*5}s`} repeatCount="indefinite" />
+                              </ellipse>
+                              <ellipse cx={bodyX} cy={bodyY + bodyR * 0.25} rx={bodyR * 0.7} ry={bodyR * 0.15} fill={pLight} opacity={0.25}>
+                                <animate attributeName="rx" values={`${bodyR * 0.7};${bodyR * 0.8};${bodyR * 0.7}`} dur={`${16 + rng(19)*8}s`} repeatCount="indefinite" />
+                              </ellipse>
                               <circle cx={bodyX - bodyR * 0.25} cy={bodyY - bodyR * 0.2} r={bodyR * 0.22} fill="rgba(255,255,255,0.12)" />
                             </g>
                           )}
                           {bodyType === 1 && (
-                            // Moon — grey with craters
+                            // Moon — grey with craters + slow orbital drift
                             <g>
+                              <animateTransform attributeName="transform" type="translate"
+                                values={`0 0; ${4 + rng(12)*3} ${-3 - rng(13)*2}; ${7 + rng(14)*2} 0; ${4 + rng(15)*3} ${3 + rng(16)*2}; 0 0; ${-4 - rng(17)*3} ${3 + rng(18)*2}; ${-7 - rng(19)*2} 0; ${-4 - rng(20)*3} ${-3 - rng(21)*2}; 0 0`}
+                                dur={`${18 + Math.floor(rng(22) * 10)}s`} repeatCount="indefinite" calcMode="spline"
+                                keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" />
                               <circle cx={bodyX} cy={bodyY} r={bodyR} fill="#9ca3af" />
                               <circle cx={bodyX + bodyR * 0.3} cy={bodyY - bodyR * 0.3} r={bodyR * 0.28} fill="#6b7280" />
                               <circle cx={bodyX - bodyR * 0.35} cy={bodyY + bodyR * 0.2} r={bodyR * 0.18} fill="#6b7280" />
@@ -3148,8 +3179,12 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             </g>
                           )}
                           {bodyType === 2 && (
-                            // Sun with corona
+                            // Sun with corona + slow drift
                             <g>
+                              <animateTransform attributeName="transform" type="translate"
+                                values={`0 0; ${(rng(12)-0.5)*3} ${(rng(13)-0.5)*3}; 0 0`}
+                                dur={`${30 + Math.floor(rng(14) * 15)}s`} repeatCount="indefinite" calcMode="spline"
+                                keySplines="0.4 0 0.6 1; 0.4 0 0.6 1" />
                               <circle cx={bodyX} cy={bodyY} r={bodyR * 1.8} fill="#fef3c7" opacity={0.06}>
                                 <animate attributeName="opacity" values="0.04;0.1;0.04" dur="2.5s" repeatCount="indefinite" />
                               </circle>
@@ -6651,7 +6686,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       item_type: "dartboard",
                       wall_side: ctxMenu.wallSide,
                       wall_pos: ctxMenu.wallPosition ?? 0.5,
-                      wall_height: 80,
+                      wall_height: 45,
                       item_scale: 1.0,
                       gx: null, gy: null,
                     }).select().single();
@@ -6867,7 +6902,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     throws_this_turn: 0,
                     status: "pending",
                   }).select().single();
-                  if (data) setDartGames(prev => [...prev, data as DartGame]);
+                  if (data) {
+                    setDartGames(prev => [...prev, data as DartGame]);
+                    channelRef.current?.send({ type: "broadcast", event: "dart_invite", payload: { game: data, to_id: dartStartOpponentId } });
+                  }
                   setDartStartModal(null);
                 }}
                 className={`w-full py-3 rounded-xl text-[14px] font-black transition-all ${dartStartOpponentId ? "bg-gradient-to-r from-amber-600 to-amber-500 text-white hover:from-amber-500 hover:to-amber-400 shadow-[0_4px_16px_rgba(245,158,11,0.3)]" : "bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
@@ -6892,7 +6930,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             <div className="p-5 flex gap-3">
               <button
                 onClick={async () => {
+                  const activeGame: DartGame = { ...dartInviteModal.game, status: "active" };
                   supabase.from("dart_games").update({ status: "active" }).eq("id", dartInviteModal.game.id).then(() => {});
+                  setDartGames(prev => prev.map(g => g.id === dartInviteModal!.game.id ? activeGame : g));
+                  channelRef.current?.send({ type: "broadcast", event: "dart_game_update", payload: activeGame });
                   setDartInviteModal(null);
                 }}
                 className="flex-1 py-2.5 rounded-xl text-[13px] font-black bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">
