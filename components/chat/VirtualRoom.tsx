@@ -326,6 +326,9 @@ function ClothingOverlay({ outfit, catalog }: { outfit: Record<string, string>; 
       {Object.entries(outfit).map(([slot, cid]) => {
         const item = catalog.find(c => c.id === cid);
         if (!item) return null;
+        if (item.image_url) {
+          return <image key={slot} href={item.image_url} x={item.img_x ?? -31} y={item.img_y ?? -36} width={item.img_w ?? 62} height={item.img_h ?? 77} />;
+        }
         return <ClothingLayerSVG key={slot} styleKey={item.style_key} color={item.color} />;
       })}
     </>
@@ -455,6 +458,11 @@ interface ClothingItem {
   color: string;
   price: number;
   level_required?: number;
+  image_url?: string;
+  img_x?: number;
+  img_y?: number;
+  img_w?: number;
+  img_h?: number;
 }
 interface UserWardrobeEntry {
   id: string;
@@ -719,7 +727,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [activeFloorPattern, setActiveFloorPattern] = useState("standard");
   const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
   const [editRoomForm, setEditRoomForm] = useState<{ id: string; name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
-  const [adminTab, setAdminTab] = useState<"users" | "items" | "bots" | "self">("users");
+  const [adminTab, setAdminTab] = useState<"users" | "items" | "bots" | "self" | "clothing">("users");
   const [isInvisible, setIsInvisible] = useState(false);
   const isInvisibleRef = useRef(false);
   const [nameColor, setNameColor] = useState<string | null>(null);
@@ -788,6 +796,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [wardrobePreviewId, setWardrobePreviewId] = useState<string | null>(null);
   const [shopCategory, setShopCategory] = useState<string | null>(null);
   const [shopItemIdx, setShopItemIdx] = useState(0);
+  const [adminClothingForm, setAdminClothingForm] = useState<{ name: string; slot: string; price: number; level_required: number; image_url: string; img_x: number; img_y: number; img_w: number; img_h: number; uploading: boolean } | null>(null);
+  const [giveClothingTarget, setGiveClothingTarget] = useState<{ userId: string; userName: string } | null>(null);
   const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [lockedTiles, setLockedTiles] = useState<Set<string>>(new Set());
@@ -3492,22 +3502,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     const R = 22 * scale;
                     dartBoardPositionsRef.current.set(item.id, { cx, cy, R });
                     const game = dartGames.find(g => g.item_id === item.id && (g.status === "active" || g.status === "pending"));
-                    // Scoreboard offset: along wall direction
-                    const wallDirX = item.wall_side === "right" ? TW / 2 : -TW / 2;
-                    const wallDirY = TH / 2;
-                    const len = Math.hypot(wallDirX, wallDirY);
-                    const sbOff = (R * 2.8 + 10);
-                    const sbX = cx + (wallDirX / len) * sbOff;
-                    const sbY = cy + (wallDirY / len) * sbOff;
+                    // Scoreboard sits directly below the dartboard on the same wall face
+                    const sbX = cx;
+                    const sbY = cy + R * 1.35 + 30;
                     const isMyGame = game && (game.player1_id === currentProfile.id || game.player2_id === currentProfile.id);
                     const isMyTurn = game && game.current_player_id === currentProfile.id && game.status === "active";
                     // Throwing zone tile — 3 tiles in from wall
                     const zoneGx = item.wall_side === "left" ? 3 : Math.round(t * (roomCols - 1));
                     const zoneGy = item.wall_side === "left" ? Math.round(t * (roomRows - 1)) : 3;
                     const onZone = myPos.gx === zoneGx && myPos.gy === zoneGy;
-                    // Scoreboard: shear-transform to follow wall angle — readable but wall-mounted looking
                     // Dartboard: flat/frontal so it stays readable
-                    const sbShear = item.wall_side === "right" ? -0.28 : 0.28;
                     return (
                       <g key={`wall-${item.id}`}
                         onContextMenu={e => handleRightClick(e, null, item, null)}
@@ -3521,11 +3525,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.2s" repeatCount="indefinite" />
                           </circle>}
                         </g>
-                        {/* Scoreboard — sheared to follow wall angle */}
+                        {/* Scoreboard — centered below dartboard */}
                         {game && (() => {
                           const bw = 68, bh = 52;
                           return (
-                            <g transform={`matrix(1,${sbShear},0,1,${sbX},${sbY})`}
+                            <g transform={`translate(${sbX},${sbY})`}
                               onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "dartscoreboard", item }); }}
                               style={{ cursor: "context-menu" }}>
                               <rect x={-bw/2} y={-bh/2} width={bw} height={bh} rx={4} fill="#0f1a0f" stroke="#2d5a2d" strokeWidth={1.5} />
@@ -5333,10 +5337,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     <span className="text-[11px] font-bold text-rose-400 uppercase tracking-widest">Admin Panel</span>
                     <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
                   </div>
-                  <div className="flex gap-1">
-                    {(["users", "items", "bots", "self"] as const).map(tab => (
+                  <div className="flex gap-1 flex-wrap">
+                    {(["users", "items", "bots", "self", "clothing"] as const).map(tab => (
                       <button key={tab} onClick={() => setAdminTab(tab)} className={`flex-1 py-1 rounded-lg text-[11px] font-semibold transition-colors ${adminTab === tab ? "bg-rose-500/20 text-rose-300" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.06]"}`}>
-                        {tab === "users" ? "Brugere" : tab === "items" ? "Ting" : tab === "bots" ? "Bots" : "Mig"}
+                        {tab === "users" ? "Brugere" : tab === "items" ? "Ting" : tab === "bots" ? "Bots" : tab === "clothing" ? "Tøj" : "Mig"}
                       </button>
                     ))}
                   </div>
@@ -5727,6 +5731,152 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         ))}
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* ── Clothing tab ── */}
+                {adminTab === "clothing" && (
+                  <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
+                    <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
+                      <span className="text-[12px] text-slate-400 font-semibold">Tøjkatalog ({clothingCatalog.length})</span>
+                      <button onClick={() => setAdminClothingForm({ name: "", slot: "hat", price: 100, level_required: 0, image_url: "", img_x: -31, img_y: -36, img_w: 62, img_h: 77, uploading: false })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
+                    </div>
+
+                    {/* Create/edit form */}
+                    {adminClothingForm && (
+                      <div className="px-3 py-3 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0 overflow-y-auto" style={{ maxHeight: "70%" }}>
+                        <p className="text-[12px] font-bold text-slate-400 mb-2">Nyt tøjstykke</p>
+
+                        {/* Name + slot */}
+                        <input value={adminClothingForm.name} onChange={e => setAdminClothingForm(f => f && ({ ...f, name: e.target.value }))} placeholder="Navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1.5 text-[13px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50" />
+                        <select value={adminClothingForm.slot} onChange={e => setAdminClothingForm(f => f && ({ ...f, slot: e.target.value }))} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-300 outline-none mb-1.5">
+                          {CLOTHING_SLOTS.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.label}</option>)}
+                        </select>
+
+                        {/* Price + level */}
+                        <div className="grid grid-cols-2 gap-1.5 mb-1.5">
+                          <div>
+                            <p className="text-[10px] text-slate-500 mb-0.5">Pris 🪙</p>
+                            <input type="number" value={adminClothingForm.price} onChange={e => setAdminClothingForm(f => f && ({ ...f, price: parseInt(e.target.value) || 0 }))} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[12px] text-slate-100 outline-none focus:border-violet-500/50" />
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-slate-500 mb-0.5">Min. niveau</p>
+                            <input type="number" value={adminClothingForm.level_required} min={0} onChange={e => setAdminClothingForm(f => f && ({ ...f, level_required: parseInt(e.target.value) || 0 }))} className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[12px] text-slate-100 outline-none focus:border-violet-500/50" />
+                          </div>
+                        </div>
+
+                        {/* Image upload */}
+                        <div className="mb-2">
+                          <p className="text-[10px] text-slate-500 mb-0.5">Billede (PNG/WebP)</p>
+                          <input type="file" accept="image/png,image/webp,image/jpeg" onChange={async e => {
+                            const file = e.target.files?.[0]; if (!file) return;
+                            setAdminClothingForm(f => f && ({ ...f, uploading: true }));
+                            const ext = file.name.split(".").pop();
+                            const path = `clothing/${Date.now()}.${ext}`;
+                            const { error } = await supabase.storage.from("clothing").upload(path, file, { upsert: true });
+                            if (!error) {
+                              const { data: { publicUrl } } = supabase.storage.from("clothing").getPublicUrl(path);
+                              setAdminClothingForm(f => f && ({ ...f, image_url: publicUrl, uploading: false }));
+                            } else {
+                              setAdminClothingForm(f => f && ({ ...f, uploading: false }));
+                              alert("Upload fejlede: " + error.message);
+                            }
+                          }} className="w-full text-[12px] text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:bg-violet-500/20 file:text-violet-300 hover:file:bg-violet-500/30" />
+                          {adminClothingForm.uploading && <p className="text-[11px] text-violet-400 mt-0.5">Uploader...</p>}
+                          {adminClothingForm.image_url && <p className="text-[10px] text-emerald-400 mt-0.5 truncate">✓ {adminClothingForm.image_url.split("/").pop()}</p>}
+                        </div>
+
+                        {/* Position + size sliders */}
+                        {adminClothingForm.image_url && (
+                          <>
+                            <p className="text-[10px] text-slate-500 mb-1">Placering på figur</p>
+                            {([["X position", "img_x", -60, 60], ["Y position", "img_y", -60, 20], ["Bredde", "img_w", 20, 120], ["Højde", "img_h", 20, 120]] as [string, "img_x"|"img_y"|"img_w"|"img_h", number, number][]).map(([label, key, min, max]) => (
+                              <div key={key} className="mb-1.5">
+                                <div className="flex justify-between mb-0.5">
+                                  <span className="text-[10px] text-slate-500">{label}</span>
+                                  <span className="text-[10px] text-slate-400 tabular-nums">{adminClothingForm[key]}</span>
+                                </div>
+                                <input type="range" min={min} max={max} value={adminClothingForm[key]} onChange={e => setAdminClothingForm(f => f && ({ ...f, [key]: parseInt(e.target.value) }))} className="w-full accent-violet-500" />
+                              </div>
+                            ))}
+
+                            {/* Live avatar preview */}
+                            <p className="text-[10px] text-slate-500 mb-1">Preview</p>
+                            <div className="flex justify-center bg-black/30 rounded-lg py-2">
+                              <svg viewBox="-40 -55 80 100" style={{ width: 100, height: 100 }}>
+                                <image href="/alien.png" x="-31" y="-36" width="62" height="77" />
+                                <image href={adminClothingForm.image_url} x={adminClothingForm.img_x} y={adminClothingForm.img_y} width={adminClothingForm.img_w} height={adminClothingForm.img_h} />
+                              </svg>
+                            </div>
+                          </>
+                        )}
+
+                        <div className="flex gap-1 mt-2">
+                          <button onClick={async () => {
+                            const f = adminClothingForm;
+                            if (!f.name.trim()) { alert("Navn mangler"); return; }
+                            const { error } = await supabase.from("virtual_clothing_items").insert({ name: f.name, slot: f.slot, style_key: "image", color: "#ffffff", price: f.price, level_required: f.level_required || null, image_url: f.image_url || null, img_x: f.img_x, img_y: f.img_y, img_w: f.img_w, img_h: f.img_h });
+                            if (!error) {
+                              const { data } = await supabase.from("virtual_clothing_items").select("*").order("slot");
+                              if (data) setClothingCatalog(data as ClothingItem[]);
+                              setAdminClothingForm(null);
+                            } else { alert("Fejl: " + error.message); }
+                          }} className="flex-1 py-1.5 bg-violet-600 hover:bg-violet-500 rounded text-[12px] text-white font-semibold">Gem</button>
+                          <button onClick={() => setAdminClothingForm(null)} className="flex-1 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] rounded text-[12px] text-slate-300">Annuller</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Catalog list */}
+                    <div className="flex-1 overflow-y-auto">
+                      {clothingCatalog.map(c => {
+                        const slot = CLOTHING_SLOTS.find(s => s.id === c.slot);
+                        return (
+                          <div key={c.id} className="px-3 py-2 hover:bg-white/[0.03] flex items-center gap-2 group border-b border-white/[0.03]">
+                            <div className="w-8 h-8 rounded-lg bg-black/30 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                              {c.image_url
+                                ? <img src={c.image_url} alt={c.name} style={{ width: 28, height: 28, objectFit: "contain" }} />
+                                : <svg width="28" height="28" viewBox="-16 -20 32 32"><ClothingLayerSVG styleKey={c.style_key} color={c.color} /></svg>
+                              }
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[13px] text-slate-200 truncate font-semibold">{c.name}</p>
+                              <p className="text-[10px] text-slate-600">{slot?.emoji} {slot?.label} · 🪙{c.price}{c.level_required ? ` · LV${c.level_required}` : ""}</p>
+                            </div>
+                            <button onClick={async () => { if (confirm(`Slet "${c.name}"?`)) { await supabase.from("virtual_clothing_items").delete().eq("id", c.id); setClothingCatalog(prev => prev.filter(x => x.id !== c.id)); } }} className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-rose-400 transition-all"><Trash2 className="w-3 h-3" /></button>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Give clothing modal */}
+                    {giveClothingTarget && (
+                      <div className="absolute inset-0 z-10 bg-[#030912]/95 flex flex-col">
+                        <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between">
+                          <span className="text-[12px] font-bold text-slate-300">Giv tøj til {giveClothingTarget.userName}</span>
+                          <button onClick={() => setGiveClothingTarget(null)} className="text-slate-500 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto py-1">
+                          {clothingCatalog.map(c => {
+                            const slot = CLOTHING_SLOTS.find(s => s.id === c.slot);
+                            return (
+                              <button key={c.id} onClick={async () => {
+                                await supabase.from("virtual_user_wardrobe").upsert({ user_id: giveClothingTarget.userId, clothing_id: c.id, equipped: false });
+                                setGiveClothingTarget(null);
+                              }} className="w-full text-left px-3 py-2 hover:bg-white/[0.05] flex items-center gap-2 transition-colors">
+                                <div className="w-7 h-7 rounded bg-black/30 flex items-center justify-center flex-shrink-0">
+                                  {c.image_url ? <img src={c.image_url} style={{ width: 24, height: 24, objectFit: "contain" }} /> : <svg width="24" height="24" viewBox="-14 -18 28 28"><ClothingLayerSVG styleKey={c.style_key} color={c.color} /></svg>}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-[12px] text-slate-200 truncate">{c.name}</p>
+                                  <p className="text-[10px] text-slate-600">{slot?.emoji} {slot?.label}</p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
@@ -6909,6 +7059,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           </button>
                         ))}
                       </>
+                    )}
+                    {isAdmin && (
+                      <button className="w-full text-left px-4 py-2.5 text-[13px] text-violet-300 hover:bg-violet-500/[0.08] flex items-center gap-3 transition-colors" onClick={() => { setCtxMenu(null); setAdminTab("clothing"); setRightPanel("admin"); setGiveClothingTarget({ userId: u.user_id, userName: u.display_name }); }}>
+                        <Shirt className="w-4 h-4 flex-shrink-0" /> Giv tøj
+                      </button>
                     )}
                     {activeRoomType === "spaceship" && activeRoomOwnerId === currentProfile.id && (
                       <button className="w-full text-left px-4 py-2.5 text-[13px] text-orange-400 hover:bg-orange-500/[0.08] flex items-center gap-3 transition-colors" onClick={() => kickFromSpaceship(u)}>
