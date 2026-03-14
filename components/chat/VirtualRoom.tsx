@@ -122,6 +122,31 @@ function rouletteWheelAngleForResult(result: number): number {
   return idx < 0 ? 0 : (idx / 37) * 360;
 }
 
+// ─── Dart mini-game ─────────────────────────────────────────────────────────
+const DART_WHEEL = [20,1,18,4,13,6,10,15,2,17,3,19,7,16,8,11,14,9,12,5];
+const DART_ADJACENTS: Record<number,number[]> = {
+  20:[1,5], 1:[20,18], 18:[1,4], 4:[18,13], 13:[4,6], 6:[13,10],
+  10:[6,15], 15:[10,2], 2:[15,17], 17:[2,3], 3:[17,19], 19:[3,7],
+  7:[19,16], 16:[7,8], 8:[16,11], 11:[8,14], 14:[11,9], 9:[14,12],
+  12:[9,5], 5:[12,20]
+};
+function simulateDartThrow(remainingScore: number): { segment: number; multiplier: number; points: number } {
+  const isFinish = remainingScore <= 60;
+  const r = Math.random();
+  if (r < 0.08) return { segment: 0, multiplier: 1, points: 0 };
+  if (r < 0.10) return { segment: 50, multiplier: 2, points: 50 };
+  if (r < 0.14) return { segment: 25, multiplier: 1, points: 25 };
+  const weights = DART_WHEEL.map((s, i) => ({ s, w: 20 - i * 0.4 }));
+  const total = weights.reduce((a, b) => a + b.w, 0);
+  let pick = Math.random() * total; let seg = 20;
+  for (const { s, w } of weights) { pick -= w; if (pick <= 0) { seg = s; break; } }
+  if (Math.random() < 0.25) { const adj = DART_ADJACENTS[seg]; if (adj) seg = adj[Math.floor(Math.random() * adj.length)]; }
+  let mult: number;
+  if (isFinish) { const m = Math.random(); mult = m < 0.28 ? 2 : m < 0.55 ? 1 : 3; }
+  else { const m = Math.random(); mult = m < 0.60 ? 1 : m < 0.85 ? 3 : 2; }
+  return { segment: seg, multiplier: mult, points: seg * mult };
+}
+
 // ─── Room themes ───────────────────────────────────────────────────────────────
 type RoomTheme = { id?: string; label?: string; color?: string; even: string; odd: string; highlight: string; wallA: string; wallB: string };
 function getShopTheme(): RoomTheme {
@@ -376,7 +401,7 @@ function ItemSVG({ type }: { type: string }) {
   }
 }
 
-function isWallItemType(t: string) { return t === "painting" || t === "poster"; }
+function isWallItemType(t: string) { return t === "painting" || t === "poster" || t === "dartboard"; }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 function isoCenter(gx: number, gy: number, svgW: number) {
@@ -429,7 +454,7 @@ interface RoomBot {
 interface CtxMenu {
   clientX: number;
   clientY: number;
-  kind: "user" | "self" | "tile_item" | "bot" | "tile" | "wall" | "portal";
+  kind: "user" | "self" | "tile_item" | "bot" | "tile" | "wall" | "portal" | "dartboard" | "dartscoreboard";
   user?: PresenceUser;
   item?: RoomItem;
   bot?: RoomBot;
@@ -525,6 +550,23 @@ interface RouletteBet {
   won?: boolean | null;
   resolved?: boolean;
   created_at?: string | null;
+}
+
+interface DartGame {
+  id: string; room_id: string; item_id: string;
+  game_type: 201 | 301 | 501;
+  player1_id: string; player2_id: string;
+  player1_name: string; player2_name: string;
+  player1_score: number; player2_score: number;
+  current_player_id: string; throws_this_turn: number;
+  status: "pending" | "active" | "finished";
+  winner_id?: string | null; created_at: string;
+}
+interface DartThrow {
+  id: string; game_id: string; player_id: string;
+  throw_number: number; segment: number; multiplier: number;
+  points: number; score_before: number; score_after: number;
+  is_bust: boolean; created_at: string;
 }
 
 const SPACESHIP_VARIANTS: { id: string; name: string; emoji: string; desc: string; cols: number; rows: number; theme: string; price: number }[] = [
@@ -698,6 +740,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [rouletteSelectedNums, setRouletteSelectedNums] = useState<Set<number>>(new Set());
   const [rouletteNumberGridOpen, setRouletteNumberGridOpen] = useState(false);
   const rouletteLastBetRef = useRef<{ type: string; value: string; nums: number[]; amount: number } | null>(null);
+  // ─── Dart state ──────────────────────────────────────────────────────────────
+  const [dartGames, setDartGames] = useState<DartGame[]>([]);
+  const [dartThrows, setDartThrows] = useState<DartThrow[]>([]);
+  const [dartStartModal, setDartStartModal] = useState<{ itemId: string } | null>(null);
+  const [dartStartGameType, setDartStartGameType] = useState<201 | 301 | 501>(501);
+  const [dartStartOpponentId, setDartStartOpponentId] = useState<string>("");
+  const [dartInviteModal, setDartInviteModal] = useState<{ game: DartGame } | null>(null);
+  const [dartHistoryModal, setDartHistoryModal] = useState<{ gameId: string } | null>(null);
+  const [dartThrowEffects, setDartThrowEffects] = useState<Map<string, string>>(new Map());
+  const [dartAnimating, setDartAnimating] = useState(false);
   const [xp, setXp] = useState(0);
   const [level, setLevel] = useState(1);
   const xpRef = useRef(0);
@@ -1716,6 +1768,12 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         setRouletteWinEffects(prev => { const m = new Map(prev); m.set(p.user_id, p.amount); return m; });
         setTimeout(() => setRouletteWinEffects(prev => { const m = new Map(prev); m.delete(p.user_id); return m; }), 3500);
       })
+      .on("broadcast", { event: "dart_throw_effect" }, ({ payload }) => {
+        const p = payload as { user_id: string; label: string };
+        if (!p?.user_id || p.user_id === currentProfile.id) return;
+        setDartThrowEffects(prev => { const m = new Map(prev); m.set(p.user_id, p.label); return m; });
+        setTimeout(() => setDartThrowEffects(prev => { const m = new Map(prev); m.delete(p.user_id); return m; }), 3200);
+      })
       .on("broadcast", { event: "spaceship_request" }, ({ payload }) => {
         const p = payload as VisitRequest & { to_id: string };
         if (p.to_id !== currentProfile.id) return;
@@ -1988,6 +2046,33 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     });
   }, [activeRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load & subscribe to dart games for this room
+  useEffect(() => {
+    setDartGames([]); setDartThrows([]);
+    supabase.from("dart_games").select("*").eq("room_id", activeRoomId).in("status", ["pending", "active"]).then(({ data }) => {
+      if (data) setDartGames(data as DartGame[]);
+    });
+    const dartCh = supabase.channel(`dart-${activeRoomId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "dart_games" }, (payload) => {
+        if (payload.eventType === "DELETE") { setDartGames(prev => prev.filter(g => g.id !== (payload.old as DartGame).id)); return; }
+        const g = payload.new as DartGame;
+        if (g.room_id !== activeRoomId) return;
+        setDartGames(prev => {
+          const filtered = prev.filter(x => x.id !== g.id);
+          if (g.status === "finished") return filtered;
+          return [...filtered, g];
+        });
+        if (g.status === "pending" && g.player2_id === currentProfile.id) {
+          setDartInviteModal({ game: g });
+        }
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "dart_throws" }, (payload) => {
+        setDartThrows(prev => [...prev, payload.new as DartThrow]);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(dartCh); };
+  }, [activeRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleTileClick = (gx: number, gy: number) => {
     if (isDraggingRef.current) return;
     setCtxMenu(null);
@@ -2024,10 +2109,57 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (user?.user_id === currentProfile.id) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "self" }); return; }
     if (user) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "user", user }); return; }
     if (bot) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "bot", bot }); return; }
-    if (item) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "tile_item", item }); return; }
+    if (item) {
+      if (item.item_type === "dartboard") { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "dartboard", item }); return; }
+      setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "tile_item", item }); return;
+    }
     if (isAdmin && tileGx !== undefined && tileGy !== undefined) {
       setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "tile", tileGx, tileGy });
     }
+  };
+
+  const handleDartThrow = async (game: DartGame) => {
+    if (dartAnimating) return;
+    if (game.current_player_id !== currentProfile.id) return;
+    if (game.status !== "active") return;
+    setDartAnimating(true);
+    const isP1 = game.player1_id === currentProfile.id;
+    const scoreBefore = isP1 ? game.player1_score : game.player2_score;
+    const { segment, multiplier, points } = simulateDartThrow(scoreBefore);
+    const rawNew = scoreBefore - points;
+    const isBust = rawNew < 0 || rawNew === 1 || (rawNew === 0 && !(multiplier === 2 || segment === 50));
+    const scoreAfter = isBust ? scoreBefore : rawNew;
+    const isWin = !isBust && rawNew === 0;
+    const throwNum = game.throws_this_turn + 1;
+    const turnDone = isBust || isWin || throwNum >= 3;
+    // Build effect label
+    const baseLabel = segment === 50 ? "BULLSEYE! 50" :
+      segment === 25 ? "Bull 25" :
+      segment === 0 ? "Miss!" :
+      multiplier === 3 ? `Triple ${segment} (${points})` :
+      multiplier === 2 ? `Double ${segment} (${points})` :
+      `${segment} (${points})`;
+    const label = isBust ? `BUST – ${baseLabel}` : isWin ? `FINISH! ${baseLabel} 🏆` : baseLabel;
+    // Show effect on own avatar
+    setDartThrowEffects(prev => { const m = new Map(prev); m.set(currentProfile.id, label); return m; });
+    setTimeout(() => setDartThrowEffects(prev => { const m = new Map(prev); m.delete(currentProfile.id); return m; }), 3200);
+    // Broadcast to others
+    channelRef.current?.send({ type: "broadcast", event: "dart_throw_effect", payload: { user_id: currentProfile.id, label } });
+    // Insert throw record
+    supabase.from("dart_throws").insert({
+      game_id: game.id, player_id: currentProfile.id,
+      throw_number: throwNum, segment, multiplier, points,
+      score_before: scoreBefore, score_after: scoreAfter, is_bust: isBust,
+    }).then(() => {});
+    // Update game state
+    const updates: Record<string, unknown> = {
+      ...(isP1 ? { player1_score: scoreAfter } : { player2_score: scoreAfter }),
+      throws_this_turn: turnDone ? 0 : throwNum,
+      ...(turnDone ? { current_player_id: isP1 ? game.player2_id : game.player1_id } : {}),
+      ...(isWin ? { status: "finished", winner_id: currentProfile.id } : {}),
+    };
+    supabase.from("dart_games").update(updates).eq("id", game.id).then(() => {});
+    setTimeout(() => setDartAnimating(false), 900);
   };
 
   const openProfile = async (userId: string) => {
@@ -2967,26 +3099,141 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
                 // ── Wall item renderer ──
                 const wallItems = items.filter(i => i.wall_side !== null && i.owner_id === null);
+
+                // Dartboard SVG helper — centered at (0,0), R = radius
+                const dartboardSvg = (R: number) => {
+                  const N = 20;
+                  const segPath = (idx: number, r1: number, r2: number) => {
+                    const a1 = (idx / N) * 2 * Math.PI - Math.PI / 2;
+                    const a2 = ((idx + 1) / N) * 2 * Math.PI - Math.PI / 2;
+                    const x1 = r1 * Math.cos(a1), y1 = r1 * Math.sin(a1);
+                    const x2 = r1 * Math.cos(a2), y2 = r1 * Math.sin(a2);
+                    const x3 = r2 * Math.cos(a2), y3 = r2 * Math.sin(a2);
+                    const x4 = r2 * Math.cos(a1), y4 = r2 * Math.sin(a1);
+                    if (r1 < 0.5) return `M 0 0 L ${x4} ${y4} A ${r2} ${r2} 0 0 1 ${x3} ${y3} Z`;
+                    return `M ${x1} ${y1} A ${r1} ${r1} 0 0 1 ${x2} ${y2} L ${x3} ${y3} A ${r2} ${r2} 0 0 0 ${x4} ${y4} Z`;
+                  };
+                  return (
+                    <>
+                      <circle r={R * 1.06} fill="#0a0a0a" />
+                      {DART_WHEEL.map((num, i) => {
+                        const isEven = i % 2 === 0;
+                        const single = isEven ? "#1c1c1c" : "#d4c8a8";
+                        const score  = isEven ? "#b71c1c" : "#1b5e20";
+                        return (
+                          <g key={i}>
+                            <path d={segPath(i, R*0.60, R*0.88)} fill={single} stroke="#0a0a0a" strokeWidth={0.4} />
+                            <path d={segPath(i, R*0.88, R*1.0)}  fill={score}  stroke="#0a0a0a" strokeWidth={0.4} />
+                            <path d={segPath(i, R*0.50, R*0.60)} fill={score}  stroke="#0a0a0a" strokeWidth={0.4} />
+                            <path d={segPath(i, R*0.16, R*0.50)} fill={single} stroke="#0a0a0a" strokeWidth={0.3} />
+                          </g>
+                        );
+                      })}
+                      <circle r={R*0.16} fill="#1b5e20" stroke="#0a0a0a" strokeWidth={0.5} />
+                      <circle r={R*0.08} fill="#b71c1c" />
+                      {[1.0, 0.88, 0.60, 0.50, 0.16].map(f => <circle key={f} r={R*f} fill="none" stroke="#55555588" strokeWidth={0.6} />)}
+                      {DART_WHEEL.map((_, i) => {
+                        const a = (i / N) * 2 * Math.PI - Math.PI / 2;
+                        return <line key={i} x1={0} y1={0} x2={R * Math.cos(a)} y2={R * Math.sin(a)} stroke="#55555566" strokeWidth={0.4} />;
+                      })}
+                      {DART_WHEEL.map((num, i) => {
+                        const a = (i + 0.5) / N * 2 * Math.PI - Math.PI / 2;
+                        const nr = R * 1.15;
+                        return (
+                          <text key={i} x={nr * Math.cos(a)} y={nr * Math.sin(a) + R * 0.07}
+                            textAnchor="middle" fontSize={R * 0.2} fill="white" fontWeight="700" style={{ pointerEvents: "none" }}>
+                            {num}
+                          </text>
+                        );
+                      })}
+                    </>
+                  );
+                };
+
                 const renderWallItemSvg = (item: RoomItem) => {
                   const t = item.wall_pos ?? 0.5;
                   const wh = item.wall_height ?? 55;
+                  const scale = item.item_scale ?? 1;
                   const hwx = 20; const hwy = 10; const hh = 22; // half-dims
                   let frame: number[][], canvas: number[][];
+                  let cx: number, cy: number;
                   if (item.wall_side === "right") {
-                    const cx = tcx + t * roomCols * TW / 2;
-                    const cy = tcy + t * roomCols * TH / 2 - wh;
+                    cx = tcx + t * roomCols * TW / 2;
+                    cy = tcy + t * roomCols * TH / 2 - wh;
                     frame  = [[cx-hwx-3,cy-hwy-3-hh],[cx+hwx+3,cy+hwy+3-hh],[cx+hwx+3,cy+hwy+3+hh],[cx-hwx-3,cy-hwy-3+hh]];
                     canvas = [[cx-hwx, cy-hwy-hh],[cx+hwx,cy+hwy-hh],[cx+hwx,cy+hwy+hh],[cx-hwx,cy-hwy+hh]];
                   } else {
-                    const cx = tcx - t * roomRows * TW / 2;
-                    const cy = tcy + t * roomRows * TH / 2 - wh;
+                    cx = tcx - t * roomRows * TW / 2;
+                    cy = tcy + t * roomRows * TH / 2 - wh;
                     frame  = [[cx+hwx+3,cy-hwy-3-hh],[cx-hwx-3,cy+hwy+3-hh],[cx-hwx-3,cy+hwy+3+hh],[cx+hwx+3,cy-hwy-3+hh]];
                     canvas = [[cx+hwx,cy-hwy-hh],[cx-hwx,cy+hwy-hh],[cx-hwx,cy+hwy+hh],[cx+hwx,cy-hwy+hh]];
                   }
                   const fPts = frame.map(p => p.join(",")).join(" ");
                   const cPts = canvas.map(p => p.join(",")).join(" ");
                   const [tl, tr, br, bl] = canvas;
-                  // interior art
+
+                  // ── Dartboard ──
+                  if (item.item_type === "dartboard") {
+                    const R = 22 * scale;
+                    const game = dartGames.find(g => g.item_id === item.id && (g.status === "active" || g.status === "pending"));
+                    // Scoreboard offset: along wall direction
+                    const wallDirX = item.wall_side === "right" ? TW / 2 : -TW / 2;
+                    const wallDirY = TH / 2;
+                    const len = Math.hypot(wallDirX, wallDirY);
+                    const sbOff = (R * 2.8 + 10);
+                    const sbX = cx + (wallDirX / len) * sbOff;
+                    const sbY = cy + (wallDirY / len) * sbOff;
+                    const isMyGame = game && (game.player1_id === currentProfile.id || game.player2_id === currentProfile.id);
+                    const isMyTurn = game && game.current_player_id === currentProfile.id && game.status === "active";
+                    // Throwing zone tile for this board
+                    const zoneGx = item.wall_side === "left" ? 4 : Math.round(t * (roomCols - 1));
+                    const zoneGy = item.wall_side === "left" ? Math.round(t * (roomRows - 1)) : 4;
+                    const onZone = myPos.gx === zoneGx && myPos.gy === zoneGy;
+                    return (
+                      <g key={`wall-${item.id}`}>
+                        {/* Circular backing plate */}
+                        <circle cx={cx} cy={cy} r={R * 1.2} fill="#2a1a0a" stroke="#8b6914" strokeWidth={2} style={{ cursor: "context-menu" }} onContextMenu={e => handleRightClick(e, null, item, null)} />
+                        {/* Dartboard */}
+                        <g transform={`translate(${cx},${cy})`} onContextMenu={e => handleRightClick(e, null, item, null)}
+                          onDoubleClick={() => { if (isMyTurn && onZone && !dartAnimating && game) handleDartThrow(game); }}
+                          style={{ cursor: isMyTurn && onZone ? "crosshair" : "context-menu" }}>
+                          {dartboardSvg(R)}
+                        </g>
+                        {/* "Your turn" glow */}
+                        {isMyTurn && <circle cx={cx} cy={cy} r={R * 1.25} fill="none" stroke="#fbbf24" strokeWidth={2} opacity={0.7}>
+                          <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.2s" repeatCount="indefinite" />
+                        </circle>}
+                        {/* Scoreboard */}
+                        {game && (() => {
+                          const isP1 = game.player1_id === currentProfile.id || game.player2_id !== currentProfile.id;
+                          const bw = 68, bh = 52;
+                          const throws1 = game.current_player_id === game.player1_id ? game.throws_this_turn : 0;
+                          const throws2 = game.current_player_id === game.player2_id ? game.throws_this_turn : 0;
+                          return (
+                            <g transform={`translate(${sbX},${sbY})`}
+                              onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "dartscoreboard", item }); }}
+                              style={{ cursor: "context-menu" }}>
+                              <rect x={-bw/2} y={-bh/2} width={bw} height={bh} rx={4} fill="#0f1a0f" stroke="#2d5a2d" strokeWidth={1.5} />
+                              {/* P1 row */}
+                              <text x={-bw/2+4} y={-bh/2+12} fontSize={7} fill={game.current_player_id === game.player1_id ? "#4ade80" : "#94a3b8"} fontWeight="700">{game.player1_name.slice(0,10)}</text>
+                              <text x={bw/2-4} y={-bh/2+12} fontSize={10} fill={game.current_player_id === game.player1_id ? "#4ade80" : "white"} fontWeight="900" textAnchor="end">{game.player1_score}</text>
+                              {game.current_player_id === game.player1_id && <text x={-bw/2+4} y={-bh/2+21} fontSize={6} fill="#fbbf24">{"●".repeat(game.throws_this_turn)}{"○".repeat(3 - game.throws_this_turn)}</text>}
+                              {/* Divider */}
+                              <line x1={-bw/2+3} y1={-bh/2+26} x2={bw/2-3} y2={-bh/2+26} stroke="#2d5a2d" strokeWidth={0.8} />
+                              {/* P2 row */}
+                              <text x={-bw/2+4} y={-bh/2+38} fontSize={7} fill={game.current_player_id === game.player2_id ? "#4ade80" : "#94a3b8"} fontWeight="700">{game.player2_name.slice(0,10)}</text>
+                              <text x={bw/2-4} y={-bh/2+38} fontSize={10} fill={game.current_player_id === game.player2_id ? "#4ade80" : "white"} fontWeight="900" textAnchor="end">{game.player2_score}</text>
+                              {game.current_player_id === game.player2_id && <text x={-bw/2+4} y={-bh/2+47} fontSize={6} fill="#fbbf24">{"●".repeat(game.throws_this_turn)}{"○".repeat(3 - game.throws_this_turn)}</text>}
+                              {/* Status */}
+                              {game.status === "pending" && <text x={0} y={bh/2-4} textAnchor="middle" fontSize={6} fill="#f59e0b" fontStyle="italic">Afventer...</text>}
+                            </g>
+                          );
+                        })()}
+                      </g>
+                    );
+                  }
+
+                  // interior art (paintings/posters)
                   const sky = item.item_type === "painting"
                     ? <polygon points={[tl, tr, [tr[0],tl[1]+(br[1]-tl[1])*0.45],[tl[0],tl[1]+(bl[1]-tl[1])*0.45]].map(p=>p.join(",")).join(" ")} fill="#5b8ec8" />
                     : <polygon points={cPts} fill="#1a2540" />;
@@ -3139,6 +3386,14 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 const hasUser  = usersByCell.has(cellKey);
                 const isHov = hovered === cellKey;
                 const isMyTile = myPos.gx === gx && myPos.gy === gy;
+                const isDartZone = dartGames.some(g => {
+                  if (g.status !== "active") return false;
+                  const board = items.find(i => i.id === g.item_id);
+                  if (!board) return false;
+                  const zGx = board.wall_side === "left" ? 4 : Math.round((board.wall_pos ?? 0.5) * (roomCols - 1));
+                  const zGy = board.wall_side === "left" ? Math.round((board.wall_pos ?? 0.5) * (roomRows - 1)) : 4;
+                  return gx === zGx && gy === zGy;
+                });
                 const isBotTarget = !!movingBotId && !cellBot;
                 const isFloorPlacing = !!placingItem && !isWallItemType(placingItem.item.item_type);
                 const isPlaceTarget = isFloorPlacing && isHov && !hasUser && !cellBot;
@@ -3178,6 +3433,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     )}
                     {isLocked && isAdmin && (
                       <text x={x} y={y + 3} textAnchor="middle" fontSize={7} fill="rgba(239,68,68,0.7)" style={{ pointerEvents: "none", userSelect: "none" }}>🔒</text>
+                    )}
+
+                    {/* Dart throwing zone highlight */}
+                    {isDartZone && (
+                      <polygon points={tilePts(x, y)} fill="rgba(251,191,36,0.22)" stroke="#fbbf24" strokeWidth={1.5}>
+                        <animate attributeName="opacity" values="1;0.4;1" dur="1s" repeatCount="indefinite" />
+                      </polygon>
+                    )}
+                    {isDartZone && (
+                      <text x={x} y={y + 4} textAnchor="middle" fontSize={9} fill="#fbbf24" style={{ pointerEvents: "none" }}>🎯</text>
                     )}
 
                     {/* Casino Las Vegas felt table surface */}
@@ -3538,6 +3803,21 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                 fill="#10b981" stroke="rgba(0,0,0,0.9)" strokeWidth={3} paintOrder="stroke"
                                 style={{ animation: "svgLevelUpText 3s ease-out forwards" }}>
                                 +{winAmt} 🪙
+                              </text>
+                            </g>
+                          );
+                        })()}
+                        {/* Dart throw effect — label floating above avatar */}
+                        {(() => {
+                          const dartLabel = isMe ? dartThrowEffects.get(currentProfile.id) : dartThrowEffects.get(user.user_id);
+                          if (!dartLabel) return null;
+                          return (
+                            <g style={{ pointerEvents: "none" }}>
+                              <text x={0} y={-AR_S - 22}
+                                textAnchor="middle" fontSize={12} fontFamily="system-ui,sans-serif" fontWeight="900"
+                                fill="#fbbf24" stroke="rgba(0,0,0,0.9)" strokeWidth={3} paintOrder="stroke"
+                                style={{ animation: "svgLevelUpText 3s ease-out forwards" }}>
+                                🎯 {dartLabel}
                               </text>
                             </g>
                           );
@@ -6269,6 +6549,26 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 <p className="text-[13px] font-semibold text-slate-100">Tilføj til væg</p>
                 <p className="text-[11px] text-slate-500 ml-auto">{ctxMenu.wallSide === "left" ? "Venstre" : "Højre"}</p>
               </div>
+              <div className="py-1 border-b border-white/[0.06]">
+                <button
+                  onClick={async () => {
+                    const { data } = await supabase.from("virtual_room_items").insert({
+                      room_id: activeRoomId,
+                      name: "Dartskive",
+                      item_type: "dartboard",
+                      wall_side: ctxMenu.wallSide,
+                      wall_pos: ctxMenu.wallPosition ?? 0.5,
+                      wall_height: 80,
+                      item_scale: 1.0,
+                      gx: null, gy: null,
+                    }).select().single();
+                    if (data) setItems(prev => [...prev, data as RoomItem]);
+                    setCtxMenu(null);
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-[13px] text-amber-300 hover:bg-amber-500/[0.08] flex items-center gap-3 transition-colors">
+                  🎯 Tilføj dartskive
+                </button>
+              </div>
               <div className="p-3 flex flex-col gap-2.5">
                 {/* Type */}
                 <div className="flex gap-1.5">
@@ -6364,9 +6664,215 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               </div>
             </>
           )}
+
+          {ctxMenu.kind === "dartboard" && ctxMenu.item && (
+            <>
+              <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-2">
+                <span className="text-[18px]">🎯</span>
+                <p className="text-[13px] font-semibold text-slate-100">Dartskive</p>
+              </div>
+              <div className="py-1">
+                {!dartGames.some(g => g.item_id === ctxMenu.item!.id && g.status !== "finished") ? (
+                  <button
+                    onClick={() => { setDartStartModal({ itemId: ctxMenu.item!.id }); setCtxMenu(null); }}
+                    className="w-full text-left px-4 py-2.5 text-[13px] text-amber-300 hover:bg-amber-500/[0.08] flex items-center gap-3 transition-colors">
+                    🎮 Begynd spil
+                  </button>
+                ) : (
+                  <p className="px-4 py-2.5 text-[12px] text-slate-500 italic">Spil i gang...</p>
+                )}
+                {(isAdmin || (activeRoomType === "spaceship" && activeRoomOwnerId === currentProfile.id)) && (
+                  <button
+                    onClick={async () => {
+                      supabase.from("virtual_room_items").delete().eq("id", ctxMenu.item!.id).then(() => {});
+                      setItems(prev => prev.filter(i => i.id !== ctxMenu.item!.id));
+                      setCtxMenu(null);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-[13px] text-rose-400 hover:bg-rose-500/[0.08] flex items-center gap-3 transition-colors">
+                    <Trash2 className="w-4 h-4 flex-shrink-0" /> Fjern dartskive
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+
+          {ctxMenu.kind === "dartscoreboard" && ctxMenu.item && (
+            <>
+              <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-2">
+                <span className="text-[14px]">📋</span>
+                <p className="text-[13px] font-semibold text-slate-100">Dartresultater</p>
+              </div>
+              <div className="py-1">
+                {dartGames.filter(g => g.item_id === ctxMenu.item!.id).map(g => (
+                  <button key={g.id}
+                    onClick={() => { setDartHistoryModal({ gameId: g.id }); setCtxMenu(null); }}
+                    className="w-full text-left px-4 py-2.5 text-[13px] text-slate-200 hover:bg-white/[0.05] flex items-center gap-3 transition-colors">
+                    📊 Se fuldt spil
+                  </button>
+                ))}
+                {dartGames.filter(g => g.item_id === ctxMenu.item!.id).length === 0 && (
+                  <p className="px-4 py-2.5 text-[12px] text-slate-500 italic">Intet aktivt spil</p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 
+
+      {/* ── Dart: Start Game Modal ── */}
+      {dartStartModal && (
+        <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDartStartModal(null)}>
+          <div className="w-80 bg-[#0d1117] border border-white/[0.12] rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.9)] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-white/[0.08] flex items-center gap-3">
+              <span className="text-2xl">🎯</span>
+              <p className="text-[15px] font-black text-slate-100">Dart – Nyt spil</p>
+              <button onClick={() => setDartStartModal(null)} className="ml-auto text-slate-500 hover:text-slate-300"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Spiltype</p>
+                <div className="flex gap-2">
+                  {([201, 301, 501] as const).map(gt => (
+                    <button key={gt} onClick={() => setDartStartGameType(gt)}
+                      className="flex-1 py-2 rounded-xl text-[13px] font-black border-2 transition-all"
+                      style={{
+                        background: dartStartGameType === gt ? "rgba(251,191,36,0.15)" : "rgba(255,255,255,0.03)",
+                        borderColor: dartStartGameType === gt ? "#fbbf24" : "rgba(255,255,255,0.07)",
+                        color: dartStartGameType === gt ? "#fde68a" : "#64748b",
+                      }}>{gt}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Modstander</p>
+                <select value={dartStartOpponentId} onChange={e => setDartStartOpponentId(e.target.value)}
+                  className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl px-3 py-2 text-[13px] text-slate-200 outline-none focus:border-amber-500/50">
+                  <option value="">Vælg spiller...</option>
+                  {Array.from(users.values()).filter(u => u.user_id !== currentProfile.id).map(u => (
+                    <option key={u.user_id} value={u.user_id}>{u.display_name}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                disabled={!dartStartOpponentId}
+                onClick={async () => {
+                  if (!dartStartOpponentId || !dartStartModal) return;
+                  const opp = users.get(dartStartOpponentId);
+                  if (!opp) return;
+                  const { data } = await supabase.from("dart_games").insert({
+                    room_id: activeRoomId,
+                    item_id: dartStartModal.itemId,
+                    game_type: dartStartGameType,
+                    player1_id: currentProfile.id,
+                    player2_id: dartStartOpponentId,
+                    player1_name: currentProfile.display_name,
+                    player2_name: opp.display_name,
+                    player1_score: dartStartGameType,
+                    player2_score: dartStartGameType,
+                    current_player_id: currentProfile.id,
+                    throws_this_turn: 0,
+                    status: "pending",
+                  }).select().single();
+                  if (data) setDartGames(prev => [...prev, data as DartGame]);
+                  setDartStartModal(null);
+                }}
+                className={`w-full py-3 rounded-xl text-[14px] font-black transition-all ${dartStartOpponentId ? "bg-gradient-to-r from-amber-600 to-amber-500 text-white hover:from-amber-500 hover:to-amber-400 shadow-[0_4px_16px_rgba(245,158,11,0.3)]" : "bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
+                Start spil
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Dart: Invite Modal (opponent confirmation) ── */}
+      {dartInviteModal && (
+        <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-76 bg-[#0d1117] border border-white/[0.12] rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.9)] overflow-hidden">
+            <div className="px-5 py-4 border-b border-white/[0.08] flex items-center gap-3">
+              <span className="text-2xl">🎯</span>
+              <div>
+                <p className="text-[14px] font-black text-slate-100">Dart-udfordring!</p>
+                <p className="text-[12px] text-slate-400">{dartInviteModal.game.player1_name} inviterer dig til {dartInviteModal.game.game_type}</p>
+              </div>
+            </div>
+            <div className="p-5 flex gap-3">
+              <button
+                onClick={async () => {
+                  supabase.from("dart_games").update({ status: "active" }).eq("id", dartInviteModal.game.id).then(() => {});
+                  setDartInviteModal(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-black bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">
+                Acceptér
+              </button>
+              <button
+                onClick={async () => {
+                  supabase.from("dart_games").delete().eq("id", dartInviteModal.game.id).then(() => {});
+                  setDartGames(prev => prev.filter(g => g.id !== dartInviteModal!.game.id));
+                  setDartInviteModal(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-black bg-white/[0.06] hover:bg-rose-500/20 text-rose-400 transition-colors border border-rose-500/20">
+                Afslå
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Dart: History Modal ── */}
+      {dartHistoryModal && (() => {
+        const game = dartGames.find(g => g.id === dartHistoryModal.gameId);
+        const throws = dartThrows.filter(t => t.game_id === dartHistoryModal.gameId);
+        // Group throws by player & turn
+        const turns: { playerId: string; playerName: string; throws: DartThrow[] }[] = [];
+        let curTurn: typeof turns[0] | null = null;
+        for (const t of [...throws].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())) {
+          if (!curTurn || curTurn.playerId !== t.player_id || curTurn.throws.length >= 3) {
+            curTurn = { playerId: t.player_id, playerName: game?.player1_id === t.player_id ? (game?.player1_name ?? t.player_id) : (game?.player2_name ?? t.player_id), throws: [] };
+            turns.push(curTurn);
+          }
+          curTurn.throws.push(t);
+        }
+        return (
+          <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDartHistoryModal(null)}>
+            <div className="w-80 max-h-[70vh] flex flex-col bg-[#0d1117] border border-white/[0.12] rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.9)] overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-4 border-b border-white/[0.08] flex items-center gap-3 flex-shrink-0">
+                <span className="text-xl">🎯</span>
+                <p className="text-[14px] font-black text-slate-100">{game?.player1_name ?? "?"} vs {game?.player2_name ?? "?"}</p>
+                <button onClick={() => setDartHistoryModal(null)} className="ml-auto text-slate-500 hover:text-slate-300"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-3 space-y-2">
+                {turns.length === 0 && <p className="text-[12px] text-slate-500 text-center py-4">Ingen kast endnu</p>}
+                {turns.map((turn, ti) => (
+                  <div key={ti} className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-3">
+                    <p className="text-[11px] font-bold text-slate-400 mb-1.5">{turn.playerName}</p>
+                    {turn.throws.map((th, i) => {
+                      const segLabel = th.segment === 50 ? "BULLSEYE" : th.segment === 25 ? "Bull" : th.segment === 0 ? "Miss" :
+                        th.multiplier === 3 ? `T${th.segment}` : th.multiplier === 2 ? `D${th.segment}` : `${th.segment}`;
+                      return (
+                        <div key={i} className="flex items-center gap-2 py-0.5">
+                          <span className="text-[10px] text-slate-600 w-4">{th.throw_number}.</span>
+                          <span className={`text-[12px] font-bold ${th.is_bust ? "text-rose-400" : th.points >= 40 ? "text-amber-300" : "text-slate-200"}`}>{segLabel}</span>
+                          <span className="text-[11px] text-slate-500 ml-auto">{th.points} pts</span>
+                          <span className="text-[11px] text-slate-400">→ {th.score_after}</span>
+                          {th.is_bust && <span className="text-[10px] text-rose-400 font-bold">BUST</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+              {game?.winner_id && (
+                <div className="px-5 py-3 border-t border-white/[0.08] flex-shrink-0 bg-emerald-500/10">
+                  <p className="text-[13px] font-black text-emerald-400 text-center">
+                    🏆 {game.winner_id === game.player1_id ? game.player1_name : game.player2_name} vinder!
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Room hover tooltip — fixed position, never clipped */}
       {hoveredRoomId && tooltipPos && (() => {
