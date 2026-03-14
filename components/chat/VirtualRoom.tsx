@@ -659,6 +659,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [activeRoomName, setActiveRoomName] = useState(roomName);
   const [roomCols, setRoomCols] = useState(DEFAULT_COLS);
   const [roomRows, setRoomRows] = useState(DEFAULT_ROWS);
+  const [initialRoomLoaded, setInitialRoomLoaded] = useState(false);
   const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
   const [bubbles, setBubbles] = useState<Map<string, SpeechBubble[]>>(new Map());
   const [typingUsers, setTypingUsers] = useState<Map<string, number>>(new Map());
@@ -1193,6 +1194,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             setRouletteScale(cur.roulette_scale ?? 1.0);
           }
         }
+        setInitialRoomLoaded(true);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3057,7 +3059,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             )}
 
             <svg ref={svgRef} viewBox={roomViewBox}
-              preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
+              preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%", visibility: initialRoomLoaded ? "visible" : "hidden" }}>
               {/* Background fills entire visible area regardless of viewBox */}
               <defs>
                 {/* Alien color tint filters */}
