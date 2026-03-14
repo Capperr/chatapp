@@ -4473,7 +4473,24 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       const opacity = i === 0 && messages.length === 3 ? 0.55 : i === 1 && messages.length >= 2 ? 0.78 : 1;
                       return (
                         <div key={m.id} style={{ opacity, background: bc, border: "1.5px solid rgba(0,0,0,0.13)", borderRadius: 9, padding: "4px 10px", fontSize: 12, fontFamily: "system-ui,sans-serif", fontWeight: 600, color: textColor, whiteSpace: "pre-wrap", maxWidth: 180, lineHeight: 1.35, boxShadow: "0 2px 10px rgba(0,0,0,0.22)", position: "relative" }}>
-                          {isTypingDots && isNewest ? <span style={{ letterSpacing: 3 }}>{["●  ○  ○", "○  ●  ○", "○  ○  ●"][typingFrame % 3]}</span> : wrapBubbleText(m.text)}
+                          {isTypingDots && isNewest ? <span style={{ letterSpacing: 3 }}>{["●  ○  ○", "○  ●  ○", "○  ○  ●"][typingFrame % 3]}</span> : (() => {
+                            const wrapped = wrapBubbleText(m.text);
+                            const myName = currentProfile.display_name;
+                            const lowerWrapped = wrapped.toLowerCase();
+                            const lowerName = myName.toLowerCase();
+                            if (!lowerName || !lowerWrapped.includes(lowerName)) return wrapped;
+                            // Highlight all occurrences of the current user's name in green
+                            const parts: React.ReactNode[] = [];
+                            let rem = wrapped; let lowerRem = rem.toLowerCase(); let k = 0;
+                            while (lowerRem.includes(lowerName)) {
+                              const idx = lowerRem.indexOf(lowerName);
+                              if (idx > 0) parts.push(<span key={k++}>{rem.slice(0, idx)}</span>);
+                              parts.push(<span key={k++} style={{ color: "#4ade80", background: "rgba(74,222,128,0.18)", borderRadius: 2, padding: "0 1px" }}>{rem.slice(idx, idx + myName.length)}</span>);
+                              rem = rem.slice(idx + myName.length); lowerRem = rem.toLowerCase();
+                            }
+                            if (rem) parts.push(<span key={k++}>{rem}</span>);
+                            return <>{parts}</>;
+                          })()}
                           {isNewest && (
                             <div style={{ position: "absolute", left: "50%", bottom: -6, transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: `6px solid ${tailColor}` }} />
                           )}
