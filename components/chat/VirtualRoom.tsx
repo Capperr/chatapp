@@ -7064,7 +7064,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   const { data: prof } = await supabase.from("profiles").select("*").eq("id", otherId).single();
                   setPartnerProfile(prof as Profile | null);
                   // Load partner's wardrobe from DB so outfit shows even if they are offline
-                  const { data: wData } = await supabase.from("user_wardrobe").select("clothing_id").eq("user_id", otherId).eq("equipped", true);
+                  const { data: wData } = await supabase.from("virtual_user_wardrobe").select("clothing_id").eq("user_id", otherId).eq("equipped", true);
                   const computed: Record<string, string> = {};
                   (wData ?? []).forEach((w: { clothing_id: string }) => {
                     const item = clothingCatalog.find(c => c.id === w.clothing_id);
@@ -7346,7 +7346,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   const { data: prof } = await supabase.from("profiles").select("*").eq("id", otherId).single();
                   setMyPartnerProfile(prof as Profile | null);
                   // Load partner's wardrobe from DB
-                  const { data: wData } = await supabase.from("user_wardrobe").select("clothing_id").eq("user_id", otherId).eq("equipped", true);
+                  const { data: wData } = await supabase.from("virtual_user_wardrobe").select("clothing_id").eq("user_id", otherId).eq("equipped", true);
                   const computed: Record<string, string> = {};
                   (wData ?? []).forEach((w: { clothing_id: string }) => {
                     const item = clothingCatalog.find(c => c.id === w.clothing_id);
