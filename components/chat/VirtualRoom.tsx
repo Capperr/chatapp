@@ -4392,7 +4392,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         onContextMenu={e => handleRightClick(e, null, null, cellBot)}>
                         <ellipse cx={ax} cy={y+16} rx={16} ry={4} fill="rgba(0,0,0,0.3)" />
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
-                          <PersonAvatar color={AVATAR_TINT_COLORS.includes(botAvatarColor) ? "#9ca3af" : botAvatarColor} glow={false} mood="happy" />
+                          <PersonAvatar color={botAvatarColor} glow={false} mood="happy" />
                           {Object.values(botOutfit).map(cid => {
                             const ci = clothingCatalog.find(c => c.id === cid);
                             if (!ci) return null;
@@ -6111,17 +6111,30 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             </div>
                             {isEditing && (
                               <div className="px-2 pb-2 bg-violet-500/5 space-y-1.5">
-                                {/* Color picker */}
-                                <div className="flex items-center gap-2">
-                                  <label className="text-[11px] text-slate-500 w-14">Farve</label>
-                                  <input type="color" defaultValue={bot.avatar_color ?? bot.color}
-                                    onChange={async e => {
-                                      const c = e.target.value;
+                                {/* Color swatches */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <label className="text-[11px] text-slate-500 w-14 flex-shrink-0">Farve</label>
+                                  {/* Default gray */}
+                                  <button
+                                    onClick={async () => {
+                                      const c = "none";
                                       setBots(prev => prev.map(b => b.id === bot.id ? { ...b, avatar_color: c } : b));
                                       const { error } = await supabase.from("virtual_room_bots").update({ avatar_color: c }).eq("id", bot.id);
                                       if (error) showToast("❌", "Farve ikke gemt", error.message, "#ef4444");
                                     }}
-                                    className="w-8 h-6 rounded cursor-pointer bg-transparent border border-white/[0.08]" />
+                                    className="w-5 h-5 rounded-full border-2 flex-shrink-0"
+                                    style={{ background: "linear-gradient(135deg,#6b7280,#9ca3af)", borderColor: (bot.avatar_color === "none" || !bot.avatar_color) ? "white" : "transparent" }}
+                                    title="Standard (grå)" />
+                                  {AVATAR_TINT_COLORS.map(c => (
+                                    <button key={c}
+                                      onClick={async () => {
+                                        setBots(prev => prev.map(b => b.id === bot.id ? { ...b, avatar_color: c } : b));
+                                        const { error } = await supabase.from("virtual_room_bots").update({ avatar_color: c }).eq("id", bot.id);
+                                        if (error) showToast("❌", "Farve ikke gemt", error.message, "#ef4444");
+                                      }}
+                                      className="w-5 h-5 rounded-full border-2 flex-shrink-0"
+                                      style={{ backgroundColor: c, borderColor: bot.avatar_color === c ? "white" : "transparent" }} />
+                                  ))}
                                 </div>
                                 {/* Outfit per slot */}
                                 <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Outfit</p>
