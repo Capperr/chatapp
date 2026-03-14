@@ -400,46 +400,68 @@ function PosterSVG() {
 }
 
 // ─── Slot Machine SVG ─────────────────────────────────────────────────────────
-function SlotMachineSVG({ spinning, reels, winning }: { spinning?: boolean; reels?: string[]; winning?: boolean }) {
+const SLOT_SYMBOLS = ["🍒","🍋","🔔","⭐","💎","🍇","7️⃣","🎯"];
+function SlotMachineSVG({ spinning, reels, winning, revealedCount }: { spinning?: boolean; reels?: string[]; winning?: boolean; revealedCount?: number }) {
   const R = reels ?? ["🍒", "🍒", "🍒"];
+  const revealed = revealedCount ?? 3;
+  // Reel slot positions: x center of each reel
+  const reelCx = [-11, 0, 11];
+  const reelY = -26; const reelH = 20;
   return (
     <g>
+      <defs>
+        {reelCx.map((cx, i) => (
+          <clipPath key={i} id={`reel-clip-${i}`}>
+            <rect x={cx - 5} y={reelY} width="10" height={reelH}/>
+          </clipPath>
+        ))}
+      </defs>
       {/* Cabinet body */}
-      <rect x="-22" y="-38" width="44" height="52" rx="5" fill="#1a0a2e" stroke="#4c1d95" strokeWidth="1.5"/>
+      <rect x="-25" y="-42" width="50" height="60" rx="5" fill="#1a0a2e" stroke="#4c1d95" strokeWidth="1.5"/>
       {/* Top dome */}
-      <ellipse cx="0" cy="-38" rx="18" ry="8" fill="#2d1060" stroke="#6d28d9" strokeWidth="1.2"/>
-      {/* Lamp on top — blinks when winning */}
-      <circle cx="0" cy="-46" r="5" fill={winning ? "#fbbf24" : "#3b1d6e"} stroke="#6d28d9" strokeWidth="1">
+      <ellipse cx="0" cy="-42" rx="20" ry="9" fill="#2d1060" stroke="#6d28d9" strokeWidth="1.2"/>
+      {/* Lamp on top */}
+      <circle cx="0" cy="-51" r="6" fill={winning ? "#fbbf24" : "#3b1d6e"} stroke="#6d28d9" strokeWidth="1">
         {winning && <animate attributeName="fill" values="#fbbf24;#f59e0b;#fbbf24" dur="0.3s" repeatCount="indefinite"/>}
       </circle>
       {/* Screen / reel window */}
-      <rect x="-18" y="-28" width="36" height="22" rx="3" fill="#0a0514" stroke="#5b21b6" strokeWidth="1.2"/>
-      {/* 3 reel slots */}
-      {R.map((sym, i) => (
-        <g key={i}>
-          <rect x={-15 + i * 12} y="-26" width="10" height="18" rx="2" fill="#150929" stroke="#4c1d95" strokeWidth="0.8"/>
-          {spinning ? (
-            <text x={-10 + i * 12} y="-14" textAnchor="middle" fontSize="10" style={{ animation: `slotSpin 0.15s linear infinite` }}>🎰</text>
-          ) : (
-            <text x={-10 + i * 12} y="-14" textAnchor="middle" fontSize="9">{sym}</text>
-          )}
-        </g>
-      ))}
+      <rect x="-20" y="-32" width="40" height="26" rx="3" fill="#0a0514" stroke="#5b21b6" strokeWidth="1.2"/>
+      {/* 3 reel slots with clip */}
+      {reelCx.map((cx, i) => {
+        const isSpinning = spinning && i >= revealed;
+        return (
+          <g key={i} clipPath={`url(#reel-clip-${i})`}>
+            <rect x={cx - 5} y={reelY} width="10" height={reelH} rx="2" fill="#150929" stroke="#4c1d95" strokeWidth="0.8"/>
+            {isSpinning ? (
+              // Animate a column of symbols scrolling down
+              <text x={cx} y={reelY + reelH - 3} textAnchor="middle" fontSize="9" fontFamily="system-ui">
+                {SLOT_SYMBOLS[i % SLOT_SYMBOLS.length]}
+                <animate attributeName="y" values={`${reelY - 10};${reelY + reelH + 5}`} dur="0.18s" repeatCount="indefinite" calcMode="linear"/>
+              </text>
+            ) : (
+              <text x={cx} y={reelY + reelH - 4} textAnchor="middle" fontSize="9" fontFamily="system-ui">{R[i]}</text>
+            )}
+          </g>
+        );
+      })}
+      {/* Reel dividers */}
+      <line x1="-5.5" y1={reelY} x2="-5.5" y2={reelY + reelH} stroke="#4c1d95" strokeWidth="0.8"/>
+      <line x1="5.5" y1={reelY} x2="5.5" y2={reelY + reelH} stroke="#4c1d95" strokeWidth="0.8"/>
       {/* Brand label */}
-      <text x="0" y="-1" textAnchor="middle" fontSize="5.5" fontWeight="bold" fill="#a78bfa" fontFamily="system-ui">LUCKY</text>
+      <text x="0" y="-2" textAnchor="middle" fontSize="5.5" fontWeight="bold" fill="#a78bfa" fontFamily="system-ui">LUCKY</text>
       {/* Coin slot */}
-      <rect x="-6" y="3" width="12" height="3" rx="1.5" fill="#0a0514" stroke="#4c1d95" strokeWidth="0.8"/>
+      <rect x="-7" y="2" width="14" height="3" rx="1.5" fill="#0a0514" stroke="#4c1d95" strokeWidth="0.8"/>
       {/* Payout tray */}
-      <rect x="-14" y="8" width="28" height="4" rx="2" fill="#0a0514" stroke="#4c1d95" strokeWidth="0.8"/>
+      <rect x="-16" y="7" width="32" height="5" rx="2" fill="#0a0514" stroke="#4c1d95" strokeWidth="0.8"/>
       {/* Side lever */}
-      <rect x="22" y="-20" width="5" height="22" rx="2" fill="#1a0a2e" stroke="#5b21b6" strokeWidth="1"/>
-      <circle cx="24.5" cy="-22" r="4" fill={spinning ? "#f59e0b" : "#6d28d9"} stroke="#a78bfa" strokeWidth="1">
+      <rect x="25" y="-24" width="5" height="24" rx="2" fill="#1a0a2e" stroke="#5b21b6" strokeWidth="1"/>
+      <circle cx="27.5" cy="-26" r="4.5" fill={spinning ? "#f59e0b" : "#6d28d9"} stroke="#a78bfa" strokeWidth="1">
         {spinning && <animate attributeName="fill" values="#f59e0b;#fbbf24;#f59e0b" dur="0.2s" repeatCount="indefinite"/>}
       </circle>
       {/* Bottom base */}
-      <rect x="-22" y="13" width="44" height="5" rx="2" fill="#2d1060"/>
+      <rect x="-25" y="13" width="50" height="5" rx="2" fill="#2d1060"/>
       {/* Win flash overlay */}
-      {winning && <rect x="-22" y="-38" width="44" height="56" rx="5" fill="rgba(250,204,21,0.12)" stroke="#fbbf24" strokeWidth="2">
+      {winning && <rect x="-25" y="-42" width="50" height="60" rx="5" fill="rgba(250,204,21,0.12)" stroke="#fbbf24" strokeWidth="2">
         <animate attributeName="opacity" values="1;0;1" dur="0.4s" repeatCount="indefinite"/>
       </rect>}
     </g>
@@ -756,9 +778,14 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [otherLevelUps, setOtherLevelUps] = useState<Map<string, number>>(new Map());
   const [rouletteWinEffects, setRouletteWinEffects] = useState<Map<string, number>>(new Map());
   const [slotWinEffects, setSlotWinEffects] = useState<Map<string, number>>(new Map());
-  const [slotStates, setSlotStates] = useState<Map<string, { spinning: boolean; reels: string[]; winning: boolean; lastSpin: number; autoCount: number; autoRunning: boolean; bet: number }>>(new Map());
+  type SlotState = { spinning: boolean; reels: string[]; revealedCount: number; winning: boolean; lastSpin: number; autoCount: number; autoRunning: boolean; bet: number };
+  const SLOT_DEFAULT: SlotState = { spinning: false, reels: ["🍒","🍒","🍒"], revealedCount: 3, winning: false, lastSpin: 0, autoCount: 0, autoRunning: false, bet: 10 };
+  const [slotStates, setSlotStates] = useState<Map<string, SlotState>>(new Map());
+  const slotStatesRef = useRef<Map<string, SlotState>>(new Map());
+  slotStatesRef.current = slotStates;
   const [slotModal, setSlotModal] = useState<{ itemId: string } | null>(null);
   const slotAutoTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const handleSlotSpinRef = useRef<(itemId: string) => void>(() => {});
   const [mutedUsers, setMutedUsers] = useState<Set<string>>(new Set());
   const [myMutedUntil, setMyMutedUntil] = useState<string | null>(null);
   const myMutedUntilRef = useRef<string | null>(null);
@@ -2382,6 +2409,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       return g.current_player_id !== currentProfile.id;
     });
     if (dartZoneBlocked) return;
+    // Block slot machine tiles
+    if (items.some(i => i.item_type === "slot_machine" && i.gx === gx && i.gy === gy)) return;
     moveMyPos(gx, gy); broadcastMove(gx, gy);
   };
 
@@ -2403,7 +2432,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   // ── Slot Machine ────────────────────────────────────────────────────────────
   const SLOT_SYMBOLS = ["🍒", "🍋", "🍊", "🍇", "⭐", "💎", "7️⃣"];
   const SLOT_PAYOUTS: Record<string, number> = { "🍒": 2, "🍋": 3, "🍊": 4, "🍇": 5, "⭐": 10, "💎": 20, "7️⃣": 50 };
-  const SLOT_WEIGHTS = [30, 25, 20, 12, 7, 4, 2]; // cherry most common, 7 rarest
+  const SLOT_WEIGHTS = [30, 25, 20, 12, 7, 4, 2];
 
   const pickSymbol = () => {
     const total = SLOT_WEIGHTS.reduce((a, b) => a + b, 0);
@@ -2412,72 +2441,71 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     return SLOT_SYMBOLS[0];
   };
 
-  const handleSlotSpin = async (itemId: string) => {
-    const cur = slotStates.get(itemId) ?? { spinning: false, reels: ["🍒","🍒","🍒"], winning: false, lastSpin: 0, autoCount: 0, autoRunning: false, bet: 10 };
+  const handleSlotSpin = (itemId: string) => {
+    // Always read from ref to avoid stale closures
+    const cur = slotStatesRef.current.get(itemId) ?? SLOT_DEFAULT;
     if (cur.spinning) return;
     const now = Date.now();
-    if (now - cur.lastSpin < 3000) return; // 3s cooldown
+    if (now - cur.lastSpin < 3000) return;
 
     const bet = cur.bet;
     if (coinsRef.current < bet) { showToast("🎰", "Ikke nok mønter", `Indsats: ${bet} 🪙`, "#ef4444"); return; }
 
-    // Deduct bet
-    const nc = coinsRef.current - bet;
-    coinsRef.current = nc; setCoins(nc);
-    await supabase.from("profiles").update({ coins: nc }).eq("id", currentProfile.id);
+    // Deduct immediately from ref — single DB write at end of spin
+    coinsRef.current -= bet;
+    setCoins(coinsRef.current);
 
-    // Start spinning animation
-    setSlotStates(prev => { const m = new Map(prev); m.set(itemId, { ...cur, spinning: true, winning: false, lastSpin: now }); return m; });
+    // Pick final symbols now so reveals are consistent
+    const r1 = pickSymbol(); const r2 = pickSymbol(); const r3 = pickSymbol();
+    const allSame = r1 === r2 && r2 === r3;
+    const payout = allSame ? bet * SLOT_PAYOUTS[r1] : 0;
 
-    // Spin for 2s then reveal
+    // All 3 spinning
+    setSlotStates(prev => { const m = new Map(prev); m.set(itemId, { ...cur, spinning: true, reels: ["🍒","🍒","🍒"], revealedCount: 0, winning: false, lastSpin: now }); return m; });
+
+    // Reveal reel 1 at 900ms
+    setTimeout(() => {
+      setSlotStates(prev => { const m = new Map(prev); const s = m.get(itemId); if (s) m.set(itemId, { ...s, reels: [r1, s.reels[1], s.reels[2]], revealedCount: 1 }); return m; });
+    }, 900);
+
+    // Reveal reel 2 at 1500ms
+    setTimeout(() => {
+      setSlotStates(prev => { const m = new Map(prev); const s = m.get(itemId); if (s) m.set(itemId, { ...s, reels: [r1, r2, s.reels[2]], revealedCount: 2 }); return m; });
+    }, 1500);
+
+    // Reveal reel 3 + finalise at 2200ms
     setTimeout(async () => {
-      const r1 = pickSymbol(); const r2 = pickSymbol(); const r3 = pickSymbol();
-      const newReels = [r1, r2, r3];
-      const allSame = r1 === r2 && r2 === r3;
-      const payout = allSame ? bet * SLOT_PAYOUTS[r1] : 0;
-
-      let finalCoins = coinsRef.current;
+      // Add winnings if any
       if (payout > 0) {
-        finalCoins = finalCoins + payout;
-        coinsRef.current = finalCoins; setCoins(finalCoins);
-        await supabase.from("profiles").update({ coins: finalCoins }).eq("id", currentProfile.id);
-        // Win effect on self
+        coinsRef.current += payout;
+        setCoins(coinsRef.current);
         setSlotWinEffects(prev => { const m = new Map(prev); m.set(currentProfile.id, payout); return m; });
         setTimeout(() => setSlotWinEffects(prev => { const m = new Map(prev); m.delete(currentProfile.id); return m; }), 4000);
-        // Broadcast win to room
         channelRef.current?.send({ type: "broadcast", event: "slot_win", payload: { user_id: currentProfile.id, amount: payout, item_id: itemId } });
         showToast("🎰", `JACKPOT! ${r1}${r2}${r3}`, `+${payout} 🪙`, "#f59e0b");
       }
 
-      setSlotStates(prev => {
-        const m = new Map(prev);
-        const s = m.get(itemId)!;
-        m.set(itemId, { ...s, spinning: false, reels: newReels, winning: payout > 0, lastSpin: now });
-        return m;
-      });
+      // Single DB write with final coin total
+      await supabase.from("profiles").update({ coins: coinsRef.current }).eq("id", currentProfile.id);
 
-      // Clear win flash after 3s
-      if (payout > 0) {
-        setTimeout(() => setSlotStates(prev => {
-          const m = new Map(prev); const s = m.get(itemId); if (s) m.set(itemId, { ...s, winning: false }); return m;
-        }), 3000);
-      }
+      setSlotStates(prev => { const m = new Map(prev); const s = m.get(itemId); if (s) m.set(itemId, { ...s, spinning: false, reels: [r1, r2, r3], revealedCount: 3, winning: payout > 0, lastSpin: now }); return m; });
 
-      // Auto-spin continuation
-      setSlotStates(prev => {
-        const m = new Map(prev); const s = m.get(itemId);
-        if (!s) return prev;
-        const remaining = s.autoCount - 1;
-        const stillAuto = s.autoRunning && remaining > 0;
-        m.set(itemId, { ...s, autoCount: Math.max(0, remaining), autoRunning: stillAuto });
+      if (payout > 0) setTimeout(() => setSlotStates(prev => { const m = new Map(prev); const s = m.get(itemId); if (s) m.set(itemId, { ...s, winning: false }); return m; }), 3000);
+
+      // Auto-spin
+      const latest = slotStatesRef.current.get(itemId);
+      if (latest) {
+        const remaining = latest.autoCount - 1;
+        const stillAuto = latest.autoRunning && remaining > 0;
+        setSlotStates(prev => { const m = new Map(prev); const s = m.get(itemId); if (s) m.set(itemId, { ...s, autoCount: Math.max(0, remaining), autoRunning: stillAuto }); return m; });
         if (stillAuto) {
-          const t = setTimeout(() => handleSlotSpin(itemId), 3200);
+          const t = setTimeout(() => handleSlotSpinRef.current(itemId), 3200);
           slotAutoTimers.current.set(itemId, t);
         }
-        return m;
-      });
-    }, 2000);
+      }
+    }, 2200);
   };
+  handleSlotSpinRef.current = handleSlotSpin;
 
   const handleDartThrow = async (game: DartGame) => {
     if (dartAnimating) return;
@@ -4317,7 +4345,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   if (s.kind === "item") {
                     const rot = (s.item.rotation ?? 0) * 90;
                     if (s.item.item_type === "slot_machine") {
-                      const ss = slotStates.get(s.item.id) ?? { spinning: false, reels: ["🍒","🍒","🍒"], winning: false, lastSpin: 0, autoCount: 0, autoRunning: false, bet: 10 };
+                      const ss = slotStates.get(s.item.id) ?? SLOT_DEFAULT;
                       // Zone tile: tile directly in front (south) of the machine
                       const zoneGx = s.gx; const zoneGy = s.gy + 1;
                       const onZone = myPos.gx === zoneGx && myPos.gy === zoneGy;
@@ -4336,22 +4364,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           <g onContextMenu={e => handleRightClick(e, null, s.item, null)}
                             onDoubleClick={() => { if (canSpin) handleSlotSpin(s.item.id); }}
                             style={{ cursor: canSpin ? "pointer" : "default" }}>
-                            <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (s.item.item_scale ?? 1)}) rotate(${rot})`}>
-                              <SlotMachineSVG spinning={ss.spinning} reels={ss.reels} winning={ss.winning} />
+                            <g transform={`translate(${x}, ${y - TH / 4}) scale(${1.1 * (s.item.item_scale ?? 1)}) rotate(${rot})`}>
+                              <SlotMachineSVG spinning={ss.spinning} reels={ss.reels} winning={ss.winning} revealedCount={(ss as SlotState).revealedCount} />
                             </g>
-                            {/* Spinning reels overlay above machine */}
-                            {ss.spinning && (
-                              <text x={x} y={y - TH / 4 - 42 * (s.item.item_scale ?? 1)} textAnchor="middle" fontSize={11}
-                                fontFamily="system-ui" fill="#f59e0b" fontWeight="900"
-                                stroke="rgba(0,0,0,0.8)" strokeWidth={2} paintOrder="stroke"
-                                style={{ pointerEvents: "none" }}>🎰🎰🎰</text>
-                            )}
-                            {!ss.spinning && ss.reels[0] && (
-                              <text x={x} y={y - TH / 4 - 42 * (s.item.item_scale ?? 1)} textAnchor="middle" fontSize={10}
-                                fontFamily="system-ui" fill="white" fontWeight="700"
-                                stroke="rgba(0,0,0,0.8)" strokeWidth={2} paintOrder="stroke"
-                                style={{ pointerEvents: "none" }}>{ss.reels.join(" ")}</text>
-                            )}
                           </g>
                         </g>
                       );
@@ -8087,7 +8102,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
           {ctxMenu.kind === "slot_machine" && ctxMenu.item && (() => {
             const slotItem = ctxMenu.item!;
-            const ss = slotStates.get(slotItem.id) ?? { spinning: false, reels: ["🍒","🍒","🍒"], winning: false, lastSpin: 0, autoCount: 0, autoRunning: false, bet: 10 };
+            const ss = slotStates.get(slotItem.id) ?? SLOT_DEFAULT;
             const zoneGx = slotItem.gx ?? 0; const zoneGy = (slotItem.gy ?? 0) + 1;
             const onZone = myPos.gx === zoneGx && myPos.gy === zoneGy;
             const SLOT_PAYOUTS_DISPLAY = [
