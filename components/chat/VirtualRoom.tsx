@@ -2039,11 +2039,21 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     });
   }, [activeRoomId, activeRoomType]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load portals when entering a room
+  // Load portals + realtime subscription
   useEffect(() => {
+    setPortals([]);
     supabase.from("room_portals").select("*").eq("room_id", activeRoomId).then(({ data }) => {
       if (data) setPortals(data as RoomPortal[]);
     });
+    const portalCh = supabase.channel(`portals-${activeRoomId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_portals", filter: `room_id=eq.${activeRoomId}` }, payload => {
+        setPortals(prev => { if (prev.some(p => p.id === payload.new.id)) return prev; return [...prev, payload.new as RoomPortal]; });
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "room_portals" }, payload => {
+        setPortals(prev => prev.filter(p => p.id !== (payload.old as RoomPortal).id));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(portalCh); };
   }, [activeRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load & subscribe to dart games for this room
@@ -3065,29 +3075,112 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       </g>
                     );
                   } else {
-                    // Window
+                    // Window — space view
+                    const clipId = `wclip-${portal.id}`;
+                    // Deterministic pseudo-random from portal.id string
+                    const seed = portal.id.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) & 0xfffff, 0);
+                    const rng = (n: number) => { let s = seed + n * 7919; s = ((s >> 16) ^ s) * 0x45d9f3b & 0xfffff; return (s & 0xffff) / 0xffff; };
+                    // Stars
+                    const starCount = 18 + Math.floor(rng(0) * 14);
+                    const wBox = { minX: Math.min(BL.x,TL.x)-2, maxX: Math.max(BR.x,TR.x)+2, minY: Math.min(TL.y,TR.y)-2, maxY: Math.max(BL.y,BR.y)+2 };
+                    const bW = wBox.maxX - wBox.minX, bH = wBox.maxY - wBox.minY;
+                    // Celestial body: planet / moon / sun — pick by seed
+                    const bodyType = Math.floor(rng(1) * 3); // 0=planet, 1=moon, 2=sun
+                    const bodyX = wBox.minX + bW * (0.2 + rng(2) * 0.6);
+                    const bodyY = wBox.minY + bH * (0.15 + rng(3) * 0.55);
+                    const bodyR = 5 + rng(4) * 8;
+                    const planetColors = [["#6b46c1","#8b5cf6"],["#065f46","#10b981"],["#b45309","#f59e0b"],["#1d4ed8","#3b82f6"],["#be185d","#ec4899"]];
+                    const [pDark, pLight] = planetColors[Math.floor(rng(5) * planetColors.length)];
+                    // Nebula center
+                    const nebX = wBox.minX + bW * (0.1 + rng(6) * 0.8);
+                    const nebY = wBox.minY + bH * (0.1 + rng(7) * 0.8);
                     return (
                       <g key={portal.id}
                         onContextMenu={canEdit ? e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "portal", portal }); } : undefined}
                         style={{ cursor: canEdit ? "context-menu" : "default" }}
                       >
+                        <defs>
+                          <clipPath id={clipId}>
+                            <polygon points={pts} />
+                          </clipPath>
+                        </defs>
                         {/* Frame */}
                         <polygon points={framePts} fill={theme.color + "30"} stroke={theme.color} strokeWidth={0.8} opacity={0.6} />
-                        {/* Glass */}
-                        <polygon points={pts} fill="#1e4a7a" opacity={0.55} />
-                        <polygon points={pts} fill="rgba(180,220,255,0.12)" />
-                        {/* Window cross divider */}
+                        {/* Space background */}
+                        <polygon points={pts} fill="#00010a" />
+                        {/* Space scene clipped to window */}
+                        <g clipPath={`url(#${clipId})`} style={{ pointerEvents: "none" }}>
+                          {/* Nebula glow */}
+                          <ellipse cx={nebX} cy={nebY} rx={bW * 0.45} ry={bH * 0.35}
+                            fill={pDark} opacity={0.18} style={{ filter: "blur(4px)" }} />
+                          {/* Stars */}
+                          {Array.from({ length: starCount }, (_, i) => {
+                            const sx = wBox.minX + rng(i + 10) * bW;
+                            const sy = wBox.minY + rng(i + 30) * bH;
+                            const sr = 0.4 + rng(i + 50) * 1.1;
+                            const bright = rng(i + 70);
+                            const twinkle = bright > 0.75;
+                            return (
+                              <circle key={i} cx={sx} cy={sy} r={sr} fill="white" opacity={0.5 + bright * 0.5}>
+                                {twinkle && <animate attributeName="opacity" values={`${0.4 + bright * 0.4};1;${0.4 + bright * 0.4}`} dur={`${1.2 + rng(i + 90) * 2}s`} repeatCount="indefinite" />}
+                              </circle>
+                            );
+                          })}
+                          {/* Celestial body */}
+                          {bodyType === 0 && (
+                            // Planet with bands
+                            <g>
+                              <circle cx={bodyX} cy={bodyY} r={bodyR * 1.4} fill={pDark} opacity={0.15} />
+                              <circle cx={bodyX} cy={bodyY} r={bodyR} fill={pDark} />
+                              <ellipse cx={bodyX} cy={bodyY - bodyR * 0.15} rx={bodyR * 0.85} ry={bodyR * 0.2} fill={pLight} opacity={0.4} />
+                              <ellipse cx={bodyX} cy={bodyY + bodyR * 0.25} rx={bodyR * 0.7} ry={bodyR * 0.15} fill={pLight} opacity={0.25} />
+                              <circle cx={bodyX - bodyR * 0.25} cy={bodyY - bodyR * 0.2} r={bodyR * 0.22} fill="rgba(255,255,255,0.12)" />
+                            </g>
+                          )}
+                          {bodyType === 1 && (
+                            // Moon — grey with craters
+                            <g>
+                              <circle cx={bodyX} cy={bodyY} r={bodyR} fill="#9ca3af" />
+                              <circle cx={bodyX + bodyR * 0.3} cy={bodyY - bodyR * 0.3} r={bodyR * 0.28} fill="#6b7280" />
+                              <circle cx={bodyX - bodyR * 0.35} cy={bodyY + bodyR * 0.2} r={bodyR * 0.18} fill="#6b7280" />
+                              <circle cx={bodyX + bodyR * 0.1} cy={bodyY + bodyR * 0.4} r={bodyR * 0.12} fill="#6b7280" />
+                              <circle cx={bodyX - bodyR * 0.2} cy={bodyY - bodyR * 0.1} r={bodyR * 0.32} fill="rgba(255,255,255,0.1)" />
+                            </g>
+                          )}
+                          {bodyType === 2 && (
+                            // Sun with corona
+                            <g>
+                              <circle cx={bodyX} cy={bodyY} r={bodyR * 1.8} fill="#fef3c7" opacity={0.06}>
+                                <animate attributeName="opacity" values="0.04;0.1;0.04" dur="2.5s" repeatCount="indefinite" />
+                              </circle>
+                              <circle cx={bodyX} cy={bodyY} r={bodyR * 1.3} fill="#fde68a" opacity={0.15}>
+                                <animate attributeName="opacity" values="0.12;0.22;0.12" dur="1.8s" repeatCount="indefinite" />
+                              </circle>
+                              <circle cx={bodyX} cy={bodyY} r={bodyR} fill="#fef9c3" />
+                              <circle cx={bodyX} cy={bodyY} r={bodyR * 0.75} fill="#fde047" />
+                              <circle cx={bodyX - bodyR * 0.2} cy={bodyY - bodyR * 0.25} r={bodyR * 0.25} fill="rgba(255,255,255,0.3)" />
+                            </g>
+                          )}
+                          {/* Distant galaxy smudge */}
+                          {rng(8) > 0.4 && (
+                            <ellipse
+                              cx={wBox.minX + bW * rng(9)}
+                              cy={wBox.minY + bH * rng(10)}
+                              rx={bW * 0.12} ry={bH * 0.04}
+                              fill="white" opacity={0.08}
+                              transform={`rotate(${rng(11) * 60 - 30},${wBox.minX + bW * rng(9)},${wBox.minY + bH * rng(10)})`}
+                            />
+                          )}
+                        </g>
+                        {/* Window cross frame */}
                         <line x1={(TL.x+BL.x)/2} y1={(TL.y+BL.y)/2} x2={(TR.x+BR.x)/2} y2={(TR.y+BR.y)/2}
-                          stroke={theme.color} strokeWidth={0.8} opacity={0.45} />
+                          stroke={theme.color} strokeWidth={1} opacity={0.5} />
                         <line x1={(TL.x+TR.x)/2} y1={(TL.y+TR.y)/2} x2={(BL.x+BR.x)/2} y2={(BL.y+BR.y)/2}
-                          stroke={theme.color} strokeWidth={0.8} opacity={0.45} />
-                        {/* Glass highlight */}
-                        <polygon
-                          points={`${TL.x+2},${TL.y+2} ${TL.x+8},${TL.y+2} ${TL.x+2},${TL.y+7}`}
-                          fill="rgba(255,255,255,0.3)"
-                          style={{ pointerEvents: "none" }}
-                        />
-                        {/* Outer frame */}
+                          stroke={theme.color} strokeWidth={1} opacity={0.5} />
+                        {/* Glass sheen */}
+                        <polygon points={pts} fill="rgba(150,200,255,0.04)" />
+                        <polygon points={`${TL.x+2},${TL.y+2} ${TL.x+10},${TL.y+2} ${TL.x+2},${TL.y+8}`} fill="rgba(255,255,255,0.22)" style={{ pointerEvents: "none" }} />
+                        {/* Outer frame lines */}
                         <line x1={TL.x} y1={TL.y} x2={TR.x} y2={TR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.7} />
                         <line x1={BL.x} y1={BL.y} x2={BR.x} y2={BR.y} stroke={theme.color} strokeWidth={1.2} opacity={0.7} />
                         <line x1={BL.x} y1={BL.y} x2={TL.x} y2={TL.y} stroke={theme.color} strokeWidth={1} opacity={0.5} />
