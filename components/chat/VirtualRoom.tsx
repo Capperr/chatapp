@@ -5616,11 +5616,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                   </defs>
                                   <image href="/alien.png" x="-31" y="-36" width="62" height="77"
                                     filter={myColor && AVATAR_TINT_COLORS.includes(myColor) ? `url(#sp-tint-${item.id.slice(0,8)})` : undefined} />
-                                  {Object.entries(previewOutfit).map(([, cid]) => {
-                                    const ci = clothingCatalog.find(c => c.id === cid);
-                                    if (!ci) return null;
-                                    return <ClothingLayerSVG key={String(cid)} styleKey={ci.style_key} color={ci.color} />;
-                                  })}
+                                  <ClothingOverlay outfit={previewOutfit} catalog={clothingCatalog} />
                                 </svg>
                                 {/* Large hover tooltip */}
                                 {isHovered && (
@@ -5638,11 +5634,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                       </defs>
                                       <image href="/alien.png" x="-31" y="-36" width="62" height="77"
                                         filter={myColor && AVATAR_TINT_COLORS.includes(myColor) ? `url(#sp-lg-tint-${item.id.slice(0,8)})` : undefined} />
-                                      {Object.entries(previewOutfit).map(([, cid]) => {
-                                        const ci = clothingCatalog.find(c => c.id === cid);
-                                        if (!ci) return null;
-                                        return <ClothingLayerSVG key={String(cid)} styleKey={ci.style_key} color={ci.color} />;
-                                      })}
+                                      <ClothingOverlay outfit={previewOutfit} catalog={clothingCatalog} />
                                     </svg>
                                     <p className="text-[12px] font-bold text-slate-200 text-center mt-1 truncate">{item.name}</p>
                                   </div>
