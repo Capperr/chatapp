@@ -798,6 +798,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [guestbookLoading, setGuestbookLoading] = useState(false);
   const [partnerData, setPartnerData] = useState<PartnerRecord | null>(null);
   const [partnerProfile, setPartnerProfile] = useState<Profile | null>(null);
+  const [partnerPendingFromMe, setPartnerPendingFromMe] = useState<PartnerRecord | null>(null);
+  const [partnerPendingFromThem, setPartnerPendingFromThem] = useState<PartnerRecord | null>(null);
   const [myPartnerData, setMyPartnerData] = useState<PartnerRecord | null>(null);
   const [myPartnerProfile, setMyPartnerProfile] = useState<Profile | null>(null);
   const [myGuestbook, setMyGuestbook] = useState<GuestbookEntry[]>([]);
@@ -6978,18 +6980,40 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 setGuestbookLoading(false);
               };
               const loadPartner = async () => {
-                const { data } = await supabase.from("profile_partners").select("*").or(`requester_id.eq.${profileView.id},recipient_id.eq.${profileView.id}`).eq("status", "accepted").maybeSingle();
-                setPartnerData(data as PartnerRecord | null);
-                if (data) {
-                  const otherId = (data as PartnerRecord).requester_id === profileView.id ? (data as PartnerRecord).recipient_id : (data as PartnerRecord).requester_id;
+                // Clean up expired requests (>7 days)
+                try { await supabase.rpc("cleanup_expired_partner_requests"); } catch { /* ignore */ }
+                // Load accepted partnership for profileView
+                const { data: accepted } = await supabase.from("profile_partners").select("*").or(`requester_id.eq.${profileView.id},recipient_id.eq.${profileView.id}`).eq("status", "accepted").maybeSingle();
+                setPartnerData(accepted as PartnerRecord | null);
+                if (accepted) {
+                  const otherId = (accepted as PartnerRecord).requester_id === profileView.id ? (accepted as PartnerRecord).recipient_id : (accepted as PartnerRecord).requester_id;
                   const { data: prof } = await supabase.from("profiles").select("*").eq("id", otherId).single();
                   setPartnerProfile(prof as Profile | null);
                 } else { setPartnerProfile(null); }
+                // Pending: me → them
+                const { data: p1 } = await supabase.from("profile_partners").select("*").eq("requester_id", currentProfile.id).eq("recipient_id", profileView.id).eq("status", "pending").maybeSingle();
+                setPartnerPendingFromMe(p1 as PartnerRecord | null);
+                // Pending: them → me
+                const { data: p2 } = await supabase.from("profile_partners").select("*").eq("requester_id", profileView.id).eq("recipient_id", currentProfile.id).eq("status", "pending").maybeSingle();
+                setPartnerPendingFromThem(p2 as PartnerRecord | null);
               };
               const sendPartnerRequest = async () => {
                 await supabase.from("profile_partners").insert({ requester_id: currentProfile.id, recipient_id: profileView.id, status: "pending" });
                 try { await supabase.from("notifications").insert({ user_id: profileView.id, type: "partner_request", emoji: "💕", title: "Rumkæreste-anmodning", subtitle: `${currentProfile.display_name} vil være din rumkæreste!`, color: "#ec4899", read: false }); } catch { /* ignore */ }
                 loadPartner();
+              };
+              const cancelPartnerRequest = async () => {
+                if (partnerPendingFromMe) { await supabase.from("profile_partners").delete().eq("id", partnerPendingFromMe.id); loadPartner(); }
+              };
+              const acceptPartnerRequest = async () => {
+                if (partnerPendingFromThem) {
+                  await supabase.from("profile_partners").update({ status: "accepted" }).eq("id", partnerPendingFromThem.id);
+                  try { await supabase.from("notifications").insert({ user_id: profileView.id, type: "partner_accepted", emoji: "💕", title: "Rumkæreste-anmodning accepteret!", subtitle: `${currentProfile.display_name} er nu din rumkæreste!`, color: "#ec4899", read: false }); } catch { /* ignore */ }
+                  loadPartner();
+                }
+              };
+              const declinePartnerRequest = async () => {
+                if (partnerPendingFromThem) { await supabase.from("profile_partners").delete().eq("id", partnerPendingFromThem.id); loadPartner(); }
               };
               return (
                 <>
@@ -7126,7 +7150,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                               </div>
                               <div className="flex items-center justify-between">
                                 <span className="text-[11px] text-slate-600">{guestbookInput.length}/300</span>
-                                <button disabled={!guestbookInput.trim() || guestbookLoading} onClick={async () => { if (!guestbookInput.trim()) return; setGuestbookLoading(true); await supabase.from("profile_guestbook").insert({ profile_id: profileView.id, author_id: currentProfile.id, author_display_name: currentProfile.display_name, author_avatar_color: currentProfile.avatar_color ?? null, content: guestbookInput.trim() }); setGuestbookInput(""); await loadGuestbook(); }} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors">Send</button>
+                                <button disabled={!guestbookInput.trim() || guestbookLoading} onClick={async () => { if (!guestbookInput.trim()) return; setGuestbookLoading(true); await supabase.from("profile_guestbook").insert({ profile_id: profileView.id, author_id: currentProfile.id, author_display_name: currentProfile.display_name, author_avatar_color: currentProfile.avatar_color ?? null, content: guestbookInput.trim() }); if (profileView.id !== currentProfile.id) { try { await supabase.from("notifications").insert({ user_id: profileView.id, type: "guestbook", emoji: "📖", title: "Ny gæstebog-kommentar", subtitle: `${currentProfile.display_name}: ${guestbookInput.trim().slice(0, 60)}`, color: "#8b5cf6", read: false }); } catch { /* ignore */ } } setGuestbookInput(""); await loadGuestbook(); }} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors">Send</button>
                               </div>
                             </div>
                           )}
@@ -7155,6 +7179,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       {profileTab === "rumkaereste" && (
                         <div className="p-3 space-y-3">
                           {partnerData ? (
+                            /* Accepted partnership */
                             <div className="bg-white/[0.04] rounded-xl p-4 border border-pink-500/20 text-center">
                               <p className="text-[11px] font-bold text-pink-400 uppercase tracking-widest mb-3">Rumkæreste</p>
                               <div className="flex items-center justify-center mb-3">
@@ -7166,7 +7191,28 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                               </div>
                               <p className="text-[13px] text-pink-300 font-semibold">{profileView.display_name} ❤️ {partnerProfile?.display_name ?? "?"}</p>
                             </div>
+                          ) : partnerPendingFromThem ? (
+                            /* They sent me a request — accept/decline */
+                            <div className="bg-white/[0.04] rounded-xl p-4 border border-pink-500/30 text-center space-y-3">
+                              <p className="text-[11px] font-bold text-pink-400 uppercase tracking-widest">Rumkæreste-anmodning</p>
+                              <svg width="64" height="56" viewBox="0 0 64 56" className="mx-auto"><path d="M32 50 C32 50 4 32 4 16 C4 7 11 1 20 1 C25 1 29 4 32 10 C35 4 39 1 44 1 C53 1 60 7 60 16 C60 32 32 50 32 50Z" fill="#ec489935" stroke="#ec4899" strokeWidth="1.5" /></svg>
+                              <p className="text-[13px] text-slate-300"><span className="font-bold text-pink-300">{profileView.display_name}</span> vil være din rumkæreste!</p>
+                              <div className="flex gap-2 justify-center">
+                                <button onClick={acceptPartnerRequest} className="px-4 py-2 rounded-xl text-[13px] font-semibold text-white bg-pink-600 hover:bg-pink-500 border border-pink-500/40 transition-colors">❤️ Accepter</button>
+                                <button onClick={declinePartnerRequest} className="px-4 py-2 rounded-xl text-[13px] font-semibold text-slate-300 bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] transition-colors">Afvis</button>
+                              </div>
+                            </div>
+                          ) : partnerPendingFromMe ? (
+                            /* I sent a request — show pending + cancel */
+                            <div className="bg-white/[0.04] rounded-xl p-4 border border-white/[0.07] text-center space-y-3">
+                              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Afventer svar</p>
+                              <svg width="64" height="56" viewBox="0 0 64 56" className="mx-auto"><path d="M32 50 C32 50 4 32 4 16 C4 7 11 1 20 1 C25 1 29 4 32 10 C35 4 39 1 44 1 C53 1 60 7 60 16 C60 32 32 50 32 50Z" fill="#ec489920" stroke="#ec489960" strokeWidth="1.5" /></svg>
+                              <p className="text-[13px] text-slate-400">Venter på svar fra {profileView.display_name}...</p>
+                              <p className="text-[11px] text-slate-600">Anmodningen udløber automatisk efter 7 dage</p>
+                              <button onClick={cancelPartnerRequest} className="px-4 py-2 rounded-xl text-[13px] font-semibold text-slate-300 bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] transition-colors">Annuller anmodning</button>
+                            </div>
                           ) : profileView.id !== currentProfile.id ? (
+                            /* No relationship — send request */
                             <div className="bg-white/[0.04] rounded-xl p-4 border border-white/[0.07] text-center space-y-3">
                               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Rumkæreste</p>
                               <svg width="64" height="56" viewBox="0 0 64 56" className="mx-auto"><path d="M32 50 C32 50 4 32 4 16 C4 7 11 1 20 1 C25 1 29 4 32 10 C35 4 39 1 44 1 C53 1 60 7 60 16 C60 32 32 50 32 50Z" fill="#ec489918" stroke="#ec489940" strokeWidth="1.5" /></svg>
