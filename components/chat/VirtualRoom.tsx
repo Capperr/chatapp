@@ -3035,6 +3035,57 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         {/* Body */}
         <div className="flex-1 flex flex-col sm:flex-row overflow-hidden relative">
 
+          {/* Dart game HUD overlay */}
+          {(() => {
+            const myGame = dartGames.find(g => g.status === "active" && (g.player1_id === currentProfile.id || g.player2_id === currentProfile.id));
+            if (!myGame) return null;
+            const pause = dartPausedGames.get(myGame.id);
+            const secsLeft = pause ? Math.max(0, Math.ceil((pause.deadline - Date.now()) / 1000)) : null;
+            const isP1Turn = myGame.current_player_id === myGame.player1_id;
+            const players = [
+              { id: myGame.player1_id, name: myGame.player1_name, score: myGame.player1_score, isMe: myGame.player1_id === currentProfile.id, isTurn: isP1Turn },
+              { id: myGame.player2_id, name: myGame.player2_name, score: myGame.player2_score, isMe: myGame.player2_id === currentProfile.id, isTurn: !isP1Turn },
+            ];
+            return (
+              <div className="absolute top-3 left-3 z-30 pointer-events-none select-none" style={{ minWidth: 160 }}>
+                {/* Game type badge */}
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-black/60 px-2 py-0.5 rounded-full backdrop-blur-sm">🎯 {myGame.game_type}</span>
+                  {myGame.wager > 0 && <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">🪙 {myGame.wager}</span>}
+                </div>
+                {/* Player cards */}
+                {players.map((p, i) => (
+                  <div key={p.id} className={`mb-1 rounded-xl overflow-hidden backdrop-blur-md transition-all ${p.isTurn ? "ring-1 ring-emerald-400/60 shadow-[0_0_16px_rgba(74,222,128,0.15)]" : ""}`}
+                    style={{ background: p.isTurn ? "rgba(5,18,8,0.92)" : "rgba(3,9,18,0.80)" }}>
+                    <div className="px-3 py-2 flex items-center gap-2">
+                      {/* Turn indicator */}
+                      <div className={`w-1.5 h-8 rounded-full flex-shrink-0 ${p.isTurn ? "bg-emerald-400" : "bg-white/10"}`} style={p.isTurn ? { boxShadow: "0 0 8px rgba(74,222,128,0.8)" } : {}} />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-[11px] font-semibold truncate ${p.isMe ? "text-violet-300" : "text-slate-300"}`}>{p.name}{p.isMe ? " (dig)" : ""}</p>
+                        {p.isTurn && (
+                          <div className="flex gap-0.5 mt-0.5">
+                            {Array.from({ length: 3 }, (_, j) => (
+                              <div key={j} className={`w-2 h-2 rounded-full ${j < myGame.throws_this_turn ? "bg-amber-400" : "bg-white/15"}`} style={j < myGame.throws_this_turn ? { boxShadow: "0 0 4px rgba(251,191,36,0.8)" } : {}} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {/* Score */}
+                      <span className={`text-[22px] font-black tabular-nums leading-none ${p.isTurn ? "text-white" : "text-slate-500"}`}>{p.score}</span>
+                    </div>
+                  </div>
+                ))}
+                {/* Pause warning */}
+                {secsLeft !== null && (
+                  <div className="mt-1 px-3 py-1.5 rounded-xl bg-red-500/15 border border-red-500/30 backdrop-blur-md flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse flex-shrink-0" />
+                    <span className="text-[11px] text-red-300 font-semibold">Pause · {secsLeft}s tilbage</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Room switching overlay */}
           {roomSwitching && (
             <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none" style={{ background: "rgba(3,9,18,0.82)", backdropFilter: "blur(2px)" }}>
@@ -3502,9 +3553,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     const R = 22 * scale;
                     dartBoardPositionsRef.current.set(item.id, { cx, cy, R });
                     const game = dartGames.find(g => g.item_id === item.id && (g.status === "active" || g.status === "pending"));
-                    // Scoreboard sits directly below the dartboard on the same wall face
-                    const sbX = cx;
-                    const sbY = cy + R * 1.35 + 30;
+
                     const isMyGame = game && (game.player1_id === currentProfile.id || game.player2_id === currentProfile.id);
                     const isMyTurn = game && game.current_player_id === currentProfile.id && game.status === "active";
                     // Throwing zone tile — 3 tiles in from wall
@@ -3525,34 +3574,6 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.2s" repeatCount="indefinite" />
                           </circle>}
                         </g>
-                        {/* Scoreboard — centered below dartboard */}
-                        {game && (() => {
-                          const bw = 68, bh = 52;
-                          return (
-                            <g transform={`translate(${sbX},${sbY})`}
-                              onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "dartscoreboard", item }); }}
-                              style={{ cursor: "context-menu" }}>
-                              <rect x={-bw/2} y={-bh/2} width={bw} height={bh} rx={4} fill="#0f1a0f" stroke="#2d5a2d" strokeWidth={1.5} />
-                              {/* P1 row */}
-                              <text x={-bw/2+4} y={-bh/2+12} fontSize={7} fill={game.current_player_id === game.player1_id ? "#4ade80" : "#94a3b8"} fontWeight="700">{game.player1_name.slice(0,10)}</text>
-                              <text x={bw/2-4} y={-bh/2+12} fontSize={10} fill={game.current_player_id === game.player1_id ? "#4ade80" : "white"} fontWeight="900" textAnchor="end">{game.player1_score}</text>
-                              {game.current_player_id === game.player1_id && <text x={-bw/2+4} y={-bh/2+21} fontSize={6} fill="#fbbf24">{"●".repeat(game.throws_this_turn)}{"○".repeat(3 - game.throws_this_turn)}</text>}
-                              {/* Divider */}
-                              <line x1={-bw/2+3} y1={-bh/2+26} x2={bw/2-3} y2={-bh/2+26} stroke="#2d5a2d" strokeWidth={0.8} />
-                              {/* P2 row */}
-                              <text x={-bw/2+4} y={-bh/2+38} fontSize={7} fill={game.current_player_id === game.player2_id ? "#4ade80" : "#94a3b8"} fontWeight="700">{game.player2_name.slice(0,10)}</text>
-                              <text x={bw/2-4} y={-bh/2+38} fontSize={10} fill={game.current_player_id === game.player2_id ? "#4ade80" : "white"} fontWeight="900" textAnchor="end">{game.player2_score}</text>
-                              {game.current_player_id === game.player2_id && <text x={-bw/2+4} y={-bh/2+47} fontSize={6} fill="#fbbf24">{"●".repeat(game.throws_this_turn)}{"○".repeat(3 - game.throws_this_turn)}</text>}
-                              {/* Status */}
-                              {game.status === "pending" && <text x={0} y={bh/2-4} textAnchor="middle" fontSize={6} fill="#f59e0b" fontStyle="italic">Afventer...</text>}
-                              {dartPausedGames.has(game.id) && (() => {
-                                const pause = dartPausedGames.get(game.id)!;
-                                const secsLeft = Math.max(0, Math.ceil((pause.deadline - Date.now()) / 1000));
-                                return <text x={0} y={bh/2-4} textAnchor="middle" fontSize={6} fill="#f87171" fontStyle="italic">PAUSE {secsLeft}s</text>;
-                              })()}
-                            </g>
-                          );
-                        })()}
                       </g>
                     );
                   }
