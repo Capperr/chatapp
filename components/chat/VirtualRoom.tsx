@@ -1611,27 +1611,30 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     setDmConversations(prev => prev.map(c => c.id === activeDmConvId ? { ...c, last_preview: text.slice(0, 60), last_message_at: new Date().toISOString() } : c).sort((a, b) => b.last_message_at.localeCompare(a.last_message_at)));
   };
 
+  // Relocate current user off any locked tile — call whenever locked tile set changes
+  const relocateOffLockedTiles = useCallback((newSet: Set<string>) => {
+    if (isAdmin) return;
+    const posKey = `${myPosRef.current.gx},${myPosRef.current.gy}`;
+    if (!newSet.has(posKey)) return;
+    const cols = roomColsRef.current; const rows = roomRowsRef.current;
+    outer: for (let gx = 0; gx < cols; gx++) {
+      for (let gy = 0; gy < rows; gy++) {
+        if (!newSet.has(`${gx},${gy}`)) {
+          moveMyPos(gx, gy);
+          // Use a short delay so the channel is guaranteed to be ready
+          setTimeout(() => { if (channelRef.current) broadcastMoveRef.current(gx, gy); }, 100);
+          break outer;
+        }
+      }
+    }
+  }, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load locked tiles from DB whenever room changes + relocate if spawned on one
   useEffect(() => {
     supabase.from("chat_rooms").select("locked_tiles").eq("id", activeRoomId).single().then(({ data }) => {
       const newSet: Set<string> = new Set(data?.locked_tiles as string[] ?? []);
       setLockedTiles(newSet);
-      // Non-admins must not stand on locked tiles after reload/room switch
-      if (!isAdmin && newSet.size > 0) {
-        const posKey = `${myPosRef.current.gx},${myPosRef.current.gy}`;
-        if (newSet.has(posKey)) {
-          const cols = roomColsRef.current; const rows = roomRowsRef.current;
-          outer: for (let gx = 0; gx < cols; gx++) {
-            for (let gy = 0; gy < rows; gy++) {
-              if (!newSet.has(`${gx},${gy}`)) {
-                moveMyPos(gx, gy);
-                if (channelRef.current) broadcastMove(gx, gy);
-                break outer;
-              }
-            }
-          }
-        }
-      }
+      relocateOffLockedTiles(newSet);
     });
   }, [activeRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1917,7 +1920,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       })
       .on("broadcast", { event: "locked_tiles_update" }, ({ payload }) => {
         const p = payload as { locked_tiles: string[] };
-        setLockedTiles(new Set(p.locked_tiles ?? []));
+        const newSet = new Set(p.locked_tiles ?? []);
+        setLockedTiles(newSet);
+        relocateOffLockedTiles(newSet);
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${activeRoomId}` }, async (payload) => {
         const sid: string = payload.new.user_id; const txt: string = payload.new.content;
@@ -1930,7 +1935,14 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         const { data } = await supabase.from("messages").select("id, content, user_id, created_at, profiles(display_name, avatar_color)").eq("id", payload.new.id).single();
         if (data) setLogMessages(prev => [...prev.slice(-49), data as LogMessage]);
       })
-      .subscribe(() => { ch.track(myData); broadcastMove(myData.gx, myData.gy); });
+      .subscribe(() => {
+        // Use myPosRef.current (not the captured myData snapshot) so that if locked-tile
+        // relocation ran before the channel connected, we broadcast the corrected position
+        const livePos = myPosRef.current;
+        const liveData = { ...myData, gx: livePos.gx, gy: livePos.gy };
+        ch.track(liveData);
+        broadcastMoveRef.current(livePos.gx, livePos.gy);
+      });
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId, reconnectKey]);
