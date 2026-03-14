@@ -1750,12 +1750,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     return () => clearInterval(timer);
   }, [onClose]);
 
-  // Fetch chat messages
+  // Clear chat log on room change — no history loaded
   useEffect(() => {
     setLogMessages([]);
-    supabase.from("messages").select("id, content, user_id, created_at, profiles(display_name, avatar_color)")
-      .eq("room_id", activeRoomId).eq("is_deleted", false).order("created_at", { ascending: false }).limit(50)
-      .then(({ data }) => { if (data) setLogMessages(data as LogMessage[]); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId]);
 
@@ -2827,13 +2824,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   };
 
   const reloadChat = useCallback(async () => {
-    const [{ data: msgs }, { data: roomItems }, { data: myItems }, { data: roomBots }] = await Promise.all([
-      supabase.from("messages").select("id, content, user_id, created_at, profiles(display_name, avatar_color)").eq("room_id", activeRoomId).eq("is_deleted", false).order("created_at", { ascending: false }).limit(50),
+    const [{ data: roomItems }, { data: myItems }, { data: roomBots }] = await Promise.all([
       supabase.from("virtual_room_items").select("*").eq("room_id", activeRoomId),
       supabase.from("virtual_room_items").select("*").eq("owner_id", currentProfile.id),
       supabase.from("virtual_room_bots").select("*").eq("room_id", activeRoomId),
     ]);
-    if (msgs) setLogMessages((msgs as LogMessage[]).reverse());
     if (roomItems || myItems) {
       const merged = new Map<string, RoomItem>();
       (roomItems ?? []).forEach((i: RoomItem) => merged.set(i.id, i));
@@ -4485,7 +4480,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             while (lowerRem.includes(lowerName)) {
                               const idx = lowerRem.indexOf(lowerName);
                               if (idx > 0) parts.push(<span key={k++}>{rem.slice(0, idx)}</span>);
-                              parts.push(<span key={k++} style={{ color: "#4ade80", background: "rgba(74,222,128,0.18)", borderRadius: 2, padding: "0 1px" }}>{rem.slice(idx, idx + myName.length)}</span>);
+                              parts.push(<span key={k++} style={{ color: "#f59e0b", background: "rgba(245,158,11,0.18)", borderRadius: 2, padding: "0 1px" }}>{rem.slice(idx, idx + myName.length)}</span>);
                               rem = rem.slice(idx + myName.length); lowerRem = rem.toLowerCase();
                             }
                             if (rem) parts.push(<span key={k++}>{rem}</span>);
@@ -5254,21 +5249,18 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     </div>
                   </>
                 ) : (() => {
-                  /* ── Item detail view ── */
+                  /* ── Item list view (4 per page) ── */
+                  const PAGE_SIZE = 4;
                   const slot = CLOTHING_SLOTS.find(s => s.id === shopCategory);
                   const slotItems = clothingCatalog.filter(c => c.slot === shopCategory && c.in_shop !== false);
-                  const item = slotItems[shopItemIdx];
-                  if (!item) return null;
-                  const owned = myWardrobe.some(w => w.clothing_id === item.id);
-                  const canAfford = coins >= item.price;
-                  const meetsLevel = !item.level_required || level >= item.level_required;
-                  const canBuy = !owned && canAfford && meetsLevel;
-                  const previewOutfit = { ...myOutfit, [item.slot]: item.id };
+                  const totalPages = Math.ceil(slotItems.length / PAGE_SIZE);
+                  const page = shopItemIdx; // reuse shopItemIdx as page index
+                  const pageItems = slotItems.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
                   return (
                     <>
                       {/* Header */}
                       <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center gap-2 flex-shrink-0">
-                        <button onClick={() => setShopCategory(null)} className="p-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all">
+                        <button onClick={() => { setShopCategory(null); setShopItemIdx(0); }} className="p-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-all">
                           <ChevronLeft className="w-4 h-4" />
                         </button>
                         <span className="text-[13px] font-semibold text-slate-300">{slot?.emoji} {slot?.label}</span>
@@ -5277,62 +5269,66 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           <button onClick={() => setRightPanel("hidden")} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                         </div>
                       </div>
-                      {/* Item name headline */}
-                      <div className="px-4 pt-3 pb-1 flex-shrink-0">
-                        <h2 className="text-[17px] font-bold text-white uppercase tracking-wide leading-tight">{item.name}</h2>
-                        {owned && <span className="text-[11px] text-emerald-400 font-semibold">✓ Du ejer dette</span>}
-                      </div>
-                      {/* Main area */}
-                      <div className="flex flex-1 px-3 gap-3 min-h-0 pb-2">
-                        {/* Left: price + level */}
-                        <div className="flex flex-col justify-center gap-4 w-[72px] flex-shrink-0">
-                          <div>
-                            <p className="text-[9px] text-slate-600 uppercase tracking-widest mb-0.5">Pris</p>
-                            <p className={`text-[16px] font-black ${canAfford ? "text-amber-400" : "text-red-500"}`}>🪙{item.price}</p>
-                          </div>
-                          {item.level_required && item.level_required > 1 && (
-                            <div>
-                              <p className="text-[9px] text-slate-600 uppercase tracking-widest mb-0.5">Niveau</p>
-                              <p className={`text-[16px] font-black ${meetsLevel ? "text-emerald-400" : "text-red-500"}`}>LV {item.level_required}</p>
+                      {/* Item list */}
+                      <div className="flex-1 overflow-y-auto py-1 min-h-0">
+                        {pageItems.map(item => {
+                          const owned = myWardrobe.some(w => w.clothing_id === item.id);
+                          const canAfford = coins >= item.price;
+                          const meetsLevel = !item.level_required || level >= item.level_required;
+                          const canBuy = !owned && canAfford && meetsLevel;
+                          const previewOutfit = { ...myOutfit, [item.slot]: item.id };
+                          return (
+                            <div key={item.id} className="flex items-center gap-2.5 px-3 py-2.5 border-b border-white/[0.04] last:border-0">
+                              {/* Avatar preview */}
+                              <div className="flex-shrink-0 w-[52px] h-[52px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
+                                <svg viewBox="-31 -36 62 77" width="52" height="52">
+                                  <defs>
+                                    {myColor && AVATAR_TINT_COLORS.includes(myColor) && (
+                                      <filter id={`sp-tint-${item.id.slice(0,8)}`} colorInterpolationFilters="sRGB">
+                                        <feFlood floodColor={myColor} result="flood"/>
+                                        <feComposite in="flood" in2="SourceAlpha" operator="in" result="mask"/>
+                                        <feBlend in="SourceGraphic" in2="mask" mode="color" />
+                                      </filter>
+                                    )}
+                                  </defs>
+                                  <image href="/alien.png" x="-31" y="-36" width="62" height="77"
+                                    filter={myColor && AVATAR_TINT_COLORS.includes(myColor) ? `url(#sp-tint-${item.id.slice(0,8)})` : undefined} />
+                                  {Object.entries(previewOutfit).map(([, cid]) => {
+                                    const ci = clothingCatalog.find(c => c.id === cid);
+                                    if (!ci) return null;
+                                    return <ClothingLayerSVG key={cid} styleKey={ci.style_key} color={ci.color} />;
+                                  })}
+                                </svg>
+                              </div>
+                              {/* Info */}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[12px] font-semibold text-slate-200 truncate">{item.name}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className={`text-[11px] font-bold ${canAfford ? "text-amber-400" : "text-red-500"}`}>🪙{item.price}</span>
+                                  {item.level_required && item.level_required > 1 && (
+                                    <span className={`text-[10px] font-semibold ${meetsLevel ? "text-slate-500" : "text-red-500"}`}>LV {item.level_required}</span>
+                                  )}
+                                </div>
+                              </div>
+                              {/* Buy button */}
+                              <button onClick={() => { if (canBuy) buyItem(item); }} disabled={!canBuy}
+                                className={`flex-shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${owned ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 cursor-default" : canBuy ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30" : "bg-white/[0.04] text-slate-600 border border-white/[0.06] cursor-not-allowed"}`}>
+                                {owned ? "✓ Ejet" : !meetsLevel ? `LV ${item.level_required}` : !canAfford ? "Ikke råd" : `Køb`}
+                              </button>
                             </div>
-                          )}
-                        </div>
-                        {/* Right: avatar preview */}
-                        <div className="flex-1 flex items-center justify-center">
-                          <svg viewBox="-40 -55 80 100" style={{ width: "100%", maxHeight: 220 }}>
-                            <defs>
-                              {myColor && AVATAR_TINT_COLORS.includes(myColor) && (
-                                <filter id={`shop-tint-${myColor.slice(1)}`} colorInterpolationFilters="sRGB">
-                                  <feFlood floodColor={myColor} result="flood"/>
-                                  <feComposite in="flood" in2="SourceAlpha" operator="in" result="mask"/>
-                                  <feBlend in="SourceGraphic" in2="mask" mode="color" />
-                                </filter>
-                              )}
-                            </defs>
-                            <image href="/alien.png" x="-31" y="-36" width="62" height="77"
-                              filter={myColor && AVATAR_TINT_COLORS.includes(myColor) ? `url(#shop-tint-${myColor.slice(1)})` : undefined} />
-                            {Object.entries(previewOutfit).map(([, cid]) => {
-                              const ci = clothingCatalog.find(c => c.id === cid);
-                              if (!ci) return null;
-                              return <ClothingLayerSVG key={cid} styleKey={ci.style_key} color={ci.color} />;
-                            })}
-                          </svg>
-                        </div>
+                          );
+                        })}
                       </div>
-                      {/* Bottom: nav + buy */}
-                      <div className="px-4 py-3 border-t border-white/[0.06] flex items-center justify-between flex-shrink-0">
-                        <div className="flex items-center gap-1.5">
-                          <button onClick={() => setShopItemIdx(i => Math.max(0, i - 1))} disabled={shopItemIdx === 0}
+                      {/* Pagination */}
+                      {totalPages > 1 && (
+                        <div className="px-4 py-2.5 border-t border-white/[0.06] flex items-center justify-between flex-shrink-0">
+                          <button onClick={() => setShopItemIdx(i => Math.max(0, i - 1))} disabled={page === 0}
                             className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-25 flex items-center justify-center text-slate-300 text-base font-bold transition-all">‹</button>
-                          <span className="text-[12px] text-slate-600 tabular-nums w-10 text-center">{shopItemIdx + 1} / {slotItems.length}</span>
-                          <button onClick={() => setShopItemIdx(i => Math.min(slotItems.length - 1, i + 1))} disabled={shopItemIdx === slotItems.length - 1}
+                          <span className="text-[11px] text-slate-600 tabular-nums">{page + 1} / {totalPages}</span>
+                          <button onClick={() => setShopItemIdx(i => Math.min(totalPages - 1, i + 1))} disabled={page === totalPages - 1}
                             className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-25 flex items-center justify-center text-slate-300 text-base font-bold transition-all">›</button>
                         </div>
-                        <button onClick={() => { if (canBuy) buyItem(item); }} disabled={!canBuy}
-                          className={`px-3 py-2 rounded-xl text-[12px] font-bold transition-all ${owned ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 cursor-default" : canBuy ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30" : "bg-white/[0.04] text-slate-600 border border-white/[0.06] cursor-not-allowed"}`}>
-                          {owned ? "✓ Ejet" : !meetsLevel ? `LV ${item.level_required} krævet` : !canAfford ? "Ikke råd" : `Køb · 🪙${item.price}`}
-                        </button>
-                      </div>
+                      )}
                     </>
                   );
                 })()}
@@ -6062,11 +6058,15 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             const slot = CLOTHING_SLOTS.find(s => s.id === c.slot);
                             return (
                               <button key={c.id} onClick={async () => {
-                                // Insert wardrobe entry for recipient
-                                const { error: wErr } = await supabase.from("virtual_user_wardrobe").upsert(
-                                  { user_id: giveClothingTarget.userId, clothing_id: c.id, equipped: false },
-                                  { onConflict: "user_id,clothing_id" }
-                                );
+                                // Check if user already owns this item
+                                const { data: existing } = await supabase.from("virtual_user_wardrobe")
+                                  .select("id").eq("user_id", giveClothingTarget.userId).eq("clothing_id", c.id).maybeSingle();
+                                if (existing) { alert(`${giveClothingTarget.userName} har allerede dette tøj`); return; }
+                                // Insert wardrobe entry for recipient via SECURITY DEFINER function (bypasses RLS)
+                                const { error: wErr } = await supabase.rpc("admin_give_clothing", {
+                                  p_user_id: giveClothingTarget.userId,
+                                  p_clothing_id: c.id
+                                });
                                 if (wErr) { alert("Fejl ved tildeling af tøj: " + wErr.message); return; }
                                 // Insert persistent notification (works across rooms + for offline users)
                                 const { error: nErr } = await supabase.from("notifications").insert({
