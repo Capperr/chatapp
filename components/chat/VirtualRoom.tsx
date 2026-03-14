@@ -946,6 +946,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const lockedTilesRef = useRef<Set<string>>(new Set());
   const [allAchievements, setAllAchievements] = useState<Achievement[]>([]);
   const [myAchievements, setMyAchievements] = useState<Set<string>>(new Set());
+  const [achievementSearch, setAchievementSearch] = useState("");
+  const [achievementFilter, setAchievementFilter] = useState<"all" | "earned" | "unearned">("all");
+  const [achievementPage, setAchievementPage] = useState(0);
   const messageCountRef = useRef(0);
   const [messageCountState, setMessageCountState] = useState(0);
   const [loginStreak, setLoginStreak] = useState(0);
@@ -2375,6 +2378,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               setRouletteLastWin(totalWin);
               await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
               setTimeout(() => setRouletteLastWin(null), 3500);
+              checkAchievement("roulette_first_win");
+              if (newCoins >= 10000) checkAchievement("coin_millionaire");
               // Broadcast win effect so others can see it
               channelRef.current?.send({ type: "broadcast", event: "roulette_win", payload: { user_id: currentProfile.id, amount: totalWin } });
               setRouletteWinEffects(prev => { const m = new Map(prev); m.set(currentProfile.id, totalWin); return m; });
@@ -2552,6 +2557,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
     // All 3 spinning
     setSlotStates(prev => { const m = new Map(prev); m.set(itemId, { ...cur, spinning: true, reels: ["🍒","🍒","🍒"], revealedCount: 0, winning: false, lastSpin: now }); return m; });
+    checkAchievement("slot_first_spin");
 
     // Reveal reel 1 at 900ms
     setTimeout(() => {
@@ -2573,6 +2579,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         setTimeout(() => setSlotWinEffects(prev => { const m = new Map(prev); m.delete(currentProfile.id); return m; }), 4000);
         channelRef.current?.send({ type: "broadcast", event: "slot_win", payload: { user_id: currentProfile.id, amount: payout, item_id: itemId } });
         showToast("🎰", `JACKPOT! ${r1}${r2}${r3}`, `+${payout} 🪙`, "#f59e0b");
+        checkAchievement("slot_first_win");
+        if (coinsRef.current >= 10000) checkAchievement("coin_millionaire");
       }
 
       // Single DB write with final coin total
@@ -2703,7 +2711,20 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     // Broadcast win + show effect locally
     channelRef.current?.send({ type: "broadcast", event: "dart_win_effect", payload: { game_id: game.id, winner_id: winnerId, wager } });
     showDartWinEffect(winnerId, wager);
-  }, [currentProfile.id, showDartWinEffect]);
+    // Achievement tracking for current player
+    if (game.player1_id === currentProfile.id || game.player2_id === currentProfile.id) {
+      checkAchievement("dart_first_game");
+      const newGames = (currentProfile.dart_games ?? 0) + 1;
+      supabase.from("profiles").update({ dart_games: newGames }).eq("id", currentProfile.id).then(() => {});
+      if (newGames >= 10) checkAchievement("dart_games_10");
+      if (winnerId === currentProfile.id) {
+        checkAchievement("dart_first_win");
+        const newWins = (currentProfile.dart_wins ?? 0) + 1;
+        supabase.from("profiles").update({ dart_wins: newWins }).eq("id", currentProfile.id).then(() => {});
+        if (newWins >= 10) checkAchievement("dart_wins_10");
+      }
+    }
+  }, [currentProfile.id, currentProfile.dart_games, currentProfile.dart_wins, showDartWinEffect]);
 
   const openProfile = async (userId: string) => {
     setCtxMenu(null);
@@ -2868,6 +2889,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     setMyPos(myPosRef.current);
     // Move all carried items (in inventory) to the new room so they follow the user
     supabase.from("virtual_room_items").update({ room_id: id }).eq("owner_id", currentProfile.id);
+    // Track rooms visited for room_explorer achievement
+    const newRoomsVisited = (currentProfile.rooms_visited_count ?? 0) + 1;
+    supabase.from("profiles").update({ rooms_visited_count: newRoomsVisited }).eq("id", currentProfile.id).then(() => {});
+    if (newRoomsVisited >= 5) checkAchievement("room_explorer");
   };
 
   // ─── Shop / buy ────────────────────────────────────────────────────────────
@@ -3077,6 +3102,15 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     });
     for (const w of toUnequip) await supabase.from("virtual_user_wardrobe").update({ equipped: false }).eq("id", w.id);
     await supabase.from("virtual_user_wardrobe").update({ equipped: true }).eq("user_id", currentProfile.id).eq("clothing_id", clothingId);
+    // Check wardrobe_full: count currently equipped slots after this equip
+    const equippedSlots = new Set(
+      myWardrobe
+        .filter(w => w.equipped && w.clothing_id !== clothingId)
+        .map(w => clothingCatalog.find(c => c.id === w.clothing_id)?.slot)
+        .filter(Boolean)
+    );
+    equippedSlots.add(item.slot);
+    if (equippedSlots.size >= CLOTHING_SLOTS.length) checkAchievement("wardrobe_full");
   };
 
   const unequip = async (clothingId: string) => {
@@ -5321,6 +5355,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                               coinsRef.current = newCoins;
                               setCoins(newCoins);
                               await supabase.from("profiles").update({ coins: newCoins }).eq("id", currentProfile.id);
+                              checkAchievement("roulette_first_spin");
                               if (isNumBet) {
                                 rouletteLastBetRef.current = { type: "number", value: "", nums: numsToPlace, amount: rouletteBetAmount };
                                 const inserts = numsToPlace.map(n => ({
@@ -7046,6 +7081,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 if (partnerPendingFromThem) {
                   await supabase.from("profile_partners").update({ status: "accepted" }).eq("id", partnerPendingFromThem.id);
                   try { await supabase.from("notifications").insert({ user_id: profileView.id, type: "partner_accepted", emoji: "💕", title: "Rumkæreste-anmodning accepteret!", subtitle: `${currentProfile.display_name} er nu din rumkæreste!`, color: "#ec4899", read: false }); } catch { /* ignore */ }
+                  checkAchievement("partner_first");
                   loadPartner();
                 }
               };
@@ -7710,6 +7746,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 first_message:   { cur: Math.min(messageCountState, 1),    max: 1    },
                 messages_50:     { cur: Math.min(messageCountState, 50),   max: 50   },
                 messages_200:    { cur: Math.min(messageCountState, 200),  max: 200  },
+                messages_500:    { cur: Math.min(messageCountState, 500),  max: 500  },
                 messages_1000:   { cur: Math.min(messageCountState, 1000), max: 1000 },
                 level_5:         { cur: Math.min(level, 5),    max: 5  },
                 level_10:        { cur: Math.min(level, 10),   max: 10 },
@@ -7719,17 +7756,61 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 own_clothing_1:  { cur: Math.min(myWardrobe.length, 1), max: 1 },
                 solarie_1:       { cur: Math.min(tanLevel, 1), max: 1 },
                 online_10h:      { cur: Math.min(onlineHours, 10),  max: 10  },
+                night_owl:       { cur: Math.min(onlineHours, 50),  max: 50  },
                 online_100h:     { cur: Math.min(onlineHours, 100), max: 100 },
                 collect_5_items: { cur: Math.min(myInventory.length, 5), max: 5 },
+                coin_millionaire:{ cur: Math.min(coins, 10000), max: 10000 },
+                dart_wins_10:    { cur: Math.min(currentProfile.dart_wins ?? 0, 10), max: 10 },
+                dart_games_10:   { cur: Math.min(currentProfile.dart_games ?? 0, 10), max: 10 },
+                guestbook_20:    { cur: Math.min(currentProfile.guestbook_received_count ?? 0, 20), max: 20 },
+                wardrobe_full:   { cur: Math.min(Object.keys(myOutfit).length, CLOTHING_SLOTS.length), max: CLOTHING_SLOTS.length },
+                room_explorer:   { cur: Math.min(currentProfile.rooms_visited_count ?? 0, 5), max: 5 },
               };
+
+              const PER_PAGE = 10;
+              const q = achievementSearch.toLowerCase();
+              const filtered = allAchievements.filter(a => {
+                const matchSearch = !q || a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q);
+                const matchFilter = achievementFilter === "all" ? true : achievementFilter === "earned" ? myAchievements.has(a.id) : !myAchievements.has(a.id);
+                return matchSearch && matchFilter;
+              });
+              const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+              const safePage = Math.min(achievementPage, totalPages - 1);
+              const pageItems = filtered.slice(safePage * PER_PAGE, (safePage + 1) * PER_PAGE);
+
               return (
               <>
                 <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
                   <div className="flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /><span className="text-[14px] font-bold text-slate-200 tracking-wide">Bedrifter</span><span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">{myAchievements.size}/{allAchievements.length}</span></div>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                  {allAchievements.map(a => {
+
+                {/* Search + filter */}
+                <div className="flex-shrink-0 px-3 pt-3 pb-2 space-y-2">
+                  <input
+                    value={achievementSearch}
+                    onChange={e => { setAchievementSearch(e.target.value); setAchievementPage(0); }}
+                    placeholder="Søg i bedrifter..."
+                    className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-[12px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500/40"
+                  />
+                  <div className="flex gap-1">
+                    {(["all","earned","unearned"] as const).map(f => (
+                      <button key={f} onClick={() => { setAchievementFilter(f); setAchievementPage(0); }}
+                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${achievementFilter === f ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-white/[0.04] text-slate-500 border border-white/[0.06] hover:text-slate-300"}`}>
+                        {f === "all" ? "Alle" : f === "earned" ? `Opnået (${myAchievements.size})` : `Mangler (${allAchievements.length - myAchievements.size})`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2">
+                  {pageItems.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-12 gap-2">
+                      <Trophy className="w-8 h-8 text-slate-700" />
+                      <p className="text-[12px] text-slate-600">Ingen bedrifter fundet</p>
+                    </div>
+                  )}
+                  {pageItems.map(a => {
                     const earned = myAchievements.has(a.id);
                     const prog = progressMap[a.id] ?? null;
                     const pct = prog ? Math.round((prog.cur / prog.max) * 100) : 0;
@@ -7740,20 +7821,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <p className={`text-[13px] font-bold truncate`} style={{ color: earned ? a.badge_color : "#64748b" }}>{a.name}</p>
+                            <p className="text-[13px] font-bold truncate" style={{ color: earned ? a.badge_color : "#64748b" }}>{a.name}</p>
                             {earned
                               ? <span className="text-[10px] text-emerald-400 font-bold flex-shrink-0">✓ Opnået</span>
                               : prog && <span className="text-[10px] text-slate-500 font-bold flex-shrink-0 tabular-nums">{prog.cur}/{prog.max}</span>
                             }
                           </div>
                           <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">{a.description}</p>
-                          {/* Progress bar */}
                           {prog && (
                             <div className="mt-1.5 w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className="h-full rounded-full transition-all duration-500"
-                                style={{ width: `${pct}%`, background: earned ? a.badge_color : `${a.badge_color}88` }}
-                              />
+                              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: earned ? a.badge_color : `${a.badge_color}88` }} />
                             </div>
                           )}
                           <div className="flex items-center gap-2 mt-1.5">
@@ -7765,6 +7842,15 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     );
                   })}
                 </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex-shrink-0 px-3 py-2 border-t border-white/[0.05] flex items-center justify-between">
+                    <button disabled={safePage === 0} onClick={() => setAchievementPage(p => Math.max(0, p - 1))} className="px-3 py-1.5 rounded-lg text-[12px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed border border-white/[0.06] transition-colors">← Forrige</button>
+                    <span className="text-[11px] text-slate-500">{safePage + 1} / {totalPages}</span>
+                    <button disabled={safePage >= totalPages - 1} onClick={() => setAchievementPage(p => Math.min(totalPages - 1, p + 1))} className="px-3 py-1.5 rounded-lg text-[12px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed border border-white/[0.06] transition-colors">Næste →</button>
+                  </div>
+                )}
               </>
               );
             })()}

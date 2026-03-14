@@ -20,6 +20,12 @@ export interface Profile {
   name_color?: string | null;
   aura_color?: string | null;
   bubble_color?: string | null;
+  dart_wins?: number;
+  dart_games?: number;
+  guestbook_received_count?: number;
+  rooms_visited_count?: number;
+  total_partners_count?: number;
+  guestbooks_written_count?: number;
 }
 
 export interface Achievement {
