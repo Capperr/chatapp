@@ -806,7 +806,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const messageCountRef = useRef(0);
   const [messageCountState, setMessageCountState] = useState(0);
   const [loginStreak, setLoginStreak] = useState(0);
-  const [achievementNotif, setAchievementNotif] = useState<Achievement | null>(null);
+  const [toasts, setToasts] = useState<{ id: number; emoji: string; title: string; subtitle?: string; color: string }[]>([]);
   const audioCtxRef = useRef<AudioContext | null>(null);
   // ─── DM state ───────────────────────────────────────────────────────────
   const [dmConversations, setDmConversations] = useState<DmConversation[]>([]);
@@ -1890,6 +1890,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         setDartGames(prev => prev.filter(g => g.id !== p.game_id));
         setDartPausedGames(prev => { const m = new Map(prev); m.delete(p.game_id); return m; });
       })
+      .on("broadcast", { event: "clothing_received" }, ({ payload }) => {
+        const p = payload as { recipient_id: string; clothing_id: string; clothing_name: string; from_name: string };
+        if (p?.recipient_id !== currentProfile.id) return;
+        // Add to wardrobe
+        setMyWardrobe(prev => prev.some(w => w.clothing_id === p.clothing_id) ? prev : [...prev, { id: "recv-" + Date.now(), clothing_id: p.clothing_id, equipped: false }]);
+        showToastRef.current("👕", `Du modtog: ${p.clothing_name}`, `Givet af ${p.from_name}`, "#6366f1");
+      })
       .on("broadcast", { event: "dart_flight_anim" }, ({ payload }) => {
         const p = payload as { animId: number; fromX: number; fromY: number; toX: number; toY: number; angleDeg: number };
         if (!p?.animId) return;
@@ -2664,9 +2671,20 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       levelRef.current = newLevel; setLevel(newLevel);
       await supabase.from("profiles").update({ coins: newCoins, xp: newXp, level: newLevel }).eq("id", currentProfile.id);
     }
-    setAchievementNotif(achievement);
-    setTimeout(() => setAchievementNotif(null), 4000);
+    // Route achievement through unified toast system
+    const rewardParts = [];
+    if (achievement.reward_coins > 0) rewardParts.push(`🪙 +${achievement.reward_coins}`);
+    if (achievement.reward_xp > 0) rewardParts.push(`⚡ +${achievement.reward_xp} XP`);
+    showToast(achievement.badge_emoji, achievement.name, [achievement.description, ...rewardParts].filter(Boolean).join(" · "), achievement.badge_color);
   };
+
+  const showToastRef = useRef<(emoji: string, title: string, subtitle?: string, color?: string) => void>(() => {});
+  const showToast = useCallback((emoji: string, title: string, subtitle?: string, color = "#6366f1") => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev.slice(-4), { id, emoji, title, subtitle, color }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500);
+  }, []);
+  showToastRef.current = showToast;
 
   const toggleTileLock = async (gx: number, gy: number) => {
     setCtxMenu(null);
@@ -4422,25 +4440,19 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               </div>
             )}
 
-            {/* Achievement earned toast */}
-            {achievementNotif && (
-              <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
-                <div className="flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-[0_8px_32px_rgba(0,0,0,0.8)] animate-level-up"
-                  style={{ background: achievementNotif.badge_color + "22", borderColor: achievementNotif.badge_color + "50", backdropFilter: "blur(16px)" }}>
-                  <span className="text-3xl leading-none">{achievementNotif.badge_emoji}</span>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: achievementNotif.badge_color }}>Bedrift opnået!</p>
-                    <p className="text-[14px] font-black text-white">{achievementNotif.name}</p>
-                    <p className="text-[11px] text-slate-400">{achievementNotif.description}</p>
-                    {(achievementNotif.reward_coins > 0 || achievementNotif.reward_xp > 0) && (
-                      <p className="text-[11px] font-semibold mt-0.5" style={{ color: achievementNotif.badge_color }}>
-                        +{achievementNotif.reward_coins > 0 ? `🪙 ${achievementNotif.reward_coins}` : ""}{achievementNotif.reward_coins > 0 && achievementNotif.reward_xp > 0 ? "  " : ""}{achievementNotif.reward_xp > 0 ? `⚡ ${achievementNotif.reward_xp} XP` : ""}
-                      </p>
-                    )}
+            {/* ── Unified toast stack — top-right of chat window ── */}
+            <div className="absolute top-3 right-3 z-50 pointer-events-none flex flex-col gap-2 items-end" style={{ maxWidth: 280 }}>
+              {toasts.map(t => (
+                <div key={t.id} className="flex items-start gap-3 px-3.5 py-3 rounded-2xl border shadow-[0_8px_32px_rgba(0,0,0,0.7)] animate-level-up w-full"
+                  style={{ background: t.color + "1a", borderColor: t.color + "40", backdropFilter: "blur(16px)" }}>
+                  <span className="text-2xl leading-none flex-shrink-0 mt-0.5">{t.emoji}</span>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-bold text-white leading-tight truncate">{t.title}</p>
+                    {t.subtitle && <p className="text-[11px] mt-0.5 leading-snug" style={{ color: t.color + "cc" }}>{t.subtitle}</p>}
                   </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
 
             {/* Solarie tan status HUD */}
             {activeRoomType === "solarie" && (() => {
@@ -5883,6 +5895,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             return (
                               <button key={c.id} onClick={async () => {
                                 await supabase.from("virtual_user_wardrobe").upsert({ user_id: giveClothingTarget.userId, clothing_id: c.id, equipped: false });
+                                // Notify the recipient via broadcast
+                                channelRef.current?.send({ type: "broadcast", event: "clothing_received", payload: { recipient_id: giveClothingTarget.userId, clothing_id: c.id, clothing_name: c.name, from_name: currentProfile.display_name } });
                                 setGiveClothingTarget(null);
                               }} className="w-full text-left px-3 py-2 hover:bg-white/[0.05] flex items-center gap-2 transition-colors">
                                 <div className="w-7 h-7 rounded bg-black/30 flex items-center justify-center flex-shrink-0">
