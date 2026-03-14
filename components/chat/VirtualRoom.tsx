@@ -1424,6 +1424,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         const p = payload as TradeRequest & { to_id: string };
         if (p.to_id !== currentProfile.id) return;
         setTradeRequest({ from_id: p.from_id, from_name: p.from_name, from_color: p.from_color, trade_id: p.trade_id });
+        supabase.from("notifications").insert({ user_id: currentProfile.id, type: "trade_request", emoji: "🤝", title: `${p.from_name} vil handle med dig`, subtitle: "Klik for at se byttehandlen", color: "#10b981" }).then(() => {});
       })
       .on("broadcast", { event: "trade_response" }, ({ payload }) => {
         const p = payload as { to_id: string; trade_id: string; accepted: boolean };
@@ -1754,11 +1755,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     setLogMessages([]);
     supabase.from("messages").select("id, content, user_id, created_at, profiles(display_name, avatar_color)")
       .eq("room_id", activeRoomId).eq("is_deleted", false).order("created_at", { ascending: false }).limit(50)
-      .then(({ data }) => { if (data) setLogMessages((data as LogMessage[]).reverse()); });
+      .then(({ data }) => { if (data) setLogMessages(data as LogMessage[]); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId]);
-
-  useEffect(() => { if (chatLogRef.current) chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight; }, [logMessages]);
 
   const broadcastMove = useCallback((gx: number, gy: number) => {
     // Don't broadcast position when invisible — skip both move event and presence track
@@ -1938,6 +1937,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         const p = payload as VisitRequest & { to_id: string };
         if (p.to_id !== currentProfile.id) return;
         setVisitRequest({ from_id: p.from_id, from_name: p.from_name, spaceship_room_id: p.spaceship_room_id, spaceship_room_name: p.spaceship_room_name });
+        supabase.from("notifications").insert({ user_id: currentProfile.id, type: "spaceship_request", emoji: "🚀", title: `${p.from_name} vil besøge dit rumskib`, subtitle: p.spaceship_room_name ?? undefined, color: "#06b6d4" }).then(() => {});
       })
       .on("broadcast", { event: "spaceship_invite" }, ({ payload }) => {
         const p = payload as { to_id: string; accepted: boolean; spaceship_room_id?: string; spaceship_room_name?: string; cols?: number; rows?: number; theme_key?: string; floor_pattern?: string };
@@ -1971,7 +1971,23 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         setBubbles(prev => { const m = new Map(prev); const existing = m.get(sid) ?? []; m.set(sid, [...existing.slice(-3), newBubble]); return m; });
         setTimeout(() => { setBubbles(prev => { const m = new Map(prev); const arr = m.get(sid); if (!arr) return prev; const f = arr.filter(b => b.id !== newBubble.id); if (f.length === 0) m.delete(sid); else m.set(sid, f); return m; }); }, 7000);
         const { data } = await supabase.from("messages").select("id, content, user_id, created_at, profiles(display_name, avatar_color)").eq("id", payload.new.id).single();
-        if (data) setLogMessages(prev => [...prev.slice(-49), data as LogMessage]);
+        if (data) {
+          setLogMessages(prev => [data as LogMessage, ...prev.slice(0, 49)]);
+          // Notify if our name is mentioned (by someone else)
+          const msgData = data as LogMessage;
+          const myName = currentProfile.display_name;
+          if (msgData.user_id !== currentProfile.id && msgData.content.toLowerCase().includes(myName.toLowerCase())) {
+            const senderName = (Array.isArray(msgData.profiles) ? msgData.profiles[0] : msgData.profiles)?.display_name ?? "Nogen";
+            supabase.from("notifications").insert({
+              user_id: currentProfile.id,
+              type: "mention",
+              emoji: "💬",
+              title: `${senderName} nævnte dig`,
+              subtitle: msgData.content.slice(0, 80),
+              color: "#f59e0b"
+            }).then(() => {});
+          }
+        }
       })
       .subscribe(() => {
         // Use myPosRef.current (not the captured myData snapshot) so that if locked-tile
@@ -6470,19 +6486,57 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             {/* Chat log */}
             {rightPanel === "chatlog" && (
               <>
-                <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60">
-                  <span className="text-[13px] font-bold text-slate-300 tracking-wide">Chatlog</span>
+                <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-violet-400" />
+                    <span className="text-[13px] font-bold text-slate-300">Chatlog</span>
+                    <span className="text-[10px] text-slate-600">{logMessages.length} beskeder</span>
+                  </div>
                   <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
-                <div ref={chatLogRef} className="flex-1 overflow-y-auto px-2.5 py-2 space-y-1.5">
-                  {logMessages.length === 0 && <p className="text-[13px] text-slate-600 text-center mt-4">Ingen beskeder endnu</p>}
+                <div ref={chatLogRef} className="flex-1 overflow-y-auto">
+                  {logMessages.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-full gap-2">
+                      <MessageSquare className="w-8 h-8 text-slate-700" />
+                      <p className="text-[12px] text-slate-600">Ingen beskeder endnu</p>
+                    </div>
+                  )}
                   {logMessages.map(msg => {
-                    const p = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
+                    const prof = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
                     const isMe = msg.user_id === currentProfile.id;
+                    const name = isMe ? currentProfile.display_name : (prof?.display_name ?? "?");
+                    const color = isMe ? myColor : (prof?.avatar_color ?? "#8b5cf6");
+                    const time = new Date(msg.created_at).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
+                    const myName = currentProfile.display_name;
+                    const isMention = !isMe && msg.content.toLowerCase().includes(myName.toLowerCase());
+                    // Highlight name mention in message text
+                    const renderContent = () => {
+                      if (!isMention) return <span className="text-slate-300">{msg.content}</span>;
+                      const idx = msg.content.toLowerCase().indexOf(myName.toLowerCase());
+                      return (
+                        <>
+                          <span className="text-slate-300">{msg.content.slice(0, idx)}</span>
+                          <span className="font-bold text-amber-300 bg-amber-500/15 rounded px-0.5">{msg.content.slice(idx, idx + myName.length)}</span>
+                          <span className="text-slate-300">{msg.content.slice(idx + myName.length)}</span>
+                        </>
+                      );
+                    };
                     return (
-                      <div key={msg.id} className="text-[13px] leading-snug">
-                        <span className="font-semibold" style={{ color: p?.avatar_color ?? "#8b5cf6" }}>{isMe ? "Du" : (p?.display_name ?? "?")}: </span>
-                        <span className="text-slate-300 break-words">{msg.content}</span>
+                      <div key={msg.id} className={`flex gap-2.5 px-3 py-2.5 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors ${isMention ? "bg-amber-500/[0.05] border-l-2 border-l-amber-500/40" : ""}`}>
+                        {/* Avatar */}
+                        <div className="flex-shrink-0 w-7 h-7 rounded-full overflow-hidden flex items-center justify-center" style={{ background: color + "22", border: `1px solid ${color}44` }}>
+                          <svg width="28" height="28" viewBox="-18 -22 36 40">
+                            <g transform="scale(0.56)"><PersonAvatar color={color} /></g>
+                          </svg>
+                        </div>
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline justify-between gap-1 mb-0.5">
+                            <span className="text-[12px] font-bold truncate" style={{ color }}>{name}</span>
+                            <span className="text-[10px] text-slate-700 flex-shrink-0 tabular-nums">{time}</span>
+                          </div>
+                          <p className="text-[12px] leading-snug break-words">{renderContent()}</p>
+                        </div>
                       </div>
                     );
                   })}
