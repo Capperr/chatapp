@@ -4393,11 +4393,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         <ellipse cx={ax} cy={y+16} rx={16} ry={4} fill="rgba(0,0,0,0.3)" />
                         <g transform={`translate(${ax}, ${ay}) scale(${AVG_SCALE})`}>
                           <PersonAvatar color={botAvatarColor} glow={false} mood="happy" />
-                          {Object.values(botOutfit).map(cid => {
-                            const ci = clothingCatalog.find(c => c.id === cid);
-                            if (!ci) return null;
-                            return <ClothingLayerSVG key={cid} styleKey={ci.style_key} color={ci.color} />;
-                          })}
+                          <ClothingOverlay outfit={botOutfit} catalog={clothingCatalog} />
                         </g>
                         <text x={ax} y={y + 9} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" stroke="rgba(0,0,0,0.9)" strokeWidth={3} fill="rgba(0,0,0,0.9)">{cellBot.name}</text>
                         <text x={ax} y={y + 9} textAnchor="middle" fontSize={9} fontFamily="system-ui,sans-serif" fontWeight="700" fill="#94a3b8">{cellBot.name}</text>
