@@ -67,19 +67,23 @@ function hoursToNextLevel(totalSeconds: number): number {
   return lv < LEVEL_HOURS.length ? LEVEL_HOURS[lv] - h : 0;
 }
 
-// ─── XP-based level system ─────────────────────────────────────────────────────
-// 100 XP per level — matches Math.floor(xp/100)+1 used in DB
-const XP_PER_LEVEL = 100;
+// ─── XP-based level system (progressive) ──────────────────────────────────────
+// Cost to reach level n = (2n-3)*100 for n≥2: LV2=100, LV3=300, LV4=500 ...
+// Cumulative threshold for level n = (n-1)² × 100
+// [0, 100, 400, 900, 1600, 2500, 3600, 4900, 6400, 8100, 10000, 12100, 14400, 16900, 19600]
 const XP_MAX_LEVEL = 15;
-const XP_LEVELS = Array.from({ length: XP_MAX_LEVEL }, (_, i) => i * XP_PER_LEVEL); // [0, 100, 200, ..., 1400]
+const XP_LEVELS = Array.from({ length: XP_MAX_LEVEL }, (_, i) => i * i * 100);
 function levelFromXp(xp: number): number {
-  return Math.min(XP_MAX_LEVEL, Math.floor(xp / XP_PER_LEVEL) + 1);
+  return Math.min(XP_MAX_LEVEL, Math.floor(Math.sqrt(xp / 100)) + 1);
 }
 function xpInCurrentLevel(xp: number): number {
-  return xp % XP_PER_LEVEL;
+  const lv = levelFromXp(xp);
+  return xp - (lv - 1) * (lv - 1) * 100;
 }
-function xpForNextLevel(_xp: number): number {
-  return XP_PER_LEVEL;
+function xpForNextLevel(xp: number): number {
+  const lv = levelFromXp(xp);
+  if (lv >= XP_MAX_LEVEL) return 0;
+  return (2 * lv - 1) * 100; // cost from lv → lv+1
 }
 
 // ─── Roulette constants ─────────────────────────────────────────────────────────
@@ -2435,7 +2439,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     await supabase.from("messages").insert({ content: t, user_id: currentProfile.id, room_id: activeRoomId });
     // Award +10 XP per message
     const newXp = xpRef.current + 10;
-    const newLevel = Math.max(levelFromXp(newXp), levelFromSeconds(totalSecondsRef.current));
+    const newLevel = Math.max(levelRef.current, levelFromXp(newXp));
     if (newLevel > levelRef.current) {
       setShowLevelUp(newLevel);
       setTimeout(() => setShowLevelUp(null), 4000);
