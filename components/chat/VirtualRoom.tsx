@@ -399,6 +399,53 @@ function PosterSVG() {
   );
 }
 
+// ─── Slot Machine SVG ─────────────────────────────────────────────────────────
+function SlotMachineSVG({ spinning, reels, winning }: { spinning?: boolean; reels?: string[]; winning?: boolean }) {
+  const R = reels ?? ["🍒", "🍒", "🍒"];
+  return (
+    <g>
+      {/* Cabinet body */}
+      <rect x="-22" y="-38" width="44" height="52" rx="5" fill="#1a0a2e" stroke="#4c1d95" strokeWidth="1.5"/>
+      {/* Top dome */}
+      <ellipse cx="0" cy="-38" rx="18" ry="8" fill="#2d1060" stroke="#6d28d9" strokeWidth="1.2"/>
+      {/* Lamp on top — blinks when winning */}
+      <circle cx="0" cy="-46" r="5" fill={winning ? "#fbbf24" : "#3b1d6e"} stroke="#6d28d9" strokeWidth="1">
+        {winning && <animate attributeName="fill" values="#fbbf24;#f59e0b;#fbbf24" dur="0.3s" repeatCount="indefinite"/>}
+      </circle>
+      {/* Screen / reel window */}
+      <rect x="-18" y="-28" width="36" height="22" rx="3" fill="#0a0514" stroke="#5b21b6" strokeWidth="1.2"/>
+      {/* 3 reel slots */}
+      {R.map((sym, i) => (
+        <g key={i}>
+          <rect x={-15 + i * 12} y="-26" width="10" height="18" rx="2" fill="#150929" stroke="#4c1d95" strokeWidth="0.8"/>
+          {spinning ? (
+            <text x={-10 + i * 12} y="-14" textAnchor="middle" fontSize="10" style={{ animation: `slotSpin 0.15s linear infinite` }}>🎰</text>
+          ) : (
+            <text x={-10 + i * 12} y="-14" textAnchor="middle" fontSize="9">{sym}</text>
+          )}
+        </g>
+      ))}
+      {/* Brand label */}
+      <text x="0" y="-1" textAnchor="middle" fontSize="5.5" fontWeight="bold" fill="#a78bfa" fontFamily="system-ui">LUCKY</text>
+      {/* Coin slot */}
+      <rect x="-6" y="3" width="12" height="3" rx="1.5" fill="#0a0514" stroke="#4c1d95" strokeWidth="0.8"/>
+      {/* Payout tray */}
+      <rect x="-14" y="8" width="28" height="4" rx="2" fill="#0a0514" stroke="#4c1d95" strokeWidth="0.8"/>
+      {/* Side lever */}
+      <rect x="22" y="-20" width="5" height="22" rx="2" fill="#1a0a2e" stroke="#5b21b6" strokeWidth="1"/>
+      <circle cx="24.5" cy="-22" r="4" fill={spinning ? "#f59e0b" : "#6d28d9"} stroke="#a78bfa" strokeWidth="1">
+        {spinning && <animate attributeName="fill" values="#f59e0b;#fbbf24;#f59e0b" dur="0.2s" repeatCount="indefinite"/>}
+      </circle>
+      {/* Bottom base */}
+      <rect x="-22" y="13" width="44" height="5" rx="2" fill="#2d1060"/>
+      {/* Win flash overlay */}
+      {winning && <rect x="-22" y="-38" width="44" height="56" rx="5" fill="rgba(250,204,21,0.12)" stroke="#fbbf24" strokeWidth="2">
+        <animate attributeName="opacity" values="1;0;1" dur="0.4s" repeatCount="indefinite"/>
+      </rect>}
+    </g>
+  );
+}
+
 const ITEM_TYPES = [
   { type: "flower",   label: "Blomst",     color: "#fb7185", wall: false, value: 50  },
   { type: "tv",       label: "TV",         color: "#1d4ed8", wall: false, value: 200 },
@@ -408,6 +455,7 @@ const ITEM_TYPES = [
   { type: "sofa",     label: "Sofa",       color: "#4f46e5", wall: false, value: 300 },
   { type: "painting", label: "Maleri",     color: "#d4a017", wall: true,  value: 250 },
   { type: "poster",   label: "Plakat",     color: "#3b82f6", wall: true,  value: 120 },
+  { type: "slot_machine", label: "Spillemaskine", color: "#a78bfa", wall: false, value: 500 },
 ];
 
 function ItemSVG({ type }: { type: string }) {
@@ -420,6 +468,7 @@ function ItemSVG({ type }: { type: string }) {
     case "sofa":     return <SofaSVG />;
     case "painting": return <PaintingSVG />;
     case "poster":   return <PosterSVG />;
+    case "slot_machine": return <SlotMachineSVG />;
     default: return <circle r="8" fill="#6b7280" />;
   }
 }
@@ -484,7 +533,7 @@ interface RoomBot {
 interface CtxMenu {
   clientX: number;
   clientY: number;
-  kind: "user" | "self" | "tile_item" | "bot" | "tile" | "wall" | "portal" | "dartboard" | "dartscoreboard";
+  kind: "user" | "self" | "tile_item" | "bot" | "tile" | "wall" | "portal" | "dartboard" | "dartscoreboard" | "slot_machine";
   user?: PresenceUser;
   item?: RoomItem;
   bot?: RoomBot;
@@ -704,6 +753,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [showLevelGuide, setShowLevelGuide] = useState(false);
   const [otherLevelUps, setOtherLevelUps] = useState<Map<string, number>>(new Map());
   const [rouletteWinEffects, setRouletteWinEffects] = useState<Map<string, number>>(new Map());
+  const [slotWinEffects, setSlotWinEffects] = useState<Map<string, number>>(new Map());
+  const [slotStates, setSlotStates] = useState<Map<string, { spinning: boolean; reels: string[]; winning: boolean; lastSpin: number; autoCount: number; autoRunning: boolean; bet: number }>>(new Map());
+  const [slotModal, setSlotModal] = useState<{ itemId: string } | null>(null);
+  const slotAutoTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [mutedUsers, setMutedUsers] = useState<Set<string>>(new Set());
   const [myMutedUntil, setMyMutedUntil] = useState<string | null>(null);
   const myMutedUntilRef = useRef<string | null>(null);
@@ -1886,6 +1939,25 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         setDartThrowEffects(prev => { const m = new Map(prev); m.set(p.user_id, p.label); return m; });
         setTimeout(() => setDartThrowEffects(prev => { const m = new Map(prev); m.delete(p.user_id); return m; }), 3200);
       })
+      .on("broadcast", { event: "slot_win" }, ({ payload }) => {
+        const p = payload as { user_id: string; amount: number; item_id: string };
+        if (!p?.user_id || p.user_id === currentProfile.id) return;
+        setSlotWinEffects(prev => { const m = new Map(prev); m.set(p.user_id, p.amount); return m; });
+        setTimeout(() => setSlotWinEffects(prev => { const m = new Map(prev); m.delete(p.user_id); return m; }), 4000);
+        // Flash the machine for others too
+        setSlotStates(prev => {
+          const m = new Map(prev);
+          const cur = m.get(p.item_id) ?? { spinning: false, reels: ["🎰","🎰","🎰"], winning: false, lastSpin: 0, autoCount: 0, autoRunning: false, bet: 10 };
+          m.set(p.item_id, { ...cur, winning: true });
+          return m;
+        });
+        setTimeout(() => setSlotStates(prev => {
+          const m = new Map(prev);
+          const cur = m.get(p.item_id);
+          if (cur) m.set(p.item_id, { ...cur, winning: false });
+          return m;
+        }), 3000);
+      })
       .on("broadcast", { event: "dart_invite" }, ({ payload }) => {
         const p = payload as { game: DartGame; to_id: string };
         if (!p?.to_id || p.to_id !== currentProfile.id) return;
@@ -2316,11 +2388,91 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (bot) { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "bot", bot }); return; }
     if (item) {
       if (item.item_type === "dartboard") { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "dartboard", item }); return; }
+      if (item.item_type === "slot_machine") { setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "slot_machine", item }); return; }
       setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "tile_item", item }); return;
     }
     if (isAdmin && tileGx !== undefined && tileGy !== undefined) {
       setCtxMenu({ clientX: e.clientX, clientY: e.clientY, kind: "tile", tileGx, tileGy });
     }
+  };
+
+  // ── Slot Machine ────────────────────────────────────────────────────────────
+  const SLOT_SYMBOLS = ["🍒", "🍋", "🍊", "🍇", "⭐", "💎", "7️⃣"];
+  const SLOT_PAYOUTS: Record<string, number> = { "🍒": 2, "🍋": 3, "🍊": 4, "🍇": 5, "⭐": 10, "💎": 20, "7️⃣": 50 };
+  const SLOT_WEIGHTS = [30, 25, 20, 12, 7, 4, 2]; // cherry most common, 7 rarest
+
+  const pickSymbol = () => {
+    const total = SLOT_WEIGHTS.reduce((a, b) => a + b, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < SLOT_SYMBOLS.length; i++) { r -= SLOT_WEIGHTS[i]; if (r <= 0) return SLOT_SYMBOLS[i]; }
+    return SLOT_SYMBOLS[0];
+  };
+
+  const handleSlotSpin = async (itemId: string) => {
+    const cur = slotStates.get(itemId) ?? { spinning: false, reels: ["🍒","🍒","🍒"], winning: false, lastSpin: 0, autoCount: 0, autoRunning: false, bet: 10 };
+    if (cur.spinning) return;
+    const now = Date.now();
+    if (now - cur.lastSpin < 3000) return; // 3s cooldown
+
+    const bet = cur.bet;
+    if (coinsRef.current < bet) { showToast("🎰", "Ikke nok mønter", `Indsats: ${bet} 🪙`, "#ef4444"); return; }
+
+    // Deduct bet
+    const nc = coinsRef.current - bet;
+    coinsRef.current = nc; setCoins(nc);
+    await supabase.from("profiles").update({ coins: nc }).eq("id", currentProfile.id);
+
+    // Start spinning animation
+    setSlotStates(prev => { const m = new Map(prev); m.set(itemId, { ...cur, spinning: true, winning: false, lastSpin: now }); return m; });
+
+    // Spin for 2s then reveal
+    setTimeout(async () => {
+      const r1 = pickSymbol(); const r2 = pickSymbol(); const r3 = pickSymbol();
+      const newReels = [r1, r2, r3];
+      const allSame = r1 === r2 && r2 === r3;
+      const payout = allSame ? bet * SLOT_PAYOUTS[r1] : 0;
+
+      let finalCoins = coinsRef.current;
+      if (payout > 0) {
+        finalCoins = finalCoins + payout;
+        coinsRef.current = finalCoins; setCoins(finalCoins);
+        await supabase.from("profiles").update({ coins: finalCoins }).eq("id", currentProfile.id);
+        // Win effect on self
+        setSlotWinEffects(prev => { const m = new Map(prev); m.set(currentProfile.id, payout); return m; });
+        setTimeout(() => setSlotWinEffects(prev => { const m = new Map(prev); m.delete(currentProfile.id); return m; }), 4000);
+        // Broadcast win to room
+        channelRef.current?.send({ type: "broadcast", event: "slot_win", payload: { user_id: currentProfile.id, amount: payout, item_id: itemId } });
+        showToast("🎰", `JACKPOT! ${r1}${r2}${r3}`, `+${payout} 🪙`, "#f59e0b");
+      }
+
+      setSlotStates(prev => {
+        const m = new Map(prev);
+        const s = m.get(itemId)!;
+        m.set(itemId, { ...s, spinning: false, reels: newReels, winning: payout > 0, lastSpin: now });
+        return m;
+      });
+
+      // Clear win flash after 3s
+      if (payout > 0) {
+        setTimeout(() => setSlotStates(prev => {
+          const m = new Map(prev); const s = m.get(itemId); if (s) m.set(itemId, { ...s, winning: false }); return m;
+        }), 3000);
+      }
+
+      // Auto-spin continuation
+      setSlotStates(prev => {
+        const m = new Map(prev); const s = m.get(itemId);
+        if (!s) return prev;
+        const remaining = s.autoCount - 1;
+        const stillAuto = s.autoRunning && remaining > 0;
+        m.set(itemId, { ...s, autoCount: Math.max(0, remaining), autoRunning: stillAuto });
+        if (stillAuto) {
+          const t = setTimeout(() => handleSlotSpin(itemId), 3200);
+          slotAutoTimers.current.set(itemId, t);
+        }
+        return m;
+      });
+    }, 2000);
   };
 
   const handleDartThrow = async (game: DartGame) => {
@@ -4158,6 +4310,46 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   }
                   if (s.kind === "item") {
                     const rot = (s.item.rotation ?? 0) * 90;
+                    if (s.item.item_type === "slot_machine") {
+                      const ss = slotStates.get(s.item.id) ?? { spinning: false, reels: ["🍒","🍒","🍒"], winning: false, lastSpin: 0, autoCount: 0, autoRunning: false, bet: 10 };
+                      // Zone tile: tile directly in front (south) of the machine
+                      const zoneGx = s.gx; const zoneGy = s.gy + 1;
+                      const onZone = myPos.gx === zoneGx && myPos.gy === zoneGy;
+                      const { x: zx, y: zy } = isoCenter(zoneGx, zoneGy, svgW);
+                      const canSpin = onZone && !ss.spinning && (Date.now() - ss.lastSpin >= 3000);
+                      return (
+                        <g key={`item-${s.item.id}`}>
+                          {/* Zone tile highlight */}
+                          <polygon points={tilePts(zx, zy)}
+                            fill={onZone ? "rgba(167,139,250,0.25)" : "rgba(167,139,250,0.10)"}
+                            stroke={onZone ? "rgba(167,139,250,0.9)" : "rgba(167,139,250,0.35)"}
+                            strokeWidth={onZone ? 2 : 1} strokeDasharray={onZone ? "none" : "4 3"}
+                            style={{ pointerEvents: "none" }}>
+                            {onZone && <animate attributeName="fill" values="rgba(167,139,250,0.15);rgba(167,139,250,0.35);rgba(167,139,250,0.15)" dur="1.5s" repeatCount="indefinite"/>}
+                          </polygon>
+                          <g onContextMenu={e => handleRightClick(e, null, s.item, null)}
+                            onDoubleClick={() => { if (canSpin) handleSlotSpin(s.item.id); }}
+                            style={{ cursor: canSpin ? "pointer" : "default" }}>
+                            <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (s.item.item_scale ?? 1)}) rotate(${rot})`}>
+                              <SlotMachineSVG spinning={ss.spinning} reels={ss.reels} winning={ss.winning} />
+                            </g>
+                            {/* Spinning reels overlay above machine */}
+                            {ss.spinning && (
+                              <text x={x} y={y - TH / 4 - 42 * (s.item.item_scale ?? 1)} textAnchor="middle" fontSize={11}
+                                fontFamily="system-ui" fill="#f59e0b" fontWeight="900"
+                                stroke="rgba(0,0,0,0.8)" strokeWidth={2} paintOrder="stroke"
+                                style={{ pointerEvents: "none" }}>🎰🎰🎰</text>
+                            )}
+                            {!ss.spinning && ss.reels[0] && (
+                              <text x={x} y={y - TH / 4 - 42 * (s.item.item_scale ?? 1)} textAnchor="middle" fontSize={10}
+                                fontFamily="system-ui" fill="white" fontWeight="700"
+                                stroke="rgba(0,0,0,0.8)" strokeWidth={2} paintOrder="stroke"
+                                style={{ pointerEvents: "none" }}>{ss.reels.join(" ")}</text>
+                            )}
+                          </g>
+                        </g>
+                      );
+                    }
                     return (
                       <g key={`item-${s.item.id}`} onContextMenu={e => handleRightClick(e, null, s.item, null)}>
                         <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (s.item.item_scale ?? 1)}) rotate(${rot})`}>
@@ -4261,6 +4453,26 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           );
                         })()}
                         {/* Bubbles are rendered in the HTML overlay for zoom-independence */}
+                        {/* Slot win effect */}
+                        {(() => {
+                          const slotAmt = slotWinEffects.get(user.user_id) ?? null;
+                          if (!slotAmt) return null;
+                          return (
+                            <g style={{ pointerEvents: "none" }}>
+                              {([["#f59e0b", 0], ["#fbbf24", 0.2], ["#fcd34d", 0.4]] as [string, number][]).map(([rc, delay], i) => (
+                                <circle key={i} cx={0} cy={-AR_S * 0.3} fill="none" stroke={rc} strokeWidth={1.6 - i * 0.3}>
+                                  <animate attributeName="r" from="4" to="52" dur="1s" begin={`${delay}s`} repeatCount="indefinite" />
+                                  <animate attributeName="opacity" from="0.8" to="0" dur="1s" begin={`${delay}s`} repeatCount="indefinite" />
+                                </circle>
+                              ))}
+                              <text x={0} y={-AR_S - 18} textAnchor="middle" fontSize={14} fontFamily="system-ui,sans-serif" fontWeight="900"
+                                fill="#f59e0b" stroke="rgba(0,0,0,0.9)" strokeWidth={3} paintOrder="stroke"
+                                style={{ animation: "svgLevelUpText 3s ease-out forwards" }}>
+                                🎰 +{slotAmt} 🪙
+                              </text>
+                            </g>
+                          );
+                        })()}
                         {/* Roulette win effect — +amount floating above avatar */}
                         {(() => {
                           const winAmt = isMe
@@ -7602,6 +7814,23 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   {locked && <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wide">Låst</span>}
                 </div>
                 <button
+                  onClick={async () => {
+                    const { data } = await supabase.from("virtual_room_items").insert({
+                      room_id: activeRoomId,
+                      name: "Spillemaskine",
+                      item_type: "slot_machine",
+                      gx: ctxMenu.tileGx,
+                      gy: ctxMenu.tileGy,
+                      item_scale: 1.0,
+                      wall_side: null,
+                    }).select().single();
+                    if (data) setItems(prev => [...prev, data as RoomItem]);
+                    setCtxMenu(null);
+                  }}
+                  className="w-full text-left px-3 py-2.5 text-[13px] text-violet-300 hover:bg-violet-500/[0.08] flex items-center gap-2 transition-colors">
+                  🎰 Tilføj spillemaskine
+                </button>
+                <button
                   onClick={() => toggleTileLock(ctxMenu.tileGx!, ctxMenu.tileGy!)}
                   className={`w-full text-left px-3 py-2.5 text-sm flex items-center gap-2 transition-colors ${locked ? "text-emerald-400 hover:bg-emerald-500/10" : "text-rose-400 hover:bg-rose-500/10"}`}>
                   <span>{locked ? "🔓" : "🔒"}</span>
@@ -7785,6 +8014,103 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               </div>
             </>
           )}
+
+          {ctxMenu.kind === "slot_machine" && ctxMenu.item && (() => {
+            const slotItem = ctxMenu.item!;
+            const ss = slotStates.get(slotItem.id) ?? { spinning: false, reels: ["🍒","🍒","🍒"], winning: false, lastSpin: 0, autoCount: 0, autoRunning: false, bet: 10 };
+            const zoneGx = slotItem.gx ?? 0; const zoneGy = (slotItem.gy ?? 0) + 1;
+            const onZone = myPos.gx === zoneGx && myPos.gy === zoneGy;
+            const SLOT_PAYOUTS_DISPLAY = [
+              { sym: "7️⃣", label: "Syver", mult: 50 },
+              { sym: "💎", label: "Diamant", mult: 20 },
+              { sym: "⭐", label: "Stjerne", mult: 10 },
+              { sym: "🍇", label: "Druer", mult: 5 },
+              { sym: "🍊", label: "Appelsin", mult: 4 },
+              { sym: "🍋", label: "Citron", mult: 3 },
+              { sym: "🍒", label: "Kirsebær", mult: 2 },
+            ];
+            return (
+              <>
+                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-2">
+                  <span className="text-[20px]">🎰</span>
+                  <div>
+                    <p className="text-[13px] font-semibold text-slate-100">Spillemaskine</p>
+                    <p className="text-[11px] text-slate-500">Stå på lilla felt og dobbeltklik</p>
+                  </div>
+                </div>
+                {/* Payout table */}
+                <div className="px-3 py-2 border-b border-white/[0.06]">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Gevinster (3 ens)</p>
+                  <div className="space-y-1">
+                    {SLOT_PAYOUTS_DISPLAY.map(p => (
+                      <div key={p.sym} className="flex items-center justify-between">
+                        <span className="text-[13px]">{p.sym} {p.sym} {p.sym}</span>
+                        <span className="text-[12px] font-bold text-amber-400">× {p.mult} indsats</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* Current bet + auto — only changeable on zone */}
+                <div className="px-3 py-2.5">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Indsats</p>
+                    {!onZone && <p className="text-[10px] text-slate-600 italic">Gå til maskinen for at ændre</p>}
+                  </div>
+                  <div className="flex items-center gap-2 mb-3">
+                    {[10, 25, 50, 100, 250].map(b => (
+                      <button key={b} disabled={!onZone}
+                        onClick={() => {
+                          setSlotStates(prev => { const m = new Map(prev); m.set(slotItem.id, { ...ss, bet: b }); return m; });
+                        }}
+                        className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all ${ss.bet === b ? "bg-amber-500/25 text-amber-300 border border-amber-500/40" : "bg-white/[0.05] text-slate-500 border border-white/[0.07]"} ${!onZone ? "opacity-40 cursor-not-allowed" : "hover:bg-amber-500/15 hover:text-amber-400"}`}>
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Auto-spin */}
+                  <div className="border-t border-white/[0.06] pt-2.5">
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Auto-spin</p>
+                    {ss.autoRunning ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[12px] text-amber-400 font-semibold">Kører... {ss.autoCount} tilbage</span>
+                        <button onClick={() => {
+                          const t = slotAutoTimers.current.get(slotItem.id);
+                          if (t) clearTimeout(t);
+                          setSlotStates(prev => { const m = new Map(prev); m.set(slotItem.id, { ...ss, autoRunning: false, autoCount: 0 }); return m; });
+                          setCtxMenu(null);
+                        }} className="px-2 py-1 bg-rose-500/15 text-rose-400 border border-rose-500/25 rounded-lg text-[11px] font-bold">Stop</button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-1.5">
+                        {[5, 10, 25, 50].map(n => (
+                          <button key={n} disabled={!onZone}
+                            onClick={() => {
+                              setSlotStates(prev => { const m = new Map(prev); m.set(slotItem.id, { ...ss, autoCount: n, autoRunning: true }); return m; });
+                              handleSlotSpin(slotItem.id);
+                              setCtxMenu(null);
+                            }}
+                            className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all bg-violet-500/15 text-violet-300 border border-violet-500/25 ${!onZone ? "opacity-40 cursor-not-allowed" : "hover:bg-violet-500/25"}`}>
+                            ×{n}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {(isAdmin || (activeRoomType === "spaceship" && activeRoomOwnerId === currentProfile.id)) && (
+                  <div className="border-t border-white/[0.06] py-1">
+                    <button onClick={async () => {
+                      await supabase.from("virtual_room_items").delete().eq("id", slotItem.id);
+                      setItems(prev => prev.filter(i => i.id !== slotItem.id));
+                      setCtxMenu(null);
+                    }} className="w-full text-left px-4 py-2.5 text-[13px] text-rose-400 hover:bg-rose-500/[0.08] flex items-center gap-3 transition-colors">
+                      <Trash2 className="w-4 h-4 flex-shrink-0" /> Fjern spillemaskine
+                    </button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
