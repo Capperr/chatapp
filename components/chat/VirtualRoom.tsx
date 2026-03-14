@@ -6046,12 +6046,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             return (
                               <button key={c.id} onClick={async () => {
                                 // Insert wardrobe entry for recipient
-                                await supabase.from("virtual_user_wardrobe").upsert(
+                                const { error: wErr } = await supabase.from("virtual_user_wardrobe").upsert(
                                   { user_id: giveClothingTarget.userId, clothing_id: c.id, equipped: false },
                                   { onConflict: "user_id,clothing_id" }
                                 );
+                                if (wErr) { alert("Fejl ved tildeling af tøj: " + wErr.message); return; }
                                 // Insert persistent notification (works across rooms + for offline users)
-                                await supabase.from("notifications").insert({
+                                const { error: nErr } = await supabase.from("notifications").insert({
                                   user_id: giveClothingTarget.userId,
                                   type: "clothing_received",
                                   emoji: "👕",
@@ -6059,6 +6060,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                   subtitle: `Givet af ${currentProfile.display_name}`,
                                   color: "#6366f1"
                                 });
+                                if (nErr) { alert("Tøj givet, men notifikation fejlede: " + nErr.message); }
+                                showToast("👕", `Tøj givet til ${giveClothingTarget.userName}`, c.name, "#10b981");
                                 setGiveClothingTarget(null);
                               }} className="w-full text-left px-3 py-2 hover:bg-white/[0.05] flex items-center gap-2 transition-colors">
                                 <div className="w-7 h-7 rounded bg-black/30 flex items-center justify-center flex-shrink-0">
