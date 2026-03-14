@@ -478,6 +478,7 @@ const ITEM_TYPES = [
   { type: "painting", label: "Maleri",     color: "#d4a017", wall: true,  value: 250 },
   { type: "poster",   label: "Plakat",     color: "#3b82f6", wall: true,  value: 120 },
   { type: "slot_machine", label: "Spillemaskine", color: "#a78bfa", wall: false, value: 500 },
+  { type: "image",        label: "Billede",       color: "#64748b", wall: false, value: 0   },
 ];
 
 function ItemSVG({ type }: { type: string }) {
@@ -590,6 +591,11 @@ interface RoomItem {
   wall_side: string | null;
   wall_pos: number;
   wall_height: number;
+  image_url?: string | null;
+  img_x?: number | null;
+  img_y?: number | null;
+  img_w?: number | null;
+  img_h?: number | null;
 }
 interface GlobalUser {
   user_id: string;
@@ -820,7 +826,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [bots, setBots] = useState<RoomBot[]>([]);
   const [clothingCatalog, setClothingCatalog] = useState<ClothingItem[]>([]);
   const [myWardrobe, setMyWardrobe] = useState<UserWardrobeEntry[]>([]);
-  const [createForm, setCreateForm] = useState<{ name: string; item_type: string } | null>(null);
+  const [createForm, setCreateForm] = useState<{ name: string; item_type: string; image_url: string; img_x: number; img_y: number; img_w: number; img_h: number; item_scale: number; uploading: boolean; previewZoom: number } | null>(null);
+  const [adminItemEditId, setAdminItemEditId] = useState<string | null>(null);
   const [editItem, setEditItem] = useState<RoomItem | null>(null);
   const [globalUsers, setGlobalUsers] = useState<Map<string, GlobalUser>>(new Map());
   const [activeThemeKey, setActiveThemeKey] = useState("blue");
@@ -837,6 +844,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [adminSearchResults, setAdminSearchResults] = useState<Profile[]>([]);
   const [adminEditTarget, setAdminEditTarget] = useState<Profile | null>(null);
   const [adminEditForm, setAdminEditForm] = useState<{ xp: string; coins: string; total_online_seconds: string; tan_level: string; muted_until: string; name_color: string | null; aura_color: string | null; bubble_color: string | null }>({ xp: "", coins: "", total_online_seconds: "", tan_level: "", muted_until: "", name_color: null, aura_color: null, bubble_color: null });
+  const [movingUserId, setMovingUserId] = useState<string | null>(null);
   const [adminMoveTarget, setAdminMoveTarget] = useState<{ user_id: string; display_name: string } | null>(null);
   const [adminMoveTile, setAdminMoveTile] = useState<{ gx: string; gy: string }>({ gx: "", gy: "" });
   const [adminMoveRoom, setAdminMoveRoom] = useState<string>("");
@@ -2115,6 +2123,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       if (e.key === "Escape") {
         if (placingItem) { setPlacingItem(null); setMovingFloorItemId(null); return; }
         if (movingBotId) { setMovingBotId(null); return; }
+        if (movingUserId) { setMovingUserId(null); return; }
         draftRef.current = ""; setDraft(""); return;
       }
       if ((e.key === "r" || e.key === "R") && placingItem) { e.preventDefault(); setPlacingItem(p => p ? { ...p, rotation: (p.rotation + 1) % 2 } : null); return; }
@@ -2380,6 +2389,12 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       supabase.from("chat_rooms").update({ roulette_gx: gx, roulette_gy: gy }).eq("id", activeRoomId).then(() => {});
       setRouletteGx(gx); setRouletteGy(gy);
       setRouletteMoveMode(false);
+      return;
+    }
+    if (movingUserId) {
+      const uid = movingUserId;
+      setMovingUserId(null);
+      channelRef.current?.send({ type: "broadcast", event: "admin_move", payload: { user_id: uid, gx, gy } });
       return;
     }
     if (movingBotId) {
@@ -2889,7 +2904,15 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   const createItem = async () => {
     if (!createForm?.name.trim()) return;
-    await supabase.from("virtual_room_items").insert({ room_id: activeRoomId, name: createForm.name.trim(), item_type: createForm.item_type, item_scale: 1, owner_id: currentProfile.id, gx: null, gy: null, created_by: currentProfile.id });
+    const f = createForm;
+    const { data } = await supabase.from("virtual_room_items").insert({
+      room_id: activeRoomId, name: f.name.trim(), item_type: f.item_type,
+      item_scale: f.item_scale, owner_id: currentProfile.id, gx: null, gy: null,
+      created_by: currentProfile.id,
+      image_url: f.item_type === "image" ? (f.image_url || null) : null,
+      img_x: f.img_x, img_y: f.img_y, img_w: f.img_w, img_h: f.img_h,
+    }).select().single();
+    if (data) setItems(prev => [...prev, data as RoomItem]);
     setCreateForm(null);
   };
 
@@ -2940,8 +2963,15 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     channelRef.current?.send({ type: "broadcast", event: "locked_tiles_update", payload: { locked_tiles: arr } });
   };
 
+  const updateItemField = (item: RoomItem, patch: Partial<RoomItem>) => {
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
+  };
+  const saveItemField = async (item: RoomItem, patch: Partial<RoomItem>) => {
+    await supabase.from("virtual_room_items").update(patch).eq("id", item.id);
+  };
   const updateItemScale = async (item: RoomItem, delta: number) => {
     const next = Math.round(Math.min(3, Math.max(0.3, (item.item_scale ?? 1) + delta)) * 10) / 10;
+    updateItemField(item, { item_scale: next });
     await supabase.from("virtual_room_items").update({ item_scale: next }).eq("id", item.id);
   };
 
@@ -3333,10 +3363,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             </div>
           )}
           {/* Placing hint */}
-          {(movingBotId || placingItem) && (
+          {(movingBotId || movingUserId || placingItem) && (
             <div className="px-4 py-1 bg-violet-600/10 border-t border-violet-500/15 text-center">
               <span className="text-[12px] text-violet-300 font-semibold animate-pulse">
-                {movingBotId ? "Klik på et felt for at placere bot" : isWallItemType(placingItem!.item.item_type) ? "Klik på væggen for at hænge op" : `Klik på et felt · R = roter (${placingItem!.rotation * 90}°)`}
+                {movingBotId ? "Klik på et felt for at placere bot" : movingUserId ? "Klik på et felt for at flytte bruger" : isWallItemType(placingItem!.item.item_type) ? "Klik på væggen for at hænge op" : `Klik på et felt · R = roter (${placingItem!.rotation * 90}°)`}
               </span>
             </div>
           )}
@@ -4377,6 +4407,18 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         </g>
                       );
                     }
+                    if (s.item.image_url) {
+                      const sc = 0.85 * (s.item.item_scale ?? 1);
+                      const ix = x + (s.item.img_x ?? -30) * sc;
+                      const iy = (y - TH / 4) + (s.item.img_y ?? -30) * sc;
+                      const iw = (s.item.img_w ?? 60) * sc;
+                      const ih = (s.item.img_h ?? 60) * sc;
+                      return (
+                        <g key={`item-${s.item.id}`} onContextMenu={e => handleRightClick(e, null, s.item, null)}>
+                          <image href={s.item.image_url} x={ix} y={iy} width={iw} height={ih} style={{ imageRendering: "pixelated" }} />
+                        </g>
+                      );
+                    }
                     return (
                       <g key={`item-${s.item.id}`} onContextMenu={e => handleRightClick(e, null, s.item, null)}>
                         <g transform={`translate(${x}, ${y - TH / 4}) scale(${0.85 * (s.item.item_scale ?? 1)}) rotate(${rot})`}>
@@ -4617,7 +4659,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     }}
                     onMouseEnter={() => setHovered(cellKey)}
                     onMouseLeave={() => setHovered(null)}
-                    style={{ cursor: isFloorPlacing ? "crosshair" : movingBotId ? "crosshair" : isOccupiedByOther || cellBot ? "default" : "pointer" }}
+                    style={{ cursor: isFloorPlacing ? "crosshair" : movingBotId ? "crosshair" : movingUserId ? "crosshair" : isOccupiedByOther || cellBot ? "default" : "pointer" }}
                   />
                 );
               })}
@@ -6003,45 +6045,154 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   <>
                     <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
                       <span className="text-[12px] text-slate-400 font-semibold">Genstande i rum</span>
-                      <button onClick={() => setCreateForm({ name: "", item_type: "flower" })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => setCreateForm({ name: "", item_type: "image", image_url: "", img_x: -30, img_y: -30, img_w: 60, img_h: 60, item_scale: 1, uploading: false, previewZoom: 1 })} className="p-1 rounded text-slate-500 hover:text-emerald-400"><Plus className="w-3.5 h-3.5" /></button>
                     </div>
+
+                    {/* ── Create form ── */}
                     {createForm && (
-                      <div className="px-3 py-2 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0">
-                        <p className="text-[12px] font-semibold text-slate-500 mb-1.5">Ny genstand</p>
-                        <input autoFocus value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} onKeyDown={e => { if (e.key === "Enter") createItem(); if (e.key === "Escape") setCreateForm(null); }} placeholder="Navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50" />
-                        <select value={createForm.item_type} onChange={e => setCreateForm({ ...createForm, item_type: e.target.value })} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-300 outline-none mb-1.5">
+                      <div className="px-3 py-3 border-b border-white/[0.06] bg-violet-500/5 flex-shrink-0 overflow-y-auto" style={{ maxHeight: "72%" }}>
+                        <p className="text-[12px] font-bold text-slate-400 mb-2">Ny genstand</p>
+
+                        <input autoFocus value={createForm.name} onChange={e => setCreateForm(f => f && ({ ...f, name: e.target.value }))} onKeyDown={e => { if (e.key === "Escape") setCreateForm(null); }} placeholder="Navn..." className="w-full bg-white/[0.06] border border-white/[0.08] rounded px-2 py-1.5 text-[13px] text-slate-100 outline-none mb-1.5 focus:border-violet-500/50" />
+
+                        <select value={createForm.item_type} onChange={e => setCreateForm(f => f && ({ ...f, item_type: e.target.value }))} className="w-full bg-[#0a1220] border border-white/[0.08] rounded px-2 py-1 text-[13px] text-slate-300 outline-none mb-2">
                           {ITEM_TYPES.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
                         </select>
-                        <div className="flex gap-1">
-                          <button onClick={createItem} className="flex-1 py-1 bg-violet-600 hover:bg-violet-500 rounded text-[12px] text-white">Opret</button>
-                          <button onClick={() => setCreateForm(null)} className="flex-1 py-1 bg-white/[0.06] hover:bg-white/[0.1] rounded text-[12px] text-slate-300">Annuller</button>
+
+                        {/* Image upload — only for image type */}
+                        {createForm.item_type === "image" && (
+                          <div className="mb-2">
+                            <p className="text-[10px] text-slate-500 mb-0.5">Billede (PNG/WebP/JPG)</p>
+                            <input type="file" accept="image/png,image/webp,image/jpeg" onChange={async e => {
+                              const file = e.target.files?.[0]; if (!file) return;
+                              setCreateForm(f => f && ({ ...f, uploading: true }));
+                              const ext = file.name.split(".").pop();
+                              const path = `items/${Date.now()}.${ext}`;
+                              const { error } = await supabase.storage.from("clothing").upload(path, file, { upsert: true });
+                              if (!error) {
+                                const { data: { publicUrl } } = supabase.storage.from("clothing").getPublicUrl(path);
+                                setCreateForm(f => f && ({ ...f, image_url: publicUrl, uploading: false }));
+                              } else {
+                                setCreateForm(f => f && ({ ...f, uploading: false }));
+                                showToast("❌", "Upload fejlede", error.message, "#ef4444");
+                              }
+                            }} className="w-full text-[12px] text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:bg-violet-500/20 file:text-violet-300 hover:file:bg-violet-500/30" />
+                            {createForm.uploading && <p className="text-[11px] text-violet-400 mt-0.5">Uploader...</p>}
+                            {createForm.image_url && <p className="text-[10px] text-emerald-400 mt-0.5 truncate">✓ {createForm.image_url.split("/").pop()}</p>}
+                          </div>
+                        )}
+
+                        {/* Scale */}
+                        <div className="mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 w-10 flex-shrink-0">Størrelse</span>
+                            <input type="range" min={0.3} max={3} step={0.1} value={createForm.item_scale} onChange={e => setCreateForm(f => f && ({ ...f, item_scale: parseFloat(e.target.value) }))} className="flex-1 accent-violet-500" />
+                            <span className="text-[11px] text-slate-400 w-8 text-right tabular-nums">{Math.round(createForm.item_scale * 100)}%</span>
+                          </div>
+                        </div>
+
+                        {/* x/y/w/h — only for image type */}
+                        {createForm.item_type === "image" && (
+                          <>
+                            <p className="text-[10px] text-slate-500 mb-1 mt-0.5">Placering &amp; størrelse i rum</p>
+                            {([["X", "img_x", -80, 80], ["Y", "img_y", -80, 80], ["Bredde", "img_w", 10, 200], ["Højde", "img_h", 10, 200]] as [string, "img_x"|"img_y"|"img_w"|"img_h", number, number][]).map(([label, key, min, max]) => (
+                              <div key={key} className="mb-1.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-slate-500 w-10 flex-shrink-0">{label}</span>
+                                  <input type="range" min={min} max={max} value={createForm[key]} onChange={e => setCreateForm(f => f && ({ ...f, [key]: parseInt(e.target.value) }))} className="flex-1 accent-violet-500" />
+                                  <input type="number" min={min} max={max} value={createForm[key]} onChange={e => setCreateForm(f => f && ({ ...f, [key]: parseInt(e.target.value) || 0 }))} className="w-12 bg-white/[0.06] border border-white/[0.08] rounded px-1 py-0.5 text-[11px] text-slate-200 outline-none text-center tabular-nums focus:border-violet-500/50" />
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Live preview */}
+                            <p className="text-[10px] text-slate-500 mb-1 mt-1">Preview</p>
+                            <div className="flex flex-col items-center bg-black/30 rounded-lg py-2 gap-1.5">
+                              <div style={{ width: 140, height: 140, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <div style={{ transform: `scale(${createForm.previewZoom})`, transformOrigin: "center center", transition: "transform 0.12s" }}>
+                                  <svg viewBox="-70 -70 140 140" style={{ width: 140, height: 140, display: "block" }}>
+                                    {createForm.image_url
+                                      ? <image href={createForm.image_url} x={createForm.img_x} y={createForm.img_y} width={createForm.img_w} height={createForm.img_h} />
+                                      : <text x="0" y="5" textAnchor="middle" fontSize="11" fill="#475569" fontFamily="system-ui">Intet billede</text>
+                                    }
+                                  </svg>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => setCreateForm(f => f && ({ ...f, previewZoom: Math.max(0.5, f.previewZoom - 0.25) }))} className="w-6 h-6 rounded bg-white/[0.08] text-slate-300 hover:bg-white/[0.15] flex items-center justify-center text-base leading-none">−</button>
+                                <span className="text-[10px] text-slate-500 w-9 text-center tabular-nums">{Math.round(createForm.previewZoom * 100)}%</span>
+                                <button onClick={() => setCreateForm(f => f && ({ ...f, previewZoom: Math.min(4, f.previewZoom + 0.25) }))} className="w-6 h-6 rounded bg-white/[0.08] text-slate-300 hover:bg-white/[0.15] flex items-center justify-center text-base leading-none">+</button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        <div className="flex gap-1 mt-2">
+                          <button onClick={createItem} className="flex-1 py-1.5 bg-violet-600 hover:bg-violet-500 rounded text-[12px] text-white font-semibold">Opret</button>
+                          <button onClick={() => setCreateForm(null)} className="flex-1 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] rounded text-[12px] text-slate-300">Annuller</button>
                         </div>
                       </div>
                     )}
+
+                    {/* ── Item list ── */}
                     <div className="flex-1 overflow-y-auto py-1">
                       {items.length === 0 && <p className="text-[13px] text-slate-600 text-center mt-4">Ingen genstande</p>}
                       {items.map(item => {
                         const meta = ITEM_TYPES.find(t => t.type === item.item_type);
                         const loc = item.owner_id ? "Inventar" : item.gx !== null ? `(${item.gx},${item.gy})` : "?";
-                        const scale = item.item_scale ?? 1;
+                        const isItemEditing = adminItemEditId === item.id;
                         return (
-                          <div key={item.id} className="px-2 py-1.5 hover:bg-white/[0.03] group">
-                            <div className="flex items-center gap-1.5">
-                              <div className="w-6 h-6 rounded bg-white/[0.05] flex items-center justify-center flex-shrink-0"><svg width="18" height="18" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg></div>
+                          <div key={item.id} className="border-b border-white/[0.04] last:border-0">
+                            <div className="px-2 py-1.5 hover:bg-white/[0.03] group flex items-center gap-1.5">
+                              {/* Thumbnail */}
+                              <div className="w-7 h-7 rounded bg-white/[0.05] flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                {item.image_url
+                                  ? <img src={item.image_url} style={{ width: 24, height: 24, objectFit: "contain" }} />
+                                  : <svg width="20" height="20" viewBox="-16 -16 32 32"><ItemSVG type={item.item_type} /></svg>
+                                }
+                              </div>
                               {editItem?.id === item.id
                                 ? <input autoFocus value={editItem.name} onChange={e => setEditItem({ ...editItem, name: e.target.value })} onBlur={() => saveItemName(item, editItem.name)} onKeyDown={e => { if (e.key === "Enter") saveItemName(item, editItem.name); if (e.key === "Escape") setEditItem(null); }} className="flex-1 bg-white/[0.06] border border-violet-500/50 rounded px-1 py-0.5 text-[13px] text-slate-100 outline-none" />
-                                : <div className="flex-1 min-w-0"><p className="text-[13px] text-slate-300 truncate">{item.name}</p><p className="text-[11px] text-slate-600">{meta?.label} · {loc}</p></div>
+                                : <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setAdminItemEditId(isItemEditing ? null : item.id)}>
+                                    <p className="text-[13px] text-slate-300 truncate">{item.name}</p>
+                                    <p className="text-[11px] text-slate-600">{meta?.label ?? item.item_type} · {loc} · {Math.round((item.item_scale ?? 1) * 100)}%</p>
+                                  </div>
                               }
                               <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => setEditItem(item)} className="p-0.5 text-slate-500 hover:text-blue-400"><Pencil className="w-2.5 h-2.5" /></button>
-                                <button onClick={() => deleteItem(item.id)} className="p-0.5 text-slate-500 hover:text-rose-400"><Trash2 className="w-2.5 h-2.5" /></button>
+                                <button onClick={() => setEditItem(item)} className="p-0.5 text-slate-500 hover:text-blue-400" title="Omdøb"><Pencil className="w-2.5 h-2.5" /></button>
+                                <button onClick={() => deleteItem(item.id)} className="p-0.5 text-slate-500 hover:text-rose-400" title="Slet"><Trash2 className="w-2.5 h-2.5" /></button>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1 mt-1 pl-7">
-                              <button onClick={() => updateItemScale(item, -0.2)} className="w-5 h-5 rounded bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-400"><Minus className="w-2.5 h-2.5" /></button>
-                              <span className="text-[11px] text-slate-500 w-8 text-center">{Math.round(scale * 100)}%</span>
-                              <button onClick={() => updateItemScale(item, 0.2)} className="w-5 h-5 rounded bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-400"><Plus className="w-2.5 h-2.5" /></button>
-                            </div>
+
+                            {/* Expanded edit controls */}
+                            {isItemEditing && (
+                              <div className="px-2 pb-2 bg-slate-800/30 space-y-1">
+                                {/* Scale slider */}
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-slate-500 w-10 flex-shrink-0">Størrelse</span>
+                                  <input type="range" min={0.3} max={3} step={0.1} value={item.item_scale ?? 1}
+                                    onChange={e => updateItemField(item, { item_scale: parseFloat(e.target.value) })}
+                                    onPointerUp={e => saveItemField(item, { item_scale: parseFloat((e.target as HTMLInputElement).value) })}
+                                    className="flex-1 accent-violet-500" />
+                                  <span className="text-[11px] text-slate-400 w-8 text-right tabular-nums">{Math.round((item.item_scale ?? 1) * 100)}%</span>
+                                </div>
+
+                                {/* Image offset/size — only for image items */}
+                                {item.image_url && (([["X", "img_x", -80, 80], ["Y", "img_y", -80, 80], ["Bredde", "img_w", 10, 200], ["Højde", "img_h", 10, 200]] as [string, keyof RoomItem, number, number][]).map(([label, key, min, max]) => (
+                                  <div key={key} className="flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-500 w-10 flex-shrink-0">{label}</span>
+                                    <input type="range" min={min} max={max} value={(item[key] as number) ?? 0}
+                                      onChange={e => updateItemField(item, { [key]: parseInt(e.target.value) } as Partial<RoomItem>)}
+                                      onPointerUp={e => saveItemField(item, { [key]: parseInt((e.target as HTMLInputElement).value) } as Partial<RoomItem>)}
+                                      className="flex-1 accent-violet-500" />
+                                    <input type="number" min={min} max={max} value={(item[key] as number) ?? 0}
+                                      onChange={e => updateItemField(item, { [key]: parseInt(e.target.value) || 0 } as Partial<RoomItem>)}
+                                      onBlur={e => saveItemField(item, { [key]: parseInt(e.target.value) || 0 } as Partial<RoomItem>)}
+                                      className="w-12 bg-white/[0.06] border border-white/[0.08] rounded px-1 py-0.5 text-[11px] text-slate-200 outline-none text-center tabular-nums" />
+                                  </div>
+                                )))}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -7902,6 +8053,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           </button>
                         ))}
                       </>
+                    )}
+                    {isAdmin && (
+                      <button className="w-full text-left px-4 py-2.5 text-[13px] text-blue-300 hover:bg-blue-500/[0.08] flex items-center gap-3 transition-colors" onClick={() => { setCtxMenu(null); setMovingUserId(u.user_id); showToast("🧍", "Klik et felt for at flytte bruger", u.display_name, "#3b82f6"); }}>
+                        <Wrench className="w-4 h-4 flex-shrink-0" /> Flyt bruger
+                      </button>
                     )}
                     {isAdmin && (
                       <button className="w-full text-left px-4 py-2.5 text-[13px] text-violet-300 hover:bg-violet-500/[0.08] flex items-center gap-3 transition-colors" onClick={() => { setCtxMenu(null); setAdminTab("clothing"); setRightPanel("admin"); setGiveClothingTarget({ userId: u.user_id, userName: u.display_name }); }}>
