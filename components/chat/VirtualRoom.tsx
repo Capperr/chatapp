@@ -3054,7 +3054,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 {/* Game type badge */}
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-black/60 px-2 py-0.5 rounded-full backdrop-blur-sm">🎯 {myGame.game_type}</span>
-                  {myGame.wager > 0 && <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">🪙 {myGame.wager}</span>}
+                  {(myGame.wager ?? 0) > 0 && <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">🪙 {myGame.wager}</span>}
                 </div>
                 {/* Player cards */}
                 {players.map((p, i) => (
@@ -4308,6 +4308,30 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               });
               const BUBBLE_ANCHOR_Y = -AR_S * 2.8; // above head in SVG units
 
+              const wrapBubbleText = (text: string): string => {
+                const maxChars = 20;
+                const words = text.split(" ");
+                const lines: string[] = [];
+                let cur = "";
+                for (const word of words) {
+                  if (cur.length === 0) {
+                    // Hard-break words longer than maxChars
+                    let w = word;
+                    while (w.length > maxChars) { lines.push(w.slice(0, maxChars)); w = w.slice(maxChars); }
+                    cur = w;
+                  } else if (cur.length + 1 + word.length <= maxChars) {
+                    cur += " " + word;
+                  } else {
+                    lines.push(cur);
+                    let w = word;
+                    while (w.length > maxChars) { lines.push(w.slice(0, maxChars)); w = w.slice(maxChars); }
+                    cur = w;
+                  }
+                }
+                if (cur) lines.push(cur);
+                return lines.join("\n");
+              };
+
               const renderBubble = (key: string, svgX: number, svgY: number, messages: { text: string; id: number }[], bc: string, isDraft?: boolean, isTypingDots?: boolean) => {
                 const pos = toP(svgX, svgY + BUBBLE_ANCHOR_Y);
                 const textColor = bc === "#ffffff" || bc === "#fde68a" || bc === "#86efac" || bc === "#93c5fd" || bc === "#fca5a5" ? "#111827" : "#ffffff";
@@ -4319,7 +4343,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                       const opacity = i === 0 && messages.length === 3 ? 0.55 : i === 1 && messages.length >= 2 ? 0.78 : 1;
                       return (
                         <div key={m.id} style={{ opacity, background: bc, border: "1.5px solid rgba(0,0,0,0.13)", borderRadius: 9, padding: "4px 10px", fontSize: 12, fontFamily: "system-ui,sans-serif", fontWeight: 600, color: textColor, whiteSpace: "pre-wrap", maxWidth: 180, lineHeight: 1.35, boxShadow: "0 2px 10px rgba(0,0,0,0.22)", position: "relative" }}>
-                          {isTypingDots && isNewest ? <span style={{ letterSpacing: 3 }}>{["●  ○  ○", "○  ●  ○", "○  ○  ●"][typingFrame % 3]}</span> : m.text}
+                          {isTypingDots && isNewest ? <span style={{ letterSpacing: 3 }}>{["●  ○  ○", "○  ●  ○", "○  ○  ●"][typingFrame % 3]}</span> : wrapBubbleText(m.text)}
                           {isNewest && (
                             <div style={{ position: "absolute", left: "50%", bottom: -6, transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: `6px solid ${tailColor}` }} />
                           )}
@@ -4336,7 +4360,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               const { x: mx, y: my } = isoCenter(myPos.gx, myPos.gy, svgW);
               const myBubbleList = bubbles.get(currentProfile.id) ?? [];
               if (draft) {
-                allBubbles.push(renderBubble("me-draft", mx, my, [{ text: draft + "…", id: -1 }], bubbleColor ?? "#ffffff", true));
+                allBubbles.push(renderBubble("me-draft", mx, my, [{ text: draft, id: -1 }], bubbleColor ?? "#ffffff", true));
               } else if (myBubbleList.length > 0) {
                 const visible = myBubbleList.slice(-3);
                 allBubbles.push(renderBubble("me", mx, my, visible, bubbleColor ?? "#ffffff"));
