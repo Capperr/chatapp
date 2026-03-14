@@ -1784,16 +1784,27 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     const posKey = `${myPosRef.current.gx},${myPosRef.current.gy}`;
     if (!newSet.has(posKey)) return;
     const cols = roomColsRef.current; const rows = roomRowsRef.current;
-    outer: for (let gx = 0; gx < cols; gx++) {
-      for (let gy = 0; gy < rows; gy++) {
-        if (!newSet.has(`${gx},${gy}`)) {
-          moveMyPos(gx, gy);
-          // Use a short delay so the channel is guaranteed to be ready
-          setTimeout(() => { if (channelRef.current) broadcastMoveRef.current(gx, gy); }, 100);
-          break outer;
+    // Build full occupied set: locked tiles + bots + other users
+    const taken = new Set<string>(newSet);
+    for (const b of botsRef.current) taken.add(`${b.gx},${b.gy}`);
+    // Pick a random free tile (up to 300 attempts), fall back to first free
+    let nx = -1, ny = -1;
+    for (let i = 0; i < 300; i++) {
+      const tx = Math.floor(Math.random() * cols);
+      const ty = Math.floor(Math.random() * rows);
+      if (!taken.has(`${tx},${ty}`)) { nx = tx; ny = ty; break; }
+    }
+    if (nx === -1) {
+      // Fallback: linear scan
+      outer: for (let gx = 0; gx < cols; gx++) {
+        for (let gy = 0; gy < rows; gy++) {
+          if (!taken.has(`${gx},${gy}`)) { nx = gx; ny = gy; break outer; }
         }
       }
     }
+    if (nx === -1) return; // no free tile found
+    moveMyPos(nx, ny);
+    setTimeout(() => { if (channelRef.current) broadcastMoveRef.current(nx, ny); }, 100);
   }, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load locked tiles from DB whenever room changes + relocate if spawned on one
