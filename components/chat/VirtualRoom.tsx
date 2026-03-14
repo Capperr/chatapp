@@ -661,6 +661,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [roomCols, setRoomCols] = useState(DEFAULT_COLS);
   const [roomRows, setRoomRows] = useState(DEFAULT_ROWS);
   const [initialRoomLoaded, setInitialRoomLoaded] = useState(false);
+  const [roomSwitching, setRoomSwitching] = useState(false);
   const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
   const [bubbles, setBubbles] = useState<Map<string, SpeechBubble[]>>(new Map());
   const [typingUsers, setTypingUsers] = useState<Map<string, number>>(new Map());
@@ -1633,6 +1634,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       (roomData ?? []).forEach(i => merged.set(i.id, i as RoomItem));
       (myData ?? []).forEach(i => merged.set(i.id, i as RoomItem));
       setItems(Array.from(merged.values()));
+      setRoomSwitching(false);
     });
     const itemCh = supabase.channel(`items-${activeRoomId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "virtual_room_items", filter: `room_id=eq.${activeRoomId}` }, (payload) => {
@@ -2504,6 +2506,12 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const switchRoom = (id: string, name: string, cols?: number, rows?: number, roomType?: string, themeKey?: string, floorPattern?: string, ownerId?: string | null) => {
     const nc = cols ?? roomColsRef.current; const nr = rows ?? roomRowsRef.current;
     const rt = roomType ?? "normal";
+    // Clear old room state immediately to avoid flash of stale content
+    setRoomSwitching(true);
+    setItems([]);
+    setBots([]);
+    setUsers(new Map());
+    setBubbles(new Map());
     setActiveRoomId(id); setActiveRoomName(name); setRoomDimensions(nc, nr);
     setActiveRoomType(rt); setRightPanel(rt === "shop" ? "shop" : "hidden");
     setActiveThemeKey(themeKey ?? "blue");
@@ -3016,6 +3024,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
         {/* Body */}
         <div className="flex-1 flex flex-col sm:flex-row overflow-hidden relative">
+
+          {/* Room switching overlay */}
+          {roomSwitching && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none" style={{ background: "rgba(3,9,18,0.82)", backdropFilter: "blur(2px)" }}>
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-7 h-7 rounded-full border-2 border-violet-500/30 border-t-violet-400 animate-spin" />
+                <span className="text-[12px] text-slate-500 tracking-widest uppercase">Skifter rum...</span>
+              </div>
+            </div>
+          )}
 
           {/* Isometric room */}
           <div
