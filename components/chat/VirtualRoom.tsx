@@ -155,15 +155,15 @@ interface DartFlightAnim {
 }
 function dartLandingOffset(segment: number, multiplier: number, R: number): { lx: number; ly: number } {
   const a2 = Math.random() * Math.PI * 2;
-  if (segment === 0) { const r = R * (1.18 + Math.random() * 0.18); return { lx: r * Math.cos(a2), ly: r * Math.sin(a2) }; }
-  if (segment === 50) { const r = R * (0.03 + Math.random() * 0.03); return { lx: r * Math.cos(a2), ly: r * Math.sin(a2) }; }
-  if (segment === 25) { const r = R * (0.10 + Math.random() * 0.05); return { lx: r * Math.cos(a2), ly: r * Math.sin(a2) }; }
+  if (segment === 0) { const r = R * (1.12 + Math.random() * 0.1); return { lx: r * Math.cos(a2), ly: r * Math.sin(a2) }; }
+  if (segment === 50) { const r = R * (0.02 + Math.random() * 0.02); return { lx: r * Math.cos(a2), ly: r * Math.sin(a2) }; }
+  if (segment === 25) { const r = R * (0.09 + Math.random() * 0.03); return { lx: r * Math.cos(a2), ly: r * Math.sin(a2) }; }
   const segIdx = DART_WHEEL.indexOf(segment);
   const ca = (segIdx + 0.5) / 20 * 2 * Math.PI - Math.PI / 2;
-  const a = ca + (Math.random() - 0.5) * 0.14;
-  const r = multiplier === 2 ? R * (0.90 + Math.random() * 0.05)
-          : multiplier === 3 ? R * (0.52 + Math.random() * 0.05)
-          :                    R * (0.67 + Math.random() * 0.09);
+  const a = ca + (Math.random() - 0.5) * 0.07; // tighter angular jitter
+  const r = multiplier === 2 ? R * (0.93 + Math.random() * 0.03) // double ring center
+          : multiplier === 3 ? R * (0.54 + Math.random() * 0.03) // triple ring center
+          :                    R * (0.73 + Math.random() * 0.06); // outer single mid
   return { lx: r * Math.cos(a), ly: r * Math.sin(a) };
 }
 
@@ -1873,6 +1873,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         setDartGames(prev => prev.filter(g => g.id !== p.game_id));
         setDartPausedGames(prev => { const m = new Map(prev); m.delete(p.game_id); return m; });
       })
+      .on("broadcast", { event: "dart_flight_anim" }, ({ payload }) => {
+        const p = payload as { animId: number; fromX: number; fromY: number; toX: number; toY: number; angleDeg: number };
+        if (!p?.animId) return;
+        setDartFlightAnim({ id: p.animId, fromX: p.fromX, fromY: p.fromY, toX: p.toX, toY: p.toY, angleDeg: p.angleDeg, phase: "flying" });
+        setTimeout(() => setDartFlightAnim(prev => prev?.id === p.animId ? { ...prev, phase: "stuck" } : prev), 480);
+        setTimeout(() => setDartFlightAnim(prev => prev?.id === p.animId ? null : prev), 1900);
+      })
       .on("broadcast", { event: "spaceship_request" }, ({ payload }) => {
         const p = payload as VisitRequest & { to_id: string };
         if (p.to_id !== currentProfile.id) return;
@@ -2210,6 +2217,18 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       const rgy = rouletteGy ?? Math.floor(roomRows / 2);
       if (Math.abs(gx - rgx) <= 1 && Math.abs(gy - rgy) <= 1) return;
     }
+    // Block dart throwing zone — only the current-turn player may stand there
+    const dartZoneBlocked = dartGamesRef.current.some(g => {
+      if (g.status !== "active") return false;
+      const board = items.find(i => i.id === g.item_id);
+      if (!board) return false;
+      const zGx = board.wall_side === "left" ? 3 : Math.round((board.wall_pos ?? 0.5) * (roomCols - 1));
+      const zGy = board.wall_side === "left" ? Math.round((board.wall_pos ?? 0.5) * (roomRows - 1)) : 3;
+      if (gx !== zGx || gy !== zGy) return false;
+      // Block if not the player whose turn it is
+      return g.current_player_id !== currentProfile.id;
+    });
+    if (dartZoneBlocked) return;
     moveMyPos(gx, gy); broadcastMove(gx, gy);
   };
 
@@ -2240,7 +2259,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (boardPos) {
       const playerIso = isoCenter(myPos.gx, myPos.gy, svgW);
       const fromX = playerIso.x;
-      const fromY = playerIso.y - AR_S;
+      const fromY = playerIso.y - AR_S * 0.4; // arm/hand level
       const { lx, ly } = dartLandingOffset(segment, multiplier, boardPos.R);
       const toX = boardPos.cx + lx;
       const toY = boardPos.cy + ly;
@@ -2249,6 +2268,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       setDartFlightAnim({ id: animId, fromX, fromY, toX, toY, angleDeg, phase: "flying" });
       setTimeout(() => setDartFlightAnim(prev => prev?.id === animId ? { ...prev, phase: "stuck" } : prev), 480);
       setTimeout(() => setDartFlightAnim(prev => prev?.id === animId ? null : prev), 1900);
+      // Broadcast to all other players in room
+      channelRef.current?.send({ type: "broadcast", event: "dart_flight_anim", payload: { animId, fromX, fromY, toX, toY, angleDeg } });
     }
     const rawNew = scoreBefore - points;
     const isBust = rawNew < 0 || rawNew === 1 || (rawNew === 0 && !(multiplier === 2 || segment === 50));
@@ -3457,24 +3478,29 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     const sbY = cy + (wallDirY / len) * sbOff;
                     const isMyGame = game && (game.player1_id === currentProfile.id || game.player2_id === currentProfile.id);
                     const isMyTurn = game && game.current_player_id === currentProfile.id && game.status === "active";
-                    // Throwing zone tile for this board
-                    const zoneGx = item.wall_side === "left" ? 4 : Math.round(t * (roomCols - 1));
-                    const zoneGy = item.wall_side === "left" ? Math.round(t * (roomRows - 1)) : 4;
+                    // Throwing zone tile — 3 tiles in from wall
+                    const zoneGx = item.wall_side === "left" ? 3 : Math.round(t * (roomCols - 1));
+                    const zoneGy = item.wall_side === "left" ? Math.round(t * (roomRows - 1)) : 3;
                     const onZone = myPos.gx === zoneGx && myPos.gy === zoneGy;
+                    // Isometric matrix: local x = along wall, local y = up on wall
+                    // Right wall: matrix(0.5, 0.25, 0, -1, cx, cy)
+                    // Left wall:  matrix(-0.5, 0.25, 0, -1, cx, cy)
+                    const isoA = item.wall_side === "right" ? 0.5 : -0.5;
+                    const isoMatrix = `matrix(${isoA}, 0.25, 0, -1, ${cx}, ${cy})`;
                     return (
-                      <g key={`wall-${item.id}`}>
-                        {/* Circular backing plate */}
-                        <circle cx={cx} cy={cy} r={R * 1.2} fill="#2a1a0a" stroke="#8b6914" strokeWidth={2} style={{ cursor: "context-menu" }} onContextMenu={e => handleRightClick(e, null, item, null)} />
-                        {/* Dartboard */}
-                        <g transform={`translate(${cx},${cy})`} onContextMenu={e => handleRightClick(e, null, item, null)}
-                          onDoubleClick={() => { if (isMyTurn && onZone && !dartAnimating && game) handleDartThrow(game); }}
-                          style={{ cursor: isMyTurn && onZone ? "crosshair" : "context-menu" }}>
+                      <g key={`wall-${item.id}`}
+                        onContextMenu={e => handleRightClick(e, null, item, null)}
+                        onDoubleClick={() => { if (isMyTurn && onZone && !dartAnimating && game) handleDartThrow(game); }}
+                        style={{ cursor: isMyTurn && onZone ? "crosshair" : "context-menu" }}>
+                        {/* Board + backing plate in isometric wall projection */}
+                        <g transform={isoMatrix}>
+                          <circle r={R * 1.22} fill="#2a1a0a" stroke="#8b6914" strokeWidth={2.5} />
                           {dartboardSvg(R)}
+                          {/* "Your turn" glow — in local space so it matches board shape */}
+                          {isMyTurn && <circle r={R * 1.3} fill="none" stroke="#fbbf24" strokeWidth={2.5} opacity={0.7}>
+                            <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.2s" repeatCount="indefinite" />
+                          </circle>}
                         </g>
-                        {/* "Your turn" glow */}
-                        {isMyTurn && <circle cx={cx} cy={cy} r={R * 1.25} fill="none" stroke="#fbbf24" strokeWidth={2} opacity={0.7}>
-                          <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.2s" repeatCount="indefinite" />
-                        </circle>}
                         {/* Scoreboard */}
                         {game && (() => {
                           const isP1 = game.player1_id === currentProfile.id || game.player2_id !== currentProfile.id;
@@ -3663,14 +3689,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 const hasUser  = usersByCell.has(cellKey);
                 const isHov = hovered === cellKey;
                 const isMyTile = myPos.gx === gx && myPos.gy === gy;
-                const isDartZone = dartGames.some(g => {
+                const dartZoneGame = dartGames.find(g => {
                   if (g.status !== "active") return false;
                   const board = items.find(i => i.id === g.item_id);
                   if (!board) return false;
-                  const zGx = board.wall_side === "left" ? 4 : Math.round((board.wall_pos ?? 0.5) * (roomCols - 1));
-                  const zGy = board.wall_side === "left" ? Math.round((board.wall_pos ?? 0.5) * (roomRows - 1)) : 4;
+                  const zGx = board.wall_side === "left" ? 3 : Math.round((board.wall_pos ?? 0.5) * (roomCols - 1));
+                  const zGy = board.wall_side === "left" ? Math.round((board.wall_pos ?? 0.5) * (roomRows - 1)) : 3;
                   return gx === zGx && gy === zGy;
                 });
+                const isDartZone = !!dartZoneGame;
+                const isDartZoneMyTurn = isDartZone && dartZoneGame!.current_player_id === currentProfile.id;
                 const isBotTarget = !!movingBotId && !cellBot;
                 const isFloorPlacing = !!placingItem && !isWallItemType(placingItem.item.item_type);
                 const isPlaceTarget = isFloorPlacing && isHov && !hasUser && !cellBot;
@@ -3714,11 +3742,14 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
                     {/* Dart throwing zone highlight */}
                     {isDartZone && (
-                      <polygon points={tilePts(x, y)} fill="rgba(251,191,36,0.22)" stroke="#fbbf24" strokeWidth={1.5}>
-                        <animate attributeName="opacity" values="1;0.4;1" dur="1s" repeatCount="indefinite" />
+                      <polygon points={tilePts(x, y)}
+                        fill={isDartZoneMyTurn ? "rgba(251,191,36,0.25)" : "rgba(100,100,100,0.15)"}
+                        stroke={isDartZoneMyTurn ? "#fbbf24" : "#64748b"}
+                        strokeWidth={isDartZoneMyTurn ? 1.5 : 1}>
+                        {isDartZoneMyTurn && <animate attributeName="opacity" values="1;0.4;1" dur="1s" repeatCount="indefinite" />}
                       </polygon>
                     )}
-                    {isDartZone && (
+                    {isDartZoneMyTurn && (
                       <text x={x} y={y + 4} textAnchor="middle" fontSize={9} fill="#fbbf24" style={{ pointerEvents: "none" }}>🎯</text>
                     )}
 
@@ -4187,15 +4218,15 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 const dartShape = (
                   <>
                     {/* Tip */}
-                    <polygon points="10,0 5,-2 5,2" fill="#9ca3af" />
+                    <polygon points="7,0 3.5,-1.4 3.5,1.4" fill="#b0b8c0" />
                     {/* Barrel */}
-                    <rect x={-5} y={-1.8} width={10} height={3.6} rx={1.2} fill="#c8a045" stroke="#8b6914" strokeWidth={0.5} />
+                    <rect x={-3.5} y={-1.3} width={7} height={2.6} rx={0.9} fill="#c8a045" stroke="#8b6914" strokeWidth={0.4} />
                     {/* Shaft */}
-                    <line x1={-5} y1={0} x2={-9} y2={0} stroke="#d4d4d4" strokeWidth={1.4} />
+                    <line x1={-3.5} y1={0} x2={-6.5} y2={0} stroke="#d4d4d4" strokeWidth={1.1} />
                     {/* Upper flight */}
-                    <polygon points="-9,0 -17,-7 -12,0" fill="#dc2626" opacity={0.9} />
+                    <polygon points="-6.5,0 -12,-5 -8.5,0" fill="#dc2626" opacity={0.9} />
                     {/* Lower flight */}
-                    <polygon points="-9,0 -17,7 -12,0" fill="#991b1b" opacity={0.9} />
+                    <polygon points="-6.5,0 -12,5 -8.5,0" fill="#991b1b" opacity={0.9} />
                   </>
                 );
                 if (phase === "flying") {
