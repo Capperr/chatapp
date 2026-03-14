@@ -951,6 +951,13 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [achievementSearch, setAchievementSearch] = useState("");
   const [achievementFilter, setAchievementFilter] = useState<"all" | "earned" | "unearned">("all");
   const [achievementPage, setAchievementPage] = useState(0);
+  const [onlineTab, setOnlineTab] = useState<"online"|"coins"|"hours"|"level">("online");
+  const [onlineSearch, setOnlineSearch] = useState("");
+  const [userSearchResults, setUserSearchResults] = useState<Profile[]>([]);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
+  const [leaderboardCoins, setLeaderboardCoins] = useState<Profile[]>([]);
+  const [leaderboardHours, setLeaderboardHours] = useState<Profile[]>([]);
+  const [leaderboardLevel, setLeaderboardLevel] = useState<Profile[]>([]);
   const messageCountRef = useRef(0);
   const [messageCountState, setMessageCountState] = useState(0);
   const [loginStreak, setLoginStreak] = useState(0);
@@ -1163,6 +1170,26 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Load leaderboards when online panel opens
+  useEffect(() => {
+    if (rightPanel !== "online") return;
+    supabase.from("profiles").select("id, display_name, avatar_color, coins, name_color").order("coins", { ascending: false }).limit(10).then(({ data }) => { if (data) setLeaderboardCoins(data as Profile[]); });
+    supabase.from("profiles").select("id, display_name, avatar_color, total_online_seconds, name_color").order("total_online_seconds", { ascending: false }).limit(10).then(({ data }) => { if (data) setLeaderboardHours(data as Profile[]); });
+    supabase.from("profiles").select("id, display_name, avatar_color, level, xp, name_color").order("level", { ascending: false }).order("xp", { ascending: false }).limit(10).then(({ data }) => { if (data) setLeaderboardLevel(data as Profile[]); });
+  }, [rightPanel]);
+
+  // Search users (debounced)
+  useEffect(() => {
+    if (!onlineSearch.trim()) { setUserSearchResults([]); setUserSearchLoading(false); return; }
+    setUserSearchLoading(true);
+    const t = setTimeout(async () => {
+      const { data } = await supabase.from("profiles").select("id, display_name, avatar_color, level, coins, name_color").ilike("display_name", `%${onlineSearch.trim()}%`).limit(20);
+      if (data) setUserSearchResults(data as Profile[]);
+      setUserSearchLoading(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [onlineSearch]);
 
   const stars = useMemo(() => {
     let seed = 98273;
@@ -5517,96 +5544,172 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               );
             })()}
 
-            {/* Online users */}
+            {/* Online users / Search / Leaderboard */}
             {rightPanel === "online" && (
               <>
-                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#030912]/60 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />
-                    <span className="text-[13px] font-bold text-slate-200 tracking-wide">Online</span>
-                    <span className="text-[12px] font-semibold text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">{globalUsers.size}</span>
+                {/* Header: search bar */}
+                <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center gap-2 bg-[#030912]/60 flex-shrink-0">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-600 pointer-events-none" />
+                    <input
+                      value={onlineSearch}
+                      onChange={e => setOnlineSearch(e.target.value)}
+                      placeholder="Søg brugere..."
+                      className="w-full pl-7 pr-7 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[12px] text-slate-300 placeholder-slate-600 focus:outline-none focus:border-violet-500/40"
+                    />
+                    {onlineSearch && (
+                      <button onClick={() => setOnlineSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400"><X className="w-3 h-3" /></button>
+                    )}
                   </div>
-                  <button onClick={() => setRightPanel("hidden")} className="text-slate-600 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => { setRightPanel("hidden"); setOnlineSearch(""); }} className="text-slate-600 hover:text-slate-300 transition-colors flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
                 </div>
+
+                {/* Tabs (hidden while searching) */}
+                {!onlineSearch && (
+                  <div className="flex border-b border-white/[0.06] bg-[#030912]/40 flex-shrink-0">
+                    {([["online","Online"], ["coins","💰 Mønter"], ["hours","⏱ Timer"], ["level","⭐ Niveau"]] as [string, string][]).map(([key, label]) => (
+                      <button key={key} onClick={() => setOnlineTab(key as "online"|"coins"|"hours"|"level")}
+                        className={`flex-1 py-2 text-[10px] font-semibold transition-colors border-b-2 ${onlineTab === key ? "text-violet-300 border-violet-500" : "text-slate-600 border-transparent hover:text-slate-400"}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <div className="flex-1 overflow-y-auto">
-                  {Array.from(globalUsers.values())
-                    .sort((a, b) => {
-                      // Own entry first, then same room, then others
-                      const aMe = a.user_id === currentProfile.id ? 0 : 1;
-                      const bMe = b.user_id === currentProfile.id ? 0 : 1;
-                      if (aMe !== bMe) return aMe - bMe;
-                      const aSame = a.room_id === activeRoomId ? 0 : 1;
-                      const bSame = b.room_id === activeRoomId ? 0 : 1;
-                      return aSame - bSame;
-                    })
-                    .map(u => {
-                      const isMe = u.user_id === currentProfile.id;
-                      const inSameRoom = u.room_id === activeRoomId;
-                      const goToRoom = () => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id); };
-                      // Time in room
-                      const timeInRoom = (() => {
-                        if (!u.room_joined_at) return null;
-                        const secs = Math.floor((Date.now() - u.room_joined_at) / 1000);
-                        if (secs < 60) return `${secs}s`;
-                        if (secs < 3600) return `${Math.floor(secs / 60)}m`;
-                        return `${Math.floor(secs / 3600)}t ${Math.floor((secs % 3600) / 60)}m`;
-                      })();
-                      const uOutfit = u.outfit ?? {};
+                  {/* ── Search results ── */}
+                  {onlineSearch ? (
+                    userSearchLoading ? (
+                      <div className="flex items-center justify-center py-10 text-slate-600 text-[12px]">Søger...</div>
+                    ) : userSearchResults.length === 0 ? (
+                      <div className="flex items-center justify-center py-10 text-slate-600 text-[12px]">Ingen brugere fundet</div>
+                    ) : userSearchResults.map(u => {
+                      const onlineUser = globalUsers.get(u.id);
                       return (
-                        <div key={u.user_id} className={`px-3 py-2.5 flex items-center gap-3 border-b border-white/[0.03] hover:bg-white/[0.04] transition-colors group ${inSameRoom ? "bg-violet-500/[0.03]" : ""}`}>
-                          {/* Mini avatar */}
-                          {(() => {
-                            const isIdle = !!u.last_activity && Date.now() - u.last_activity > 10 * 60 * 1000;
-                            return (
-                              <div className="relative flex-shrink-0">
-                                <div className="w-10 h-12 rounded-lg overflow-hidden flex items-end justify-center" style={{ background: u.color + "18", border: `1px solid ${u.color}30` }}>
-                                  <svg width="36" height="44" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
-                                    <PersonAvatar color={u.color} glow={!!u.is_admin} />
-                                    {Object.keys(uOutfit).length > 0 && <ClothingOverlay outfit={uOutfit} catalog={clothingCatalog} />}
-                                    {isIdle && (
-                                      <g style={{ pointerEvents: "none" }}>
-                                        {[{ sz: 5, dx: 8,  y: -28, delay: "0s"   },
-                                          { sz: 6, dx: 13, y: -34, delay: "0.7s" },
-                                          { sz: 7, dx: 19, y: -41, delay: "1.4s" }].map(({ sz, dx, y, delay }, i) => (
-                                          <text key={i} x={dx} y={y} textAnchor="middle" fontSize={sz} fontWeight="900"
-                                            fill="#fbbf24" fontFamily="system-ui,sans-serif"
-                                            stroke="rgba(0,0,0,0.7)" strokeWidth={1} paintOrder="stroke" opacity={0}>
-                                            <animate attributeName="opacity" values="0;1;0" dur="2.4s" begin={delay} repeatCount="indefinite" />
-                                            <animate attributeName="y" from={`${y}`} to={`${y - 8}`} dur="2.4s" begin={delay} repeatCount="indefinite" />
-                                            Z
-                                          </text>
-                                        ))}
-                                      </g>
-                                    )}
-                                  </svg>
-                                </div>
-                                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#07101c] shadow-[0_0_4px_rgba(52,211,153,0.6)]" />
-                              </div>
-                            );
-                          })()}
-                          {/* Info */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <p className="text-[13px] font-semibold truncate" style={{ color: u.color }}>{u.display_name}{isMe ? " (dig)" : ""}</p>
-                              {u.is_admin && <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 flex-shrink-0">MOD</span>}
+                        <div key={u.id} onClick={() => { supabase.from("profiles").select("*").eq("id", u.id).single().then(({ data }) => { if (data) { setProfileView(data as Profile); setRightPanel("userprofile"); setOnlineSearch(""); } }); }}
+                          className="px-3 py-2.5 flex items-center gap-3 border-b border-white/[0.03] hover:bg-white/[0.04] transition-colors cursor-pointer">
+                          <div className="relative flex-shrink-0">
+                            <div className="w-9 h-11 rounded-lg overflow-hidden flex items-end justify-center" style={{ background: (u.avatar_color ?? "#8b5cf6") + "18", border: `1px solid ${u.avatar_color ?? "#8b5cf6"}30` }}>
+                              <svg width="30" height="38" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                                <PersonAvatar color={u.avatar_color ?? "#8b5cf6"} />
+                              </svg>
                             </div>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className={`text-[11px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</span>
-                              {timeInRoom && <span className="text-[10px] text-slate-700 flex-shrink-0">· {timeInRoom}</span>}
-                            </div>
+                            {onlineUser && <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#07101c]" />}
                           </div>
-                          {/* Go-to button */}
-                          {!isMe && !inSameRoom && (
-                            <button onClick={goToRoom} className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-[11px] font-semibold px-2 py-1 rounded-md bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 border border-violet-500/20">
-                              Gå til
-                            </button>
-                          )}
-                          {inSameRoom && !isMe && (
-                            <span className="flex-shrink-0 text-[10px] text-violet-500/60">Her</span>
-                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-semibold truncate" style={{ color: u.name_color ?? u.avatar_color ?? "#a78bfa" }}>{u.display_name}</p>
+                            <p className="text-[11px] text-slate-600">{onlineUser ? `🟢 #${onlineUser.room_name}` : "Offline"}</p>
+                          </div>
                         </div>
                       );
-                    })}
+                    })
+                  ) : onlineTab === "online" ? (
+                    /* ── Online list ── */
+                    Array.from(globalUsers.values())
+                      .sort((a, b) => {
+                        const aMe = a.user_id === currentProfile.id ? 0 : 1;
+                        const bMe = b.user_id === currentProfile.id ? 0 : 1;
+                        if (aMe !== bMe) return aMe - bMe;
+                        const aSame = a.room_id === activeRoomId ? 0 : 1;
+                        const bSame = b.room_id === activeRoomId ? 0 : 1;
+                        return aSame - bSame;
+                      })
+                      .map(u => {
+                        const isMe = u.user_id === currentProfile.id;
+                        const inSameRoom = u.room_id === activeRoomId;
+                        const goToRoom = () => { const r = rooms.find(r => r.id === u.room_id); if (r) switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id); };
+                        const timeInRoom = (() => {
+                          if (!u.room_joined_at) return null;
+                          const secs = Math.floor((Date.now() - u.room_joined_at) / 1000);
+                          if (secs < 60) return `${secs}s`;
+                          if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+                          return `${Math.floor(secs / 3600)}t ${Math.floor((secs % 3600) / 60)}m`;
+                        })();
+                        const uOutfit = u.outfit ?? {};
+                        return (
+                          <div key={u.user_id} className={`px-3 py-2.5 flex items-center gap-3 border-b border-white/[0.03] hover:bg-white/[0.04] transition-colors group ${inSameRoom ? "bg-violet-500/[0.03]" : ""}`}>
+                            {(() => {
+                              const isIdle = !!u.last_activity && Date.now() - u.last_activity > 10 * 60 * 1000;
+                              return (
+                                <div className="relative flex-shrink-0">
+                                  <div className="w-10 h-12 rounded-lg overflow-hidden flex items-end justify-center" style={{ background: u.color + "18", border: `1px solid ${u.color}30` }}>
+                                    <svg width="36" height="44" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                                      <PersonAvatar color={u.color} glow={!!u.is_admin} />
+                                      {Object.keys(uOutfit).length > 0 && <ClothingOverlay outfit={uOutfit} catalog={clothingCatalog} />}
+                                      {isIdle && (
+                                        <g style={{ pointerEvents: "none" }}>
+                                          {[{ sz: 5, dx: 8, y: -28, delay: "0s" }, { sz: 6, dx: 13, y: -34, delay: "0.7s" }, { sz: 7, dx: 19, y: -41, delay: "1.4s" }].map(({ sz, dx, y, delay }, i) => (
+                                            <text key={i} x={dx} y={y} textAnchor="middle" fontSize={sz} fontWeight="900" fill="#fbbf24" fontFamily="system-ui,sans-serif" stroke="rgba(0,0,0,0.7)" strokeWidth={1} paintOrder="stroke" opacity={0}>
+                                              <animate attributeName="opacity" values="0;1;0" dur="2.4s" begin={delay} repeatCount="indefinite" />
+                                              <animate attributeName="y" from={`${y}`} to={`${y - 8}`} dur="2.4s" begin={delay} repeatCount="indefinite" />
+                                              Z
+                                            </text>
+                                          ))}
+                                        </g>
+                                      )}
+                                    </svg>
+                                  </div>
+                                  <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#07101c] shadow-[0_0_4px_rgba(52,211,153,0.6)]" />
+                                </div>
+                              );
+                            })()}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-[13px] font-semibold truncate" style={{ color: u.color }}>{u.display_name}{isMe ? " (dig)" : ""}</p>
+                                {u.is_admin && <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 flex-shrink-0">MOD</span>}
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className={`text-[11px] truncate ${inSameRoom ? "text-violet-400" : "text-slate-600"}`}>#{u.room_name}</span>
+                                {timeInRoom && <span className="text-[10px] text-slate-700 flex-shrink-0">· {timeInRoom}</span>}
+                              </div>
+                            </div>
+                            {!isMe && !inSameRoom && (
+                              <button onClick={goToRoom} className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-[11px] font-semibold px-2 py-1 rounded-md bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 border border-violet-500/20">Gå til</button>
+                            )}
+                            {inSameRoom && !isMe && <span className="flex-shrink-0 text-[10px] text-violet-500/60">Her</span>}
+                          </div>
+                        );
+                      })
+                  ) : (
+                    /* ── Leaderboard ── */
+                    (() => {
+                      const board = onlineTab === "coins" ? leaderboardCoins : onlineTab === "hours" ? leaderboardHours : leaderboardLevel;
+                      const medals = ["🥇","🥈","🥉"];
+                      const statLabel = onlineTab === "coins" ? "💰 Flest mønter" : onlineTab === "hours" ? "⏱ Flest timer online" : "⭐ Højeste niveau";
+                      const formatStat = (p: Profile) => {
+                        if (onlineTab === "coins") return `${(p.coins ?? 0).toLocaleString("da-DK")} 🪙`;
+                        if (onlineTab === "hours") {
+                          const s = p.total_online_seconds ?? 0;
+                          const h = Math.floor(s / 3600);
+                          const m = Math.floor((s % 3600) / 60);
+                          return h > 0 ? `${h}t ${m}m` : `${m}m`;
+                        }
+                        return `Niv. ${p.level ?? 1} · ${(p.xp ?? 0).toLocaleString("da-DK")} XP`;
+                      };
+                      return (
+                        <>
+                          <div className="px-3 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest border-b border-white/[0.04]">{statLabel} — Top 10</div>
+                          {board.length === 0 ? (
+                            <div className="flex items-center justify-center py-10 text-slate-600 text-[12px]">Indlæser...</div>
+                          ) : board.map((p, i) => (
+                            <div key={p.id} onClick={() => { supabase.from("profiles").select("*").eq("id", p.id).single().then(({ data }) => { if (data) { setProfileView(data as Profile); setRightPanel("userprofile"); } }); }}
+                              className={`px-3 py-2.5 flex items-center gap-3 border-b border-white/[0.03] hover:bg-white/[0.04] transition-colors cursor-pointer ${i < 3 ? "bg-white/[0.015]" : ""}`}>
+                              <span className="w-6 text-center flex-shrink-0 text-[15px]">{i < 3 ? medals[i] : <span className="text-[11px] font-bold text-slate-600">#{i+1}</span>}</span>
+                              <div className="w-9 h-11 rounded-lg overflow-hidden flex items-end justify-center flex-shrink-0" style={{ background: (p.avatar_color ?? "#8b5cf6") + "18", border: `1px solid ${p.avatar_color ?? "#8b5cf6"}30` }}>
+                                <svg width="30" height="38" viewBox="-14 -30 28 50" style={{ overflow: "visible" }}>
+                                  <PersonAvatar color={p.avatar_color ?? "#8b5cf6"} />
+                                </svg>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[12px] font-semibold truncate" style={{ color: p.name_color ?? p.avatar_color ?? "#a78bfa" }}>{p.display_name}{p.id === currentProfile.id ? " (dig)" : ""}</p>
+                                <p className="text-[11px] text-slate-500 mt-0.5">{formatStat(p)}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </>
+                      );
+                    })()
+                  )}
                 </div>
               </>
             )}
