@@ -42,7 +42,7 @@ export function Navbar({ profile }: NavbarProps) {
             <div className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/30">
               <Zap className="w-5 h-5 text-white" />
             </div>
-            <span className="text-lg font-bold gradient-text">ChatApp</span>
+            <span className="text-lg font-bold gradient-text">Zpace</span>
           </div>
         </div>
 
@@ -157,7 +157,7 @@ export function Navbar({ profile }: NavbarProps) {
             <div className="w-7 h-7 rounded-lg bg-primary-600 flex items-center justify-center">
               <Zap className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold gradient-text">ChatApp</span>
+            <span className="font-bold gradient-text">Zpace</span>
           </div>
           <div className="flex items-center gap-2">
             <Avatar

@@ -184,7 +184,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" />
                 </svg>
               </div>
-              <span className="text-white font-bold text-[13px] tracking-tight hidden sm:block">ChatApp</span>
+              <span className="text-white font-bold text-[13px] tracking-tight hidden sm:block">Zpace</span>
             </div>
             <div className="w-px h-5 bg-white/[0.08] flex-shrink-0" />
 
@@ -243,7 +243,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
             <div className="relative flex flex-col items-center gap-2">
               <h2 className="text-2xl font-extrabold text-white leading-tight text-center">
                 Velkommen til{" "}
-                <span className="bg-gradient-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">ChatApp</span>
+                <span className="bg-gradient-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">Zpace</span>
               </h2>
 
               {/* Animated alien */}

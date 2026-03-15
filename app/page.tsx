@@ -181,8 +181,8 @@ export default function Home() {
   ];
 
   const faqs = [
-    { q: "Er ChatApp gratis?", a: "Ja! Det er 100% gratis at oprette en konto og deltage i chatten. Du tjener mønter bare ved at være aktiv, og de fleste features koster ingenting." },
-    { q: "Skal jeg downloade noget?", a: "Nej. ChatApp kører direkte i din browser — ingen installation nødvendig. Åbn siden og kom igang med det samme." },
+    { q: "Er Zpace gratis?", a: "Ja! Det er 100% gratis at oprette en konto og deltage i chatten. Du tjener mønter bare ved at være aktiv, og de fleste features koster ingenting." },
+    { q: "Skal jeg downloade noget?", a: "Nej. Zpace kører direkte i din browser — ingen installation nødvendig. Åbn siden og kom igang med det samme." },
     { q: "Hvordan ser jeg ud i chatten?", a: "Du er en farvet alien! Du vælger din farve ved oprettelse, og kan efterfølgende købe tøj og accessories i butikken for at personliggøre dit look." },
     { q: "Hvad er mønter til?", a: "Mønter er vores valuta. Du tjener dem ved at chatte, logge ind dagligt og spille spil. Brug dem i butikken på tøj, hårfarver og accessories til din avatar." },
     { q: "Kan jeg have mit eget rum?", a: "Ja! Du kan købe et personligt rumskib som kun er dit. Inviter venner ind og møbler det med genstande fra din inventar." },
@@ -225,7 +225,7 @@ export default function Home() {
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" />
               </svg>
             </div>
-            <span className="text-white font-bold text-[15px] tracking-tight">ChatApp</span>
+            <span className="text-white font-bold text-[15px] tracking-tight">Zpace</span>
           </div>
           <div className="flex items-center gap-3">
             <a href="#features" className="text-[13px] text-slate-400 hover:text-white transition-colors hidden sm:block">Features</a>
@@ -312,7 +312,7 @@ export default function Home() {
           <div className="text-center mb-14">
             <p className="text-[12px] font-bold text-violet-400 uppercase tracking-widest mb-3">Features</p>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Alt hvad du behøver for at have det sjovt</h2>
-            <p className="text-slate-500 mt-3 max-w-lg mx-auto text-[15px]">ChatApp er fyldt med features der gør det sjovt at chatte og udforske universet.</p>
+            <p className="text-slate-500 mt-3 max-w-lg mx-auto text-[15px]">Zpace er fyldt med features der gør det sjovt at chatte og udforske universet.</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -377,7 +377,7 @@ export default function Home() {
 
         {/* ── Footer ── */}
         <footer className="relative z-10 border-t border-white/[0.06] py-8 text-center">
-          <p className="text-[12px] text-slate-700">© {new Date().getFullYear()} ChatApp · Bygget med ❤️ i det ydre rum</p>
+          <p className="text-[12px] text-slate-700">© {new Date().getFullYear()} Zpace · Bygget med ❤️ i det ydre rum</p>
         </footer>
       </div>
 

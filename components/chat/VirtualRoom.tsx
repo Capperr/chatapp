@@ -3364,7 +3364,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-700 flex items-center justify-center flex-shrink-0 shadow-[0_0_8px_rgba(139,92,246,0.4)]">
                 <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
               </div>
-              <span className="hidden sm:block text-[13px] font-bold text-white/50 tracking-tight flex-shrink-0">ChatApp</span>
+              <span className="hidden sm:block text-[13px] font-bold text-white/50 tracking-tight flex-shrink-0">Zpace</span>
               <div className="hidden sm:block w-px h-3.5 bg-white/[0.1] flex-shrink-0" />
               {/* Room */}
               <div className="flex items-center gap-1.5 min-w-0">

@@ -1,4 +1,4 @@
-const STORAGE_KEY = "chatapp_sound_enabled";
+const STORAGE_KEY = "zpace_sound_enabled";
 
 export function isSoundEnabled(): boolean {
   if (typeof window === "undefined") return false;

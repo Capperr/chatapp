@@ -3,8 +3,8 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 
 export const metadata: Metadata = {
-  title: "ChatApp — Realtid chat",
-  description: "En moderne realtid chat applikation",
+  title: "Zpace — Træd ind i alien-universet",
+  description: "Zpace er en virtuel verden med isometriske rum, alien-avatarer og realtime chat.",
   manifest: "/manifest.json",
 };
 
