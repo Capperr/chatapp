@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Mail, Lock, Eye, EyeOff, Loader2, X, CheckCircle, UserPlus } from "lucide-react";
+import { Lock, Eye, EyeOff, Loader2, X, CheckCircle, UserPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const REG_COLORS = ["#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#3b82f6","#84cc16","#f97316","#14b8a6"];
@@ -84,7 +84,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
   const supabase = createClient();
 
   // Login state
-  const [loginEmail, setLoginEmail] = useState("");
+  const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPw, setShowLoginPw] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -103,9 +103,16 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
     e.preventDefault();
     setLoginLoading(true);
     setLoginError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
+    // Look up email by username via RPC (Supabase Auth requires email)
+    const { data: email } = await supabase.rpc("get_email_by_username", { p_username: loginUsername.trim().toLowerCase() });
+    if (!email) {
+      setLoginError("Brugernavn ikke fundet");
+      setLoginLoading(false);
+      return;
+    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password: loginPassword });
     if (error) {
-      setLoginError("Forkert e-mail eller adgangskode");
+      setLoginError("Forkert brugernavn eller adgangskode");
       setLoginLoading(false);
       return;
     }
@@ -184,9 +191,9 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
             {/* Inline login form */}
             <form onSubmit={handleLogin} className="flex items-center gap-2 flex-1 min-w-0">
               <div className="relative flex-1 min-w-0">
-                <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-                <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="E-mail" required autoComplete="email"
-                  className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg pl-8 pr-3 py-1.5 text-[12px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 focus:bg-white/[0.08] transition-all" />
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-[11px] pointer-events-none">@</span>
+                <input type="text" value={loginUsername} onChange={e => setLoginUsername(e.target.value)} placeholder="brugernavn" required autoComplete="username"
+                  className="w-full bg-white/[0.06] border border-white/[0.08] rounded-lg pl-7 pr-3 py-1.5 text-[12px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 focus:bg-white/[0.08] transition-all" />
               </div>
               <div className="relative flex-1 min-w-0">
                 <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
@@ -319,7 +326,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
                   <div className="space-y-1">
                     <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">E-mail</label>
                     <div className="relative">
-                      <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600 pointer-events-none" />
+                      <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                       <input type="email" value={regData.email} onChange={e => setRegData(p => ({ ...p, email: e.target.value }))} placeholder="din@email.dk" required autoComplete="email"
                         className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg pl-8 pr-3 py-1.5 text-[12px] text-slate-200 placeholder-slate-700 outline-none focus:border-violet-500/50 transition-all" />
                     </div>
