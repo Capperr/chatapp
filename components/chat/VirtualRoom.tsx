@@ -3082,7 +3082,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     if (!pendingAchievements.has(achievementId)) return;
     const achievement = allAchievements.find(a => a.id === achievementId);
     if (!achievement) return;
-    const { error } = await supabase.from("user_achievements").update({ status: 'claimed' }).eq("user_id", currentProfile.id).eq("achievement_id", achievementId);
+    // Use upsert so it works even if UPDATE policy isn't applied yet
+    const { error } = await supabase.from("user_achievements")
+      .upsert({ user_id: currentProfile.id, achievement_id: achievementId, status: 'claimed' },
+        { onConflict: 'user_id,achievement_id' });
     if (error) return;
     setPendingAchievements(prev => { const s = new Set(prev); s.delete(achievementId); return s; });
     setMyAchievements(prev => { const s = new Set(prev); s.add(achievementId); return s; });
