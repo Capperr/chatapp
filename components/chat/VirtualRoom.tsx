@@ -622,6 +622,8 @@ interface ChatRoom {
   roulette_gx?: number | null;
   roulette_gy?: number | null;
   roulette_scale?: number | null;
+  sort_order?: number;
+  allow_user_items?: boolean;
 }
 interface VisitRequest { from_id: string; from_name: string; spaceship_room_id: string; spaceship_room_name: string; }
 interface TradeOffer { coins: number; clothing_ids: string[]; item_ids: string[]; }
@@ -867,8 +869,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [globalUsers, setGlobalUsers] = useState<Map<string, GlobalUser>>(new Map());
   const [activeThemeKey, setActiveThemeKey] = useState("blue");
   const [activeFloorPattern, setActiveFloorPattern] = useState("standard");
-  const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
-  const [editRoomForm, setEditRoomForm] = useState<{ id: string; name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
+  const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string; allow_user_items: boolean } | null>(null);
+  const [editRoomForm, setEditRoomForm] = useState<{ id: string; name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string; allow_user_items: boolean } | null>(null);
+  const [activeRoomAllowUserItems, setActiveRoomAllowUserItems] = useState(true);
   const [roomTab, setRoomTab] = useState<"rum" | "rumskibe">("rum");
   const [dragRoomId, setDragRoomId] = useState<string | null>(null);
   const [dragOverRoomId, setDragOverRoomId] = useState<string | null>(null);
@@ -1393,7 +1396,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   // ─── Data fetches ──────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern, owner_id, spaceship_passcode, roulette_gx, roulette_gy, roulette_scale, sort_order").order("sort_order", { ascending: true }).order("name").then(({ data }) => {
+    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern, owner_id, spaceship_passcode, roulette_gx, roulette_gy, roulette_scale, sort_order, allow_user_items").order("sort_order", { ascending: true }).order("name").then(({ data }) => {
       if (data) {
         const list = (data as ChatRoom[]).map(r => ({ ...r, cols: r.cols ?? DEFAULT_COLS, rows: r.rows ?? DEFAULT_ROWS, room_type: r.room_type ?? "normal", theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }));
         setRooms(list);
@@ -1404,6 +1407,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           setActiveRoomOwnerId(cur.owner_id ?? null);
           setActiveThemeKey(cur.theme_key ?? "blue");
           setActiveFloorPattern(cur.floor_pattern ?? "standard");
+          setActiveRoomAllowUserItems(cur.allow_user_items !== false);
           if (cur.room_type === "shop") setRightPanel("shop");
           if (cur.room_type === "casino") {
             setRouletteGx(cur.roulette_gx ?? null);
@@ -2919,13 +2923,15 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     setActiveThemeKey(themeKey ?? "blue");
     setActiveFloorPattern(floorPattern ?? "standard");
     setActiveRoomOwnerId(ownerId !== undefined ? ownerId : null);
+    const roomMeta = rooms.find(r => r.id === id);
+    setActiveRoomAllowUserItems(roomMeta?.allow_user_items !== false);
     lastActivityRef.current = Date.now();
     setZoom(1);
     panRef.current = { x: 0, y: 0 }; setPan({ x: 0, y: 0 });
     myPosRef.current = { gx: Math.floor(Math.random() * nc), gy: Math.floor(Math.random() * nr) };
     setMyPos(myPosRef.current);
     // Move all carried items (in inventory) to the new room so they follow the user
-    supabase.from("virtual_room_items").update({ room_id: id }).eq("owner_id", currentProfile.id);
+    supabase.from("virtual_room_items").update({ room_id: id }).eq("owner_id", currentProfile.id).then(() => {});
     // Track rooms visited for room_explorer achievement
     const newRoomsVisited = (currentProfile.rooms_visited_count ?? 0) + 1;
     supabase.from("profiles").update({ rooms_visited_count: newRoomsVisited }).eq("id", currentProfile.id).then(() => {});
@@ -3006,23 +3012,25 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   // ─── Item actions ──────────────────────────────────────────────────────────
   const isSpaceshipOwner = activeRoomType !== "spaceship" || activeRoomOwnerId === currentProfile.id;
+  // Permission to place/pickup items: admins always, spaceship owners in their ship, others only if room allows it
+  const canPlaceItems = isAdmin || (activeRoomType === "spaceship" ? activeRoomOwnerId === currentProfile.id : activeRoomAllowUserItems);
 
   const pickupItem = async (item: RoomItem) => {
-    if (!isSpaceshipOwner) return;
+    if (!canPlaceItems && item.owner_id !== currentProfile.id) return;
     setCtxMenu(null);
-    await supabase.from("virtual_room_items").update({ owner_id: currentProfile.id, gx: null, gy: null, wall_side: null }).eq("id", item.id);
+    await supabase.from("virtual_room_items").update({ owner_id: currentProfile.id, room_id: activeRoomId, gx: null, gy: null, wall_side: null }).eq("id", item.id);
   };
 
   const placeFloorItem = async (gx: number, gy: number, rotation: number) => {
-    if (!placingItem || !isSpaceshipOwner) return;
-    await supabase.from("virtual_room_items").update({ owner_id: null, gx, gy, rotation, wall_side: null }).eq("id", placingItem.item.id);
+    if (!placingItem || !canPlaceItems) return;
+    await supabase.from("virtual_room_items").update({ owner_id: null, room_id: activeRoomId, gx, gy, rotation, wall_side: null }).eq("id", placingItem.item.id);
     setPlacingItem(null);
     setMovingFloorItemId(null);
   };
 
   const placeWallItem = async (wall_side: string, wall_pos: number, wall_height: number) => {
-    if (!placingItem || !isSpaceshipOwner) return;
-    await supabase.from("virtual_room_items").update({ owner_id: null, gx: null, gy: null, wall_side, wall_pos, wall_height }).eq("id", placingItem.item.id);
+    if (!placingItem || !canPlaceItems) return;
+    await supabase.from("virtual_room_items").update({ owner_id: null, room_id: activeRoomId, gx: null, gy: null, wall_side, wall_pos, wall_height }).eq("id", placingItem.item.id);
     setPlacingItem(null);
   };
 
@@ -3199,18 +3207,19 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   // ─── Room creation / editing ───────────────────────────────────────────────
   const createRoom = async () => {
     if (!createRoomForm?.name.trim()) return;
-    const { data } = await supabase.from("chat_rooms").insert({ name: createRoomForm.name.trim(), cols: createRoomForm.cols, rows: createRoomForm.rows, room_type: createRoomForm.room_type, theme_key: createRoomForm.theme_key, floor_pattern: createRoomForm.floor_pattern }).select("id, name, cols, rows, room_type, theme_key, floor_pattern").single();
+    const { data } = await supabase.from("chat_rooms").insert({ name: createRoomForm.name.trim(), cols: createRoomForm.cols, rows: createRoomForm.rows, room_type: createRoomForm.room_type, theme_key: createRoomForm.theme_key, floor_pattern: createRoomForm.floor_pattern, allow_user_items: createRoomForm.allow_user_items }).select("id, name, cols, rows, room_type, theme_key, floor_pattern, allow_user_items").single();
     if (data) setRooms(prev => [...prev, data as ChatRoom].sort((a, b) => a.name.localeCompare(b.name)));
     setCreateRoomForm(null);
   };
 
   const updateRoom = async () => {
     if (!editRoomForm?.name.trim()) return;
-    await supabase.from("chat_rooms").update({ name: editRoomForm.name.trim(), cols: editRoomForm.cols, rows: editRoomForm.rows, room_type: editRoomForm.room_type, theme_key: editRoomForm.theme_key, floor_pattern: editRoomForm.floor_pattern }).eq("id", editRoomForm.id);
+    await supabase.from("chat_rooms").update({ name: editRoomForm.name.trim(), cols: editRoomForm.cols, rows: editRoomForm.rows, room_type: editRoomForm.room_type, theme_key: editRoomForm.theme_key, floor_pattern: editRoomForm.floor_pattern, allow_user_items: editRoomForm.allow_user_items }).eq("id", editRoomForm.id);
     setRooms(prev => prev.map(r => r.id === editRoomForm.id ? { ...r, ...editRoomForm, name: editRoomForm.name.trim() } : r).sort((a, b) => a.name.localeCompare(b.name)));
     if (editRoomForm.id === activeRoomId) {
       setActiveThemeKey(editRoomForm.theme_key);
       setActiveFloorPattern(editRoomForm.floor_pattern);
+      setActiveRoomAllowUserItems(editRoomForm.allow_user_items);
     }
     setEditRoomForm(null);
   };
@@ -5974,7 +5983,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     <span className="text-[14px] font-bold text-slate-200 tracking-wide">Skift rum</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8, room_type: "normal", theme_key: "blue", floor_pattern: "standard" })} className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all" title="Opret rum"><Plus className="w-3.5 h-3.5" /></button>}
+                    {isAdmin && <button onClick={() => setCreateRoomForm({ name: "", cols: 10, rows: 8, room_type: "normal", theme_key: "blue", floor_pattern: "standard", allow_user_items: true })} className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all" title="Opret rum"><Plus className="w-3.5 h-3.5" /></button>}
                     <button onClick={() => setRightPanel("hidden")} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
                   </div>
                 </div>
@@ -6018,6 +6027,12 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         ))}
                       </div>
                       <p className="text-[11px] text-slate-600 mb-2">{form.cols * form.rows} felter</p>
+                      <label className="flex items-center gap-2 mb-2.5 cursor-pointer select-none">
+                        <div className={`w-8 h-4 rounded-full transition-colors relative ${form.allow_user_items ? "bg-violet-500" : "bg-white/10"}`} onClick={() => set({ ...form, allow_user_items: !form.allow_user_items })}>
+                          <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${form.allow_user_items ? "left-4" : "left-0.5"}`} />
+                        </div>
+                        <span className="text-[12px] text-slate-400">Brugere kan placere genstande</span>
+                      </label>
                       <div className="flex gap-1">
                         <button onClick={isEdit ? updateRoom : createRoom} className="flex-1 py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-[12px] font-semibold text-white transition-colors">{isEdit ? "Gem" : "Opret"}</button>
                         <button onClick={() => { isEdit ? setEditRoomForm(null) : setCreateRoomForm(null); }} className="flex-1 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] rounded-lg text-[12px] text-slate-300 transition-colors">Annuller</button>
@@ -6098,7 +6113,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           {occ > 0 && <span className="text-[12px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
                           {isAdmin && (
                             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 flex-shrink-0 transition-all">
-                              <button onClick={e => { e.stopPropagation(); setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="p-1 rounded text-slate-600 hover:text-violet-400 transition-colors" title="Rediger rum"><Pencil className="w-3 h-3" /></button>
+                              <button onClick={e => { e.stopPropagation(); setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard", allow_user_items: r.allow_user_items !== false }); }} className="p-1 rounded text-slate-600 hover:text-violet-400 transition-colors" title="Rediger rum"><Pencil className="w-3 h-3" /></button>
                               <button onClick={e => { e.stopPropagation(); if (confirm(`Slet rummet "${r.name}"? Dette kan ikke fortrydes.`)) deleteRoom(r.id); }} className="p-1 rounded text-slate-600 hover:text-rose-400 transition-colors" title="Slet rum"><Trash2 className="w-3 h-3" /></button>
                             </div>
                           )}

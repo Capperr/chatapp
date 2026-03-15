@@ -67,6 +67,7 @@ export interface ChatRoom {
   is_default: boolean;
   created_at: string;
   sort_order?: number;
+  allow_user_items?: boolean;
 }
 
 export interface Conversation {
