@@ -869,6 +869,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [activeFloorPattern, setActiveFloorPattern] = useState("standard");
   const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
   const [editRoomForm, setEditRoomForm] = useState<{ id: string; name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
+  const [roomTab, setRoomTab] = useState<"rum" | "lejligheder">("rum");
+  const [dragRoomId, setDragRoomId] = useState<string | null>(null);
+  const [dragOverRoomId, setDragOverRoomId] = useState<string | null>(null);
   const [adminTab, setAdminTab] = useState<"users" | "items" | "bots" | "self" | "clothing">("users");
   const [isInvisible, setIsInvisible] = useState(false);
   const isInvisibleRef = useRef(false);
@@ -1389,7 +1392,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   // ─── Data fetches ──────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern, owner_id, spaceship_passcode, roulette_gx, roulette_gy, roulette_scale").order("name").then(({ data }) => {
+    supabase.from("chat_rooms").select("id, name, cols, rows, room_type, theme_key, floor_pattern, owner_id, spaceship_passcode, roulette_gx, roulette_gy, roulette_scale, sort_order").order("sort_order", { ascending: true }).order("name").then(({ data }) => {
       if (data) {
         const list = (data as ChatRoom[]).map(r => ({ ...r, cols: r.cols ?? DEFAULT_COLS, rows: r.rows ?? DEFAULT_ROWS, room_type: r.room_type ?? "normal", theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }));
         setRooms(list);
@@ -5917,90 +5920,125 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     </div>
                   );
                 })()}
-                {/* Room list */}
-                <div className="flex-1 overflow-y-auto relative">
-                  {/* Normal rooms */}
-                  {(() => {
-                    const normalRooms = rooms.filter(r => r.room_type !== "spaceship");
-                    const spaceshipRooms = rooms.filter(r => r.room_type === "spaceship");
-                    return (
-                      <>
-                        {normalRooms.length > 0 && (
-                          <>
-                            <div className="px-4 pt-3.5 pb-1.5">
-                              <span className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Rum</span>
-                            </div>
-                            {normalRooms.map((r, i) => {
-                              const occ = roomOccupancy.get(r.id) ?? 0;
-                              const rtheme = ROOM_THEMES.find(t => t.id === (r.theme_key ?? "blue"));
-                              const isActive = r.id === activeRoomId;
-                              return (
-                                <div
-                                  key={r.id}
-                                  className={`group flex items-center gap-3 px-4 py-3 cursor-pointer transition-all ${isActive ? "bg-violet-500/15" : "hover:bg-white/[0.04]"}`}
-                                  onMouseEnter={(e) => { setHoveredRoomId(r.id); const rect = e.currentTarget.getBoundingClientRect(); setTooltipPos({ x: rect.left - 4, y: rect.top }); }}
-                                  onMouseLeave={() => { setHoveredRoomId(null); setTooltipPos(null); }}
-                                  onClick={() => { if (r.id === activeRoomId) { showToastRef.current("🏠", "Du er allerede i dette rum", undefined, "#6366f1"); return; } switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id); }}
-                                >
-                                  <span className="text-[12px] font-bold text-slate-700 w-4 text-right flex-shrink-0 tabular-nums">{i + 1}</span>
-                                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-[0_0_6px_currentColor]" style={{ backgroundColor: rtheme?.color ?? "#475569", color: rtheme?.color ?? "#475569" }} />
-                                  <span className={`flex-1 text-[15px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</span>
-                                  {occ > 0 && <span className="text-[12px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
-                                  {isAdmin && <button onClick={e => { e.stopPropagation(); setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-600 hover:text-violet-400 flex-shrink-0 transition-all" title="Rediger rum"><Pencil className="w-3 h-3" /></button>}
-                                </div>
-                              );
-                            })}
-                          </>
-                        )}
+                {/* Tabs */}
+                <div className="flex border-b border-white/[0.06] flex-shrink-0">
+                  {([["rum", "🌐 Rum"], ["lejligheder", "🚀 Lejligheder"]] as [string, string][]).map(([key, label]) => (
+                    <button key={key} onClick={() => setRoomTab(key as "rum" | "lejligheder")}
+                      className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors border-b-2 -mb-px ${roomTab === key ? "text-violet-300 border-violet-500 bg-violet-500/[0.04]" : "text-slate-600 border-transparent hover:text-slate-400"}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
 
-                        {spaceshipRooms.length > 0 && (
-                          <>
-                            <div className="px-4 pt-3.5 pb-1.5 flex items-center gap-2">
-                              <span className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">🚀 Rumskibe</span>
-                              <span className="text-[10px] text-slate-700">({spaceshipRooms.length})</span>
-                            </div>
-                            {spaceshipRooms.map(r => {
-                              const occ = roomOccupancy.get(r.id) ?? 0;
-                              const isOwn = r.owner_id === currentProfile.id;
-                              const isActive = r.id === activeRoomId;
-                              const ownerOnline = globalUsers.has(r.owner_id ?? "");
-                              const hasPasscode = !!r.spaceship_passcode;
-                              const rtheme = ROOM_THEMES.find(t => t.id === (r.theme_key ?? "blue"));
-                              return (
-                                <div
-                                  key={r.id}
-                                  className={`group flex items-center gap-3 px-4 py-3 transition-all ${isActive ? "bg-violet-500/15" : isOwn || hasPasscode || ownerOnline ? "cursor-pointer hover:bg-white/[0.04]" : "opacity-50 cursor-not-allowed"}`}
-                                  onMouseEnter={(e) => { setHoveredRoomId(r.id); const rect = e.currentTarget.getBoundingClientRect(); setTooltipPos({ x: rect.left - 4, y: rect.top }); }}
-                                  onMouseLeave={() => { setHoveredRoomId(null); setTooltipPos(null); }}
-                                  onClick={() => {
-                                    if (isOwn) {
-                                      switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id);
-                                    } else if (hasPasscode) {
-                                      setPasscodePrompt({ room: r });
-                                      setPasscodeInput("");
-                                      setPasscodeError(false);
-                                    } else if (ownerOnline) {
-                                      setAwaitingVisit(true);
-                                      channelRef.current?.send({ type: "broadcast", event: "spaceship_request", payload: { to_id: r.owner_id, from_id: currentProfile.id, from_name: currentProfile.display_name, spaceship_room_id: r.id, spaceship_room_name: r.name } });
-                                      setTimeout(() => setAwaitingVisit(false), 30000);
-                                      setRightPanel("hidden");
-                                    }
-                                  }}
-                                >
-                                  <span className="text-base leading-none flex-shrink-0">🚀</span>
-                                  <div className="flex-1 min-w-0">
-                                    <p className={`text-[15px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</p>
-                                    <p className="text-[11px] truncate mt-0.5" style={{ color: rtheme?.color ?? "#475569", opacity: 0.7 }}>{isOwn ? "Dit rumskib" : hasPasscode ? "Kodeord påkrævet" : ownerOnline ? "Anmod om adgang" : "Ejeren er offline"}</p>
-                                  </div>
-                                  <span className="text-[13px] flex-shrink-0 leading-none" title={hasPasscode ? "Kodelåst" : "Åbent for anmodninger"}>{hasPasscode ? "🔒" : "🔓"}</span>
-                                  {occ > 0 && <span className="text-[12px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
-                                </div>
-                              );
-                            })}
-                          </>
-                        )}
-                      </>
-                    );
+                {/* Room list */}
+                <div className="flex-1 overflow-y-auto relative"
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => {
+                    e.preventDefault();
+                    if (!dragRoomId || !dragOverRoomId || dragRoomId === dragOverRoomId) { setDragRoomId(null); setDragOverRoomId(null); return; }
+                    // Reorder rooms locally
+                    setRooms(prev => {
+                      const normalRooms = prev.filter(r => r.room_type !== "spaceship");
+                      const others = prev.filter(r => r.room_type === "spaceship");
+                      const fromIdx = normalRooms.findIndex(r => r.id === dragRoomId);
+                      const toIdx = normalRooms.findIndex(r => r.id === dragOverRoomId);
+                      if (fromIdx === -1 || toIdx === -1) return prev;
+                      const reordered = [...normalRooms];
+                      const [moved] = reordered.splice(fromIdx, 1);
+                      reordered.splice(toIdx, 0, moved);
+                      // Persist sort_order to DB
+                      reordered.forEach((r, i) => {
+                        supabase.from("chat_rooms").update({ sort_order: i + 1 }).eq("id", r.id).then(() => {});
+                      });
+                      return [...reordered.map((r, i) => ({ ...r, sort_order: i + 1 })), ...others];
+                    });
+                    setDragRoomId(null);
+                    setDragOverRoomId(null);
+                  }}
+                >
+                  {roomTab === "rum" && (() => {
+                    const normalRooms = rooms.filter(r => r.room_type !== "spaceship");
+                    return normalRooms.length === 0 ? (
+                      <p className="text-[13px] text-slate-600 text-center mt-8">Ingen rum</p>
+                    ) : normalRooms.map((r, i) => {
+                      const occ = roomOccupancy.get(r.id) ?? 0;
+                      const rtheme = ROOM_THEMES.find(t => t.id === (r.theme_key ?? "blue"));
+                      const isActive = r.id === activeRoomId;
+                      const isDragging = dragRoomId === r.id;
+                      const isDragOver = dragOverRoomId === r.id && dragRoomId !== r.id;
+                      return (
+                        <div
+                          key={r.id}
+                          draggable={isAdmin}
+                          onDragStart={() => setDragRoomId(r.id)}
+                          onDragEnter={() => { if (dragRoomId && dragRoomId !== r.id) setDragOverRoomId(r.id); }}
+                          onDragEnd={() => { setDragRoomId(null); setDragOverRoomId(null); }}
+                          className={`group flex items-center gap-3 px-4 py-3 cursor-pointer transition-all select-none
+                            ${isActive ? "bg-violet-500/15" : "hover:bg-white/[0.04]"}
+                            ${isDragging ? "opacity-30" : ""}
+                            ${isDragOver ? "border-t-2 border-violet-400" : "border-t-2 border-transparent"}
+                          `}
+                          onMouseEnter={(e) => { setHoveredRoomId(r.id); const rect = e.currentTarget.getBoundingClientRect(); setTooltipPos({ x: rect.left - 4, y: rect.top }); }}
+                          onMouseLeave={() => { setHoveredRoomId(null); setTooltipPos(null); }}
+                          onClick={() => { if (r.id === activeRoomId) { showToastRef.current("🏠", "Du er allerede i dette rum", undefined, "#6366f1"); return; } switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id); }}
+                        >
+                          {isAdmin && (
+                            <svg className="w-3 h-3 text-slate-700 flex-shrink-0 cursor-grab active:cursor-grabbing" viewBox="0 0 24 24" fill="currentColor">
+                              <circle cx="9" cy="6" r="2"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/><circle cx="15" cy="18" r="2"/>
+                            </svg>
+                          )}
+                          {!isAdmin && <span className="text-[12px] font-bold text-slate-700 w-4 text-right flex-shrink-0 tabular-nums">{i + 1}</span>}
+                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-[0_0_6px_currentColor]" style={{ backgroundColor: rtheme?.color ?? "#475569", color: rtheme?.color ?? "#475569" }} />
+                          <span className={`flex-1 text-[15px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</span>
+                          {occ > 0 && <span className="text-[12px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
+                          {isAdmin && <button onClick={e => { e.stopPropagation(); setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-600 hover:text-violet-400 flex-shrink-0 transition-all" title="Rediger rum"><Pencil className="w-3 h-3" /></button>}
+                        </div>
+                      );
+                    });
+                  })()}
+
+                  {roomTab === "lejligheder" && (() => {
+                    const spaceshipRooms = rooms.filter(r => r.room_type === "spaceship");
+                    return spaceshipRooms.length === 0 ? (
+                      <p className="text-[13px] text-slate-600 text-center mt-8">Ingen lejligheder</p>
+                    ) : spaceshipRooms.map(r => {
+                      const occ = roomOccupancy.get(r.id) ?? 0;
+                      const isOwn = r.owner_id === currentProfile.id;
+                      const isActive = r.id === activeRoomId;
+                      const ownerOnline = globalUsers.has(r.owner_id ?? "");
+                      const hasPasscode = !!r.spaceship_passcode;
+                      const rtheme = ROOM_THEMES.find(t => t.id === (r.theme_key ?? "blue"));
+                      return (
+                        <div
+                          key={r.id}
+                          className={`group flex items-center gap-3 px-4 py-3 transition-all ${isActive ? "bg-violet-500/15" : isOwn || hasPasscode || ownerOnline ? "cursor-pointer hover:bg-white/[0.04]" : "opacity-50 cursor-not-allowed"}`}
+                          onMouseEnter={(e) => { setHoveredRoomId(r.id); const rect = e.currentTarget.getBoundingClientRect(); setTooltipPos({ x: rect.left - 4, y: rect.top }); }}
+                          onMouseLeave={() => { setHoveredRoomId(null); setTooltipPos(null); }}
+                          onClick={() => {
+                            if (isOwn) {
+                              switchRoom(r.id, r.name, r.cols, r.rows, r.room_type, r.theme_key, r.floor_pattern, r.owner_id);
+                            } else if (hasPasscode) {
+                              setPasscodePrompt({ room: r });
+                              setPasscodeInput("");
+                              setPasscodeError(false);
+                            } else if (ownerOnline) {
+                              setAwaitingVisit(true);
+                              channelRef.current?.send({ type: "broadcast", event: "spaceship_request", payload: { to_id: r.owner_id, from_id: currentProfile.id, from_name: currentProfile.display_name, spaceship_room_id: r.id, spaceship_room_name: r.name } });
+                              setTimeout(() => setAwaitingVisit(false), 30000);
+                              setRightPanel("hidden");
+                            }
+                          }}
+                        >
+                          <span className="text-base leading-none flex-shrink-0">🚀</span>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-[15px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</p>
+                            <p className="text-[11px] truncate mt-0.5" style={{ color: rtheme?.color ?? "#475569", opacity: 0.7 }}>{isOwn ? "Dit rumskib" : hasPasscode ? "Kodeord påkrævet" : ownerOnline ? "Anmod om adgang" : "Ejeren er offline"}</p>
+                          </div>
+                          <span className="text-[13px] flex-shrink-0 leading-none" title={hasPasscode ? "Kodelåst" : "Åbent for anmodninger"}>{hasPasscode ? "🔒" : "🔓"}</span>
+                          {occ > 0 && <span className="text-[12px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
+                        </div>
+                      );
+                    });
                   })()}
                 </div>
               </>
