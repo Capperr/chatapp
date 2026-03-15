@@ -954,7 +954,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [myAchievements, setMyAchievements] = useState<Set<string>>(new Set()); // claimed
   const [pendingAchievements, setPendingAchievements] = useState<Set<string>>(new Set()); // ready to claim
   const [achievementSearch, setAchievementSearch] = useState("");
-  const [achievementFilter, setAchievementFilter] = useState<"all" | "earned" | "unearned" | "pending">("all");
+  const [achievementFilter, setAchievementFilter] = useState<"all" | "earned" | "pending">("all");
   const [achievementPage, setAchievementPage] = useState(0);
   const [onlineTab, setOnlineTab] = useState<"online"|"coins"|"hours"|"level">("online");
   const [onlineSearch, setOnlineSearch] = useState("");
@@ -8026,7 +8026,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               const q = achievementSearch.toLowerCase();
               const filtered = allAchievements.filter(a => {
                 const matchSearch = !q || a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q);
-                const matchFilter = achievementFilter === "all" ? true
+                const matchFilter = achievementFilter === "all" ? (!myAchievements.has(a.id) && !pendingAchievements.has(a.id))
                   : achievementFilter === "earned" ? myAchievements.has(a.id)
                   : achievementFilter === "pending" ? pendingAchievements.has(a.id)
                   : !myAchievements.has(a.id) && !pendingAchievements.has(a.id);
@@ -8052,11 +8052,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-[12px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500/40"
                   />
                   <div className="flex gap-1 flex-wrap">
-                    {(["all","pending","earned","unearned"] as const).map(f => {
-                      const label = f === "all" ? "Alle"
+                    {(["all","pending","earned"] as const).map(f => {
+                      const unearned = allAchievements.length - myAchievements.size - pendingAchievements.size;
+                      const label = f === "all" ? `Alle (${unearned})`
                         : f === "pending" ? `Klar (${pendingAchievements.size})`
-                        : f === "earned" ? `Opnået (${myAchievements.size})`
-                        : `Mangler (${allAchievements.length - myAchievements.size - pendingAchievements.size})`;
+                        : `Opnået (${myAchievements.size})`;
                       const isPending = f === "pending";
                       return (
                         <button key={f} onClick={() => { setAchievementFilter(f); setAchievementPage(0); }}
