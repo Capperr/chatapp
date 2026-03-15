@@ -5124,38 +5124,95 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             )}
 
             {/* Floating toolbar dock */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-3 py-2.5 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
-              <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); setReconnectKey(k => k + 1); reloadChat(); }} className="p-2.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Genindlæs / Genopret forbindelse"><RefreshCw className="w-[22px] h-[22px]" /></button>
-              <div className="w-px h-6 bg-white/[0.08] mx-1" />
-              <button onClick={() => setRightPanel(p => p === "chatlog" ? "hidden" : "chatlog")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "chatlog" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Chatlog"><MessageSquare className="w-[22px] h-[22px]" /></button>
-              <button onClick={() => setRightPanel(p => p === "online" ? "hidden" : "online")} className={`p-2.5 rounded-xl transition-all relative ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Online">
-                <Users className="w-[22px] h-[22px]" />
-                {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-emerald-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{globalUsers.size}</span>}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-end gap-0.5 px-3 py-2 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
+              {/* 1. Reload */}
+              <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); setReconnectKey(k => k + 1); reloadChat(); }}
+                className="flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all">
+                <RefreshCw className="w-5 h-5" />
+                <span className="text-[9px] font-medium leading-none">Reload</span>
               </button>
-              <button onClick={() => { setRightPanel(p => p === "wardrobe" ? "hidden" : "wardrobe"); setWardrobeActiveSlot(null); setWardrobePreviewId(null); }} className={`p-2.5 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Garderobe">
-                <Shirt className="w-[22px] h-[22px]" />
+
+              <div className="w-px h-8 bg-white/[0.08] mx-0.5 self-center" />
+
+              {/* 2. Rum */}
+              <button onClick={() => setRightPanel(p => p === "rooms" ? "hidden" : "rooms")}
+                className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Hash className="w-5 h-5" />
+                <span className="text-[9px] font-medium leading-none">Rum</span>
               </button>
-              <button onClick={() => setRightPanel(p => p === "inventory" ? "hidden" : "inventory")} className={`p-2.5 rounded-xl transition-all relative ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rygsæk">
-                <Package className="w-[22px] h-[22px]" />
-                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{myInventory.length}</span>}
+
+              {/* 3. Garderobe */}
+              <button onClick={() => { setRightPanel(p => p === "wardrobe" ? "hidden" : "wardrobe"); setWardrobeActiveSlot(null); setWardrobePreviewId(null); }}
+                className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Shirt className="w-5 h-5" />
+                <span className="text-[9px] font-medium leading-none">Garderobe</span>
               </button>
-              <button onClick={() => setRightPanel(p => p === "rooms" ? "hidden" : "rooms")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Rum"><Hash className="w-[22px] h-[22px]" /></button>
-              {isAdmin && <button onClick={() => setRightPanel(p => p === "admin" ? "hidden" : "admin")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Admin"><Wrench className="w-[22px] h-[22px]" /></button>}
-              <button onClick={() => setRightPanel(p => p === "settings" ? "hidden" : "settings")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "settings" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Indstillinger"><Settings className="w-[22px] h-[22px]" /></button>
-              <button onClick={() => setRightPanel(p => p === "achievements" ? "hidden" : "achievements")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "achievements" ? "text-amber-400 bg-amber-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Bedrifter"><Trophy className="w-[22px] h-[22px]" /></button>
-              <button onClick={() => setRightPanel(p => p === "dms" || p === "dm_chat" ? "hidden" : "dms")} className={`p-2.5 rounded-xl transition-all relative ${rightPanel === "dms" || rightPanel === "dm_chat" ? "text-violet-400 bg-violet-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Beskeder">
-                <Mail className="w-[22px] h-[22px]" />
-                {dmUnread > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">{dmUnread}</span>}
+
+              {/* 4. Rygsæk */}
+              <button onClick={() => setRightPanel(p => p === "inventory" ? "hidden" : "inventory")}
+                className={`relative flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Package className="w-5 h-5" />
+                <span className="text-[9px] font-medium leading-none">Rygsæk</span>
+                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold leading-none">{myInventory.length}</span>}
               </button>
-              {activeRoomType === "casino" && (
-                <button onClick={() => setRightPanel(p => p === "roulette" ? "hidden" : "roulette")} className={`p-2.5 rounded-xl transition-all ${rightPanel === "roulette" ? "text-amber-400 bg-amber-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`} title="Roulette">
-                  <span className="text-[22px] leading-none">🎰</span>
+
+              {/* 5. Bedrifter */}
+              <button onClick={() => setRightPanel(p => p === "achievements" ? "hidden" : "achievements")}
+                className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "achievements" ? "text-amber-400 bg-amber-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Trophy className="w-5 h-5" />
+                <span className="text-[9px] font-medium leading-none">Bedrifter</span>
+              </button>
+
+              {/* 6. Online */}
+              <button onClick={() => setRightPanel(p => p === "online" ? "hidden" : "online")}
+                className={`relative flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Users className="w-5 h-5" />
+                <span className="text-[9px] font-medium leading-none">Online</span>
+                {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold leading-none">{globalUsers.size}</span>}
+              </button>
+
+              {/* 7. Beskeder */}
+              <button onClick={() => setRightPanel(p => p === "dms" || p === "dm_chat" ? "hidden" : "dms")}
+                className={`relative flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "dms" || rightPanel === "dm_chat" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Mail className="w-5 h-5" />
+                <span className="text-[9px] font-medium leading-none">Beskeder</span>
+                {dmUnread > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold leading-none">{dmUnread}</span>}
+              </button>
+
+              {/* 8. Indstillinger */}
+              <button onClick={() => setRightPanel(p => p === "settings" ? "hidden" : "settings")}
+                className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "settings" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Settings className="w-5 h-5" />
+                <span className="text-[9px] font-medium leading-none">Indstillinger</span>
+              </button>
+
+              {/* 9. Admin (kun for admins, rød farve) */}
+              {isAdmin && (
+                <button onClick={() => setRightPanel(p => p === "admin" ? "hidden" : "admin")}
+                  className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15" : "text-rose-600 hover:text-rose-400 hover:bg-rose-500/10"}`}>
+                  <Wrench className="w-5 h-5" />
+                  <span className="text-[9px] font-medium leading-none">Admin</span>
                 </button>
               )}
-              <div className="w-px h-6 bg-white/[0.08] mx-1" />
-              <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="p-2.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ind"><ZoomIn className="w-[22px] h-[22px]" /></button>
-              <span className="text-[12px] text-slate-600 w-8 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="p-2.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all" title="Zoom ud"><ZoomOut className="w-[22px] h-[22px]" /></button>
+
+              <div className="w-px h-8 bg-white/[0.08] mx-0.5 self-center" />
+
+              {/* Zoom */}
+              <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all"><ZoomIn className="w-5 h-5" /><span className="text-[9px] font-medium leading-none">Ind</span></button>
+              <span className="text-[11px] text-slate-600 w-8 text-center tabular-nums self-center pb-0.5">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all"><ZoomOut className="w-5 h-5" /><span className="text-[9px] font-medium leading-none">Ud</span></button>
+
+              {/* Roulette (casino-rum only) */}
+              {activeRoomType === "casino" && (
+                <>
+                  <div className="w-px h-8 bg-white/[0.08] mx-0.5 self-center" />
+                  <button onClick={() => setRightPanel(p => p === "roulette" ? "hidden" : "roulette")}
+                    className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "roulette" ? "text-amber-400 bg-amber-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                    <span className="text-[20px] leading-none">🎰</span>
+                    <span className="text-[9px] font-medium leading-none text-slate-500">Roulette</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
