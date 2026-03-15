@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Mail, Lock, Eye, EyeOff, Loader2, User, X, CheckCircle, UserPlus } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Loader2, X, CheckCircle, UserPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const REG_COLORS = ["#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#3b82f6","#84cc16","#f97316","#14b8a6"];
@@ -92,7 +92,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
 
   // Register panel state
   const [showReg, setShowReg] = useState(false);
-  const [regData, setRegData] = useState({ username: "", displayName: "", email: "", password: "" });
+  const [regData, setRegData] = useState({ username: "", email: "", password: "" });
   const [regColor, setRegColor] = useState("#8b5cf6");
   const [showRegPw, setShowRegPw] = useState(false);
   const [regLoading, setRegLoading] = useState(false);
@@ -129,7 +129,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
       options: {
         data: {
           username: regData.username.toLowerCase(),
-          display_name: regData.displayName || regData.username,
+          display_name: regData.username,
           avatar_color: regColor,
         },
         emailRedirectTo: `${window.location.origin}/api/auth/callback`,
@@ -166,7 +166,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
         {/* ── Main window ── */}
         <div
           className={`relative z-10 flex flex-col border border-white/[0.1] bg-gradient-to-b from-[#060d1a] to-[#04090f] shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] ${showReg ? "rounded-l-2xl rounded-r-none" : "rounded-2xl"}`}
-          style={{ width: "min(96vw, 780px)", height: "min(88vh, 620px)" }}
+          style={{ width: "min(96vw, 1280px)", height: "min(94vh, 900px)" }}
         >
           {/* ── Header ── */}
           <div className="flex-shrink-0 flex items-center gap-3 px-4 py-3 bg-[#040c19]/95 border-b border-violet-500/20 shadow-[0_1px_0_rgba(99,102,241,0.06),0_4px_24px_rgba(0,0,0,0.4)]" style={{ borderRadius: showReg ? "16px 0 0 0" : "16px 16px 0 0" }}>
@@ -255,7 +255,7 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
 
         {/* ── Register side panel ── */}
         {showReg && (
-          <div className="w-72 flex flex-col bg-[#030912]/98 border border-l-0 border-white/[0.1] rounded-r-2xl overflow-hidden shadow-[16px_0_40px_rgba(0,0,0,0.6)]" style={{ height: "min(88vh, 620px)" }}>
+          <div className="w-72 flex flex-col bg-[#030912]/98 border border-l-0 border-white/[0.1] rounded-r-2xl overflow-hidden shadow-[16px_0_40px_rgba(0,0,0,0.6)]" style={{ height: "min(94vh, 900px)" }}>
             {regSuccess ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
                 <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
@@ -313,15 +313,6 @@ export function ChatGateway({ onAuthSuccess, onClose }: ChatGatewayProps = {}) {
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-[11px]">@</span>
                       <input type="text" value={regData.username} onChange={e => setRegData(p => ({ ...p, username: e.target.value }))} placeholder="bruger123" required minLength={3} maxLength={30} pattern="[a-zA-Z0-9_]+"
                         className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg pl-7 pr-3 py-1.5 text-[12px] text-slate-200 placeholder-slate-700 outline-none focus:border-violet-500/50 transition-all" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Visningsnavn</label>
-                    <div className="relative">
-                      <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600 pointer-events-none" />
-                      <input type="text" value={regData.displayName} onChange={e => setRegData(p => ({ ...p, displayName: e.target.value }))} placeholder="Jens Jensen" maxLength={50}
-                        className="w-full bg-white/[0.05] border border-white/[0.07] rounded-lg pl-8 pr-3 py-1.5 text-[12px] text-slate-200 placeholder-slate-700 outline-none focus:border-violet-500/50 transition-all" />
                     </div>
                   </div>
 

@@ -859,6 +859,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [items, setItems] = useState<RoomItem[]>([]);
   const [bots, setBots] = useState<RoomBot[]>([]);
   const [clothingCatalog, setClothingCatalog] = useState<ClothingItem[]>([]);
+  const clothingCatalogRef = useRef<ClothingItem[]>([]);
   const [myWardrobe, setMyWardrobe] = useState<UserWardrobeEntry[]>([]);
   const [createForm, setCreateForm] = useState<{ name: string; item_type: string; image_url: string; img_x: number; img_y: number; img_w: number; img_h: number; item_scale: number; uploading: boolean; previewZoom: number } | null>(null);
   const [adminItemEditId, setAdminItemEditId] = useState<string | null>(null);
@@ -1414,7 +1415,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
   useEffect(() => {
     supabase.from("virtual_clothing_items").select("*").order("slot").then(({ data }) => {
-      if (data) setClothingCatalog(data as ClothingItem[]);
+      if (data) { setClothingCatalog(data as ClothingItem[]); clothingCatalogRef.current = data as ClothingItem[]; }
     });
     supabase.from("virtual_user_wardrobe").select("id, clothing_id, equipped").eq("user_id", currentProfile.id).then(({ data }) => {
       if (data) setMyWardrobe(data as UserWardrobeEntry[]);
@@ -6935,23 +6936,6 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         </div>
                       </div>
 
-                      {/* Display name */}
-                      <div className="space-y-1.5">
-                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Visningsnavn</p>
-                        <form onSubmit={async e => {
-                          e.preventDefault();
-                          const v = (e.currentTarget.elements.namedItem("dn") as HTMLInputElement).value.trim();
-                          if (!v) return;
-                          await supabase.from("profiles").update({ display_name: v }).eq("id", currentProfile.id);
-                          currentProfile.display_name = v;
-                          showToast("✏️", "Navn opdateret", v, "#6366f1");
-                        }} className="flex gap-2">
-                          <input name="dn" defaultValue={currentProfile.display_name} maxLength={50}
-                            className="flex-1 bg-white/[0.05] border border-white/[0.07] rounded-lg px-3 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-violet-500/50 transition-all" />
-                          <button type="submit" className="px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded-lg text-[12px] text-white font-bold transition-colors flex-shrink-0">Gem</button>
-                        </form>
-                      </div>
-
                       {/* Bio */}
                       <div className="space-y-1.5">
                         <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Profiltekst</p>
@@ -7169,8 +7153,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   // Load partner's wardrobe from DB so outfit shows even if they are offline
                   const { data: wData } = await supabase.from("virtual_user_wardrobe").select("clothing_id").eq("user_id", otherId).eq("equipped", true);
                   const computed: Record<string, string> = {};
+                  const catalog = clothingCatalogRef.current.length > 0 ? clothingCatalogRef.current : clothingCatalog;
                   (wData ?? []).forEach((w: { clothing_id: string }) => {
-                    const item = clothingCatalog.find(c => c.id === w.clothing_id);
+                    const item = catalog.find(c => c.id === w.clothing_id);
                     if (item) computed[item.slot] = w.clothing_id;
                   });
                   setPartnerOutfitDB(computed);
@@ -7369,8 +7354,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                             <div className="bg-white/[0.04] rounded-xl p-4 border border-pink-500/20 text-center">
                               <p className="text-[11px] font-bold text-pink-400 uppercase tracking-widest mb-3">Rumkæreste</p>
                               {(() => {
-                                const pvOutfit = users.get(profileView.id)?.outfit ?? {};
-                                const ptOutfit = partnerOutfitDB;
+                                const pvOutfit = users.get(profileView.id)?.outfit ?? globalUsers.get(profileView.id)?.outfit ?? {};
+                                const ptOutfit = Object.keys(partnerOutfitDB).length > 0 ? partnerOutfitDB : (globalUsers.get(partnerProfile?.id ?? "")?.outfit ?? {});
                                 const HP = "M110 148 C110 148 18 98 18 52 C18 27 36 8 60 8 C76 8 92 17 110 36 C128 17 144 8 160 8 C184 8 202 27 202 52 C202 98 110 148 110 148Z";
                                 const stars = [{cx:35,cy:50,r:1.1,dur:"2.1s",delay:"0s"},{cx:45,cy:30,r:0.8,dur:"1.7s",delay:"0.4s"},{cx:108,cy:20,r:1.3,dur:"2.4s",delay:"0.1s"},{cx:125,cy:28,r:0.9,dur:"1.9s",delay:"0.7s"},{cx:175,cy:42,r:1.0,dur:"2.2s",delay:"0.3s"},{cx:188,cy:64,r:0.7,dur:"1.8s",delay:"0.9s"},{cx:163,cy:25,r:1.2,dur:"2.0s",delay:"0.5s"},{cx:22,cy:80,r:0.8,dur:"2.3s",delay:"1.1s"},{cx:28,cy:62,r:1.0,dur:"1.6s",delay:"0.2s"},{cx:196,cy:78,r:0.9,dur:"2.1s",delay:"0.8s"},{cx:110,cy:78,r:1.4,dur:"2.5s",delay:"0.6s"},{cx:110,cy:108,r:1.1,dur:"1.9s",delay:"0.3s"},{cx:110,cy:132,r:0.9,dur:"2.2s",delay:"0.8s"},{cx:82,cy:130,r:0.7,dur:"1.7s",delay:"1.0s"},{cx:138,cy:128,r:0.8,dur:"2.0s",delay:"0.4s"},{cx:88,cy:22,r:1.0,dur:"1.8s",delay:"0.6s"}];
                                 return (
@@ -7451,8 +7436,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   // Load partner's wardrobe from DB
                   const { data: wData } = await supabase.from("virtual_user_wardrobe").select("clothing_id").eq("user_id", otherId).eq("equipped", true);
                   const computed: Record<string, string> = {};
+                  const catalog = clothingCatalogRef.current.length > 0 ? clothingCatalogRef.current : clothingCatalog;
                   (wData ?? []).forEach((w: { clothing_id: string }) => {
-                    const item = clothingCatalog.find(c => c.id === w.clothing_id);
+                    const item = catalog.find(c => c.id === w.clothing_id);
                     if (item) computed[item.slot] = w.clothing_id;
                   });
                   setMyPartnerOutfitDB(computed);
@@ -7608,7 +7594,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           <div className="bg-white/[0.04] rounded-xl p-4 border border-pink-500/20 text-center space-y-3">
                             <p className="text-[11px] font-bold text-pink-400 uppercase tracking-widest">Din rumkæreste</p>
                             {(() => {
-                              const ptOutfit = myPartnerOutfitDB;
+                              const ptOutfit = Object.keys(myPartnerOutfitDB).length > 0 ? myPartnerOutfitDB : (globalUsers.get(myPartnerProfile?.id ?? "")?.outfit ?? {});
                               const HP = "M110 148 C110 148 18 98 18 52 C18 27 36 8 60 8 C76 8 92 17 110 36 C128 17 144 8 160 8 C184 8 202 27 202 52 C202 98 110 148 110 148Z";
                               const stars = [{cx:35,cy:50,r:1.1,dur:"2.1s",delay:"0s"},{cx:45,cy:30,r:0.8,dur:"1.7s",delay:"0.4s"},{cx:108,cy:20,r:1.3,dur:"2.4s",delay:"0.1s"},{cx:125,cy:28,r:0.9,dur:"1.9s",delay:"0.7s"},{cx:175,cy:42,r:1.0,dur:"2.2s",delay:"0.3s"},{cx:188,cy:64,r:0.7,dur:"1.8s",delay:"0.9s"},{cx:163,cy:25,r:1.2,dur:"2.0s",delay:"0.5s"},{cx:22,cy:80,r:0.8,dur:"2.3s",delay:"1.1s"},{cx:28,cy:62,r:1.0,dur:"1.6s",delay:"0.2s"},{cx:196,cy:78,r:0.9,dur:"2.1s",delay:"0.8s"},{cx:110,cy:78,r:1.4,dur:"2.5s",delay:"0.6s"},{cx:110,cy:108,r:1.1,dur:"1.9s",delay:"0.3s"},{cx:110,cy:132,r:0.9,dur:"2.2s",delay:"0.8s"},{cx:82,cy:130,r:0.7,dur:"1.7s",delay:"1.0s"},{cx:138,cy:128,r:0.8,dur:"2.0s",delay:"0.4s"},{cx:88,cy:22,r:1.0,dur:"1.8s",delay:"0.6s"}];
                               return (

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { User, FileText, Check, Loader2, Palette } from "lucide-react";
+import { FileText, Check, Loader2, Palette } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
@@ -27,7 +27,6 @@ interface ProfileFormProps {
 
 export function ProfileForm({ profile }: ProfileFormProps) {
   const [formData, setFormData] = useState({
-    display_name: profile.display_name,
     bio: profile.bio ?? "",
     avatar_color: profile.avatar_color,
   });
@@ -52,7 +51,6 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     const { error } = await supabase
       .from("profiles")
       .update({
-        display_name: formData.display_name,
         bio: formData.bio,
         avatar_color: formData.avatar_color,
       })
@@ -73,7 +71,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
       {/* Avatar preview */}
       <div className="flex flex-col items-center gap-4">
         <Avatar
-          name={formData.display_name || profile.username}
+          name={profile.username}
           color={formData.avatar_color}
           size="xl"
           showOnline
@@ -117,24 +115,6 @@ export function ProfileForm({ profile }: ProfileFormProps) {
             />
           ))}
         </div>
-      </div>
-
-      {/* Display name */}
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-          <User className="w-4 h-4" />
-          Visningsnavn
-        </label>
-        <input
-          type="text"
-          name="display_name"
-          value={formData.display_name}
-          onChange={handleChange}
-          className="input-base"
-          placeholder="Dit navn"
-          required
-          maxLength={50}
-        />
       </div>
 
       {/* Bio */}
