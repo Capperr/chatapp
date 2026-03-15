@@ -5162,7 +5162,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             )}
 
             {/* Floating toolbar dock */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-end gap-0.5 px-3 py-2.5 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
+            {/* Outer: centers horizontally, constrains to viewport width, scrolls if needed */}
+            <div className="absolute bottom-4 left-0 right-0 z-20 flex justify-center px-3 pointer-events-none">
+            <div className="overflow-x-auto pointer-events-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+            <style>{`.toolbar-no-scroll::-webkit-scrollbar{display:none}`}</style>
+            <div className="toolbar-no-scroll flex items-end gap-0.5 px-3 py-2.5 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
               {/* 1. Reload */}
               <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); setReconnectKey(k => k + 1); reloadChat(); }}
                 className="flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all">
@@ -5252,7 +5256,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   </button>
                 </>
               )}
-            </div>
+            </div>{/* end toolbar pill */}
+            </div>{/* end overflow-x-auto */}
+            </div>{/* end outer centering wrapper */}
           </div>
 
           {/* Extension panel - overlays room area */}
