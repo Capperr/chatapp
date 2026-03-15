@@ -869,7 +869,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [activeFloorPattern, setActiveFloorPattern] = useState("standard");
   const [createRoomForm, setCreateRoomForm] = useState<{ name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
   const [editRoomForm, setEditRoomForm] = useState<{ id: string; name: string; cols: number; rows: number; room_type: string; theme_key: string; floor_pattern: string } | null>(null);
-  const [roomTab, setRoomTab] = useState<"rum" | "lejligheder">("rum");
+  const [roomTab, setRoomTab] = useState<"rum" | "rumskibe">("rum");
   const [dragRoomId, setDragRoomId] = useState<string | null>(null);
   const [dragOverRoomId, setDragOverRoomId] = useState<string | null>(null);
   const [adminTab, setAdminTab] = useState<"users" | "items" | "bots" | "self" | "clothing">("users");
@@ -951,9 +951,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [lockedTiles, setLockedTiles] = useState<Set<string>>(new Set());
   const lockedTilesRef = useRef<Set<string>>(new Set());
   const [allAchievements, setAllAchievements] = useState<Achievement[]>([]);
-  const [myAchievements, setMyAchievements] = useState<Set<string>>(new Set());
+  const [myAchievements, setMyAchievements] = useState<Set<string>>(new Set()); // claimed
+  const [pendingAchievements, setPendingAchievements] = useState<Set<string>>(new Set()); // ready to claim
   const [achievementSearch, setAchievementSearch] = useState("");
-  const [achievementFilter, setAchievementFilter] = useState<"all" | "earned" | "unearned">("all");
+  const [achievementFilter, setAchievementFilter] = useState<"all" | "earned" | "unearned" | "pending">("all");
   const [achievementPage, setAchievementPage] = useState(0);
   const [onlineTab, setOnlineTab] = useState<"online"|"coins"|"hours"|"level">("online");
   const [onlineSearch, setOnlineSearch] = useState("");
@@ -965,7 +966,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const messageCountRef = useRef(0);
   const [messageCountState, setMessageCountState] = useState(0);
   const [loginStreak, setLoginStreak] = useState(0);
-  const [toasts, setToasts] = useState<{ id: number; emoji: string; title: string; subtitle?: string; color: string }[]>([]);
+  const [toasts, setToasts] = useState<{ id: number; emoji: string; title: string; subtitle?: string; color: string; onClick?: () => void }[]>([]);
   const audioCtxRef = useRef<AudioContext | null>(null);
   // ─── DM state ───────────────────────────────────────────────────────────
   const [dmConversations, setDmConversations] = useState<DmConversation[]>([]);
@@ -1427,8 +1428,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
     supabase.from("achievements").select("*").order("sort_order").then(({ data }) => {
       if (data) setAllAchievements(data as Achievement[]);
     });
-    supabase.from("user_achievements").select("achievement_id").eq("user_id", currentProfile.id).then(({ data }) => {
-      if (data) setMyAchievements(new Set(data.map((a: { achievement_id: string }) => a.achievement_id)));
+    supabase.from("user_achievements").select("achievement_id, status").eq("user_id", currentProfile.id).then(({ data }) => {
+      if (data) {
+        setMyAchievements(new Set(data.filter((a: { achievement_id: string; status: string }) => a.status !== 'pending').map((a: { achievement_id: string }) => a.achievement_id)));
+        setPendingAchievements(new Set(data.filter((a: { achievement_id: string; status: string }) => a.status === 'pending').map((a: { achievement_id: string }) => a.achievement_id)));
+      }
     });
     supabase.from("profiles").select("coins, last_coin_award, xp, level, total_online_seconds, last_hour_confirm_at, muted_until, tan_level, tan_expires_at, solarie_minutes, message_count, last_login_date, login_streak, confirm_pending, name_color, aura_color, bubble_color").eq("id", currentProfile.id).single().then(({ data }) => {
       if (data) {
@@ -3028,6 +3032,14 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   };
   const giveItem   = async (item: RoomItem, uid: string) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: uid, gx: null, gy: null }).eq("id", item.id); };
   const deleteItem = async (id: string) => { setCtxMenu(null); await supabase.from("virtual_room_items").delete().eq("id", id); };
+  const deleteRoom = async (roomId: string) => {
+    await supabase.from("chat_rooms").delete().eq("id", roomId);
+    setRooms(prev => prev.filter(r => r.id !== roomId));
+    if (activeRoomId === roomId) {
+      const fallback = rooms.find(r => r.id !== roomId);
+      if (fallback) switchRoom(fallback.id, fallback.name, fallback.cols, fallback.rows, fallback.room_type, fallback.theme_key, fallback.floor_pattern, fallback.owner_id);
+    }
+  };
 
   const createItem = async () => {
     if (!createForm?.name.trim()) return;
@@ -3049,11 +3061,30 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   };
 
   const checkAchievement = async (achievementId: string) => {
-    if (myAchievements.has(achievementId)) return;
+    // Already claimed or already pending — skip
+    if (myAchievements.has(achievementId) || pendingAchievements.has(achievementId)) return;
     const achievement = allAchievements.find(a => a.id === achievementId);
     if (!achievement) return;
-    const { error } = await supabase.from("user_achievements").insert({ user_id: currentProfile.id, achievement_id: achievementId });
-    if (error) return; // already earned (race condition)
+    const { error } = await supabase.from("user_achievements").insert({ user_id: currentProfile.id, achievement_id: achievementId, status: 'pending' });
+    if (error) return; // already exists (race condition)
+    setPendingAchievements(prev => { const s = new Set(prev); s.add(achievementId); return s; });
+    // Show clickable notification — clicking opens achievements panel
+    showToastRef.current(
+      achievement.badge_emoji,
+      "Bedrift klar til afhentning!",
+      `Din "${achievement.name}" bedrift er klar til at blive gennemført`,
+      achievement.badge_color,
+      () => setRightPanel("achievements")
+    );
+  };
+
+  const claimAchievement = async (achievementId: string) => {
+    if (!pendingAchievements.has(achievementId)) return;
+    const achievement = allAchievements.find(a => a.id === achievementId);
+    if (!achievement) return;
+    const { error } = await supabase.from("user_achievements").update({ status: 'claimed' }).eq("user_id", currentProfile.id).eq("achievement_id", achievementId);
+    if (error) return;
+    setPendingAchievements(prev => { const s = new Set(prev); s.delete(achievementId); return s; });
     setMyAchievements(prev => { const s = new Set(prev); s.add(achievementId); return s; });
     if (achievement.reward_coins > 0 || achievement.reward_xp > 0) {
       const newCoins = coinsRef.current + achievement.reward_coins;
@@ -3064,17 +3095,16 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       levelRef.current = newLevel; setLevel(newLevel);
       await supabase.from("profiles").update({ coins: newCoins, xp: newXp, level: newLevel }).eq("id", currentProfile.id);
     }
-    // Route achievement through unified toast system
-    const rewardParts = [];
+    const rewardParts: string[] = [];
     if (achievement.reward_coins > 0) rewardParts.push(`🪙 +${achievement.reward_coins}`);
     if (achievement.reward_xp > 0) rewardParts.push(`⚡ +${achievement.reward_xp} XP`);
     showToast(achievement.badge_emoji, achievement.name, [achievement.description, ...rewardParts].filter(Boolean).join(" · "), achievement.badge_color);
   };
 
-  const showToastRef = useRef<(emoji: string, title: string, subtitle?: string, color?: string) => void>(() => {});
-  const showToast = useCallback((emoji: string, title: string, subtitle?: string, color = "#6366f1") => {
+  const showToastRef = useRef<(emoji: string, title: string, subtitle?: string, color?: string, onClick?: () => void) => void>(() => {});
+  const showToast = useCallback((emoji: string, title: string, subtitle?: string, color = "#6366f1", onClick?: () => void) => {
     const id = Date.now() + Math.random();
-    setToasts(prev => [...prev.slice(-4), { id, emoji, title, subtitle, color }]);
+    setToasts(prev => [...prev.slice(-4), { id, emoji, title, subtitle, color, onClick }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500);
   }, []);
   showToastRef.current = showToast;
@@ -3183,10 +3213,11 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   };
 
   const reloadChat = useCallback(async () => {
-    const [{ data: roomItems }, { data: myItems }, { data: roomBots }] = await Promise.all([
+    const [{ data: roomItems }, { data: myItems }, { data: roomBots }, { data: recentMsgs }] = await Promise.all([
       supabase.from("virtual_room_items").select("*").eq("room_id", activeRoomId),
       supabase.from("virtual_room_items").select("*").eq("owner_id", currentProfile.id),
       supabase.from("virtual_room_bots").select("*").eq("room_id", activeRoomId),
+      supabase.from("messages").select("id, content, user_id, room_id, created_at, edited_at, is_deleted, profiles(display_name, avatar_color, username)").eq("room_id", activeRoomId).order("created_at", { ascending: false }).limit(50),
     ]);
     if (roomItems || myItems) {
       const merged = new Map<string, RoomItem>();
@@ -3195,7 +3226,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
       setItems(Array.from(merged.values()));
     }
     if (roomBots) setBots(roomBots as RoomBot[]);
+    if (recentMsgs) setLogMessages(recentMsgs as LogMessage[]);
+    setBubbles(new Map());
     broadcastMove(myPosRef.current.gx, myPosRef.current.gy);
+    showToastRef.current("🔄", "Genoprettet", "Forbindelsen er genoprettet", "#6366f1");
   }, [activeRoomId, broadcastMove]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogout = useCallback(async () => {
@@ -5016,14 +5050,18 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             )}
 
             {/* ── Unified toast stack — top-right of chat window ── */}
-            <div className="absolute top-3 right-3 z-50 pointer-events-none flex flex-col gap-2 items-end" style={{ maxWidth: 280 }}>
+            <div className="absolute top-3 right-3 z-50 flex flex-col gap-2 items-end" style={{ maxWidth: 300 }}>
               {toasts.map(t => (
-                <div key={t.id} className="flex items-start gap-3 px-3.5 py-3 rounded-2xl border shadow-[0_8px_32px_rgba(0,0,0,0.7)] animate-level-up w-full"
-                  style={{ background: t.color + "1a", borderColor: t.color + "40", backdropFilter: "blur(16px)" }}>
+                <div key={t.id}
+                  className={`flex items-start gap-3 px-3.5 py-3 rounded-2xl border shadow-[0_8px_32px_rgba(0,0,0,0.7)] animate-level-up w-full ${t.onClick ? "cursor-pointer hover:brightness-110 active:scale-95 transition-all" : "pointer-events-none"}`}
+                  style={{ background: t.color + "1a", borderColor: t.color + "40", backdropFilter: "blur(16px)" }}
+                  onClick={t.onClick ? () => { t.onClick!(); setToasts(prev => prev.filter(x => x.id !== t.id)); } : undefined}
+                >
                   <span className="text-2xl leading-none flex-shrink-0 mt-0.5">{t.emoji}</span>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-bold text-white leading-tight truncate">{t.title}</p>
                     {t.subtitle && <p className="text-[11px] mt-0.5 leading-snug" style={{ color: t.color + "cc" }}>{t.subtitle}</p>}
+                    {t.onClick && <p className="text-[10px] mt-1 font-semibold" style={{ color: t.color + "99" }}>Klik for at se →</p>}
                   </div>
                 </div>
               ))}
@@ -5124,92 +5162,93 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             )}
 
             {/* Floating toolbar dock */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-end gap-0.5 px-3 py-2 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-end gap-0.5 px-3 py-2.5 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
               {/* 1. Reload */}
               <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); setReconnectKey(k => k + 1); reloadChat(); }}
-                className="flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all">
-                <RefreshCw className="w-5 h-5" />
-                <span className="text-[9px] font-medium leading-none">Reload</span>
+                className="flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all">
+                <RefreshCw className="w-6 h-6" />
+                <span className="text-[11px] font-medium leading-none">Reload</span>
               </button>
 
-              <div className="w-px h-8 bg-white/[0.08] mx-0.5 self-center" />
+              <div className="w-px h-10 bg-white/[0.08] mx-0.5 self-center" />
 
               {/* 2. Rum */}
               <button onClick={() => setRightPanel(p => p === "rooms" ? "hidden" : "rooms")}
-                className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
-                <Hash className="w-5 h-5" />
-                <span className="text-[9px] font-medium leading-none">Rum</span>
+                className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Hash className="w-6 h-6" />
+                <span className="text-[11px] font-medium leading-none">Rum</span>
               </button>
 
               {/* 3. Garderobe */}
               <button onClick={() => { setRightPanel(p => p === "wardrobe" ? "hidden" : "wardrobe"); setWardrobeActiveSlot(null); setWardrobePreviewId(null); }}
-                className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
-                <Shirt className="w-5 h-5" />
-                <span className="text-[9px] font-medium leading-none">Garderobe</span>
+                className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Shirt className="w-6 h-6" />
+                <span className="text-[11px] font-medium leading-none">Garderobe</span>
               </button>
 
               {/* 4. Rygsæk */}
               <button onClick={() => setRightPanel(p => p === "inventory" ? "hidden" : "inventory")}
-                className={`relative flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
-                <Package className="w-5 h-5" />
-                <span className="text-[9px] font-medium leading-none">Rygsæk</span>
-                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold leading-none">{myInventory.length}</span>}
+                className={`relative flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Package className="w-6 h-6" />
+                <span className="text-[11px] font-medium leading-none">Rygsæk</span>
+                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold leading-none">{myInventory.length}</span>}
               </button>
 
               {/* 5. Bedrifter */}
               <button onClick={() => setRightPanel(p => p === "achievements" ? "hidden" : "achievements")}
-                className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "achievements" ? "text-amber-400 bg-amber-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
-                <Trophy className="w-5 h-5" />
-                <span className="text-[9px] font-medium leading-none">Bedrifter</span>
+                className={`relative flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "achievements" ? "text-amber-400 bg-amber-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Trophy className="w-6 h-6" />
+                <span className="text-[11px] font-medium leading-none">Bedrifter</span>
+                {pendingAchievements.size > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-amber-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold leading-none">{pendingAchievements.size}</span>}
               </button>
 
               {/* 6. Online */}
               <button onClick={() => setRightPanel(p => p === "online" ? "hidden" : "online")}
-                className={`relative flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
-                <Users className="w-5 h-5" />
-                <span className="text-[9px] font-medium leading-none">Online</span>
-                {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold leading-none">{globalUsers.size}</span>}
+                className={`relative flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "online" ? "text-emerald-400 bg-emerald-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Users className="w-6 h-6" />
+                <span className="text-[11px] font-medium leading-none">Online</span>
+                {globalUsers.size > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-emerald-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold leading-none">{globalUsers.size}</span>}
               </button>
 
               {/* 7. Beskeder */}
               <button onClick={() => setRightPanel(p => p === "dms" || p === "dm_chat" ? "hidden" : "dms")}
-                className={`relative flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "dms" || rightPanel === "dm_chat" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
-                <Mail className="w-5 h-5" />
-                <span className="text-[9px] font-medium leading-none">Beskeder</span>
-                {dmUnread > 0 && <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-violet-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold leading-none">{dmUnread}</span>}
+                className={`relative flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "dms" || rightPanel === "dm_chat" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Mail className="w-6 h-6" />
+                <span className="text-[11px] font-medium leading-none">Beskeder</span>
+                {dmUnread > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold leading-none">{dmUnread}</span>}
               </button>
 
               {/* 8. Indstillinger */}
               <button onClick={() => setRightPanel(p => p === "settings" ? "hidden" : "settings")}
-                className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "settings" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
-                <Settings className="w-5 h-5" />
-                <span className="text-[9px] font-medium leading-none">Indstillinger</span>
+                className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "settings" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                <Settings className="w-6 h-6" />
+                <span className="text-[11px] font-medium leading-none">Indstillinger</span>
               </button>
 
               {/* 9. Admin (kun for admins, rød farve) */}
               {isAdmin && (
                 <button onClick={() => setRightPanel(p => p === "admin" ? "hidden" : "admin")}
-                  className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15" : "text-rose-600 hover:text-rose-400 hover:bg-rose-500/10"}`}>
-                  <Wrench className="w-5 h-5" />
-                  <span className="text-[9px] font-medium leading-none">Admin</span>
+                  className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "admin" ? "text-rose-400 bg-rose-500/15" : "text-rose-600 hover:text-rose-400 hover:bg-rose-500/10"}`}>
+                  <Wrench className="w-6 h-6" />
+                  <span className="text-[11px] font-medium leading-none">Admin</span>
                 </button>
               )}
 
-              <div className="w-px h-8 bg-white/[0.08] mx-0.5 self-center" />
+              <div className="w-px h-10 bg-white/[0.08] mx-0.5 self-center" />
 
               {/* Zoom */}
-              <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all"><ZoomIn className="w-5 h-5" /><span className="text-[9px] font-medium leading-none">Ind</span></button>
-              <span className="text-[11px] text-slate-600 w-8 text-center tabular-nums self-center pb-0.5">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all"><ZoomOut className="w-5 h-5" /><span className="text-[9px] font-medium leading-none">Ud</span></button>
+              <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="flex items-center justify-center px-2.5 py-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all"><ZoomIn className="w-6 h-6" /></button>
+              <span className="text-[12px] text-slate-600 w-10 text-center tabular-nums self-center">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="flex items-center justify-center px-2.5 py-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all"><ZoomOut className="w-6 h-6" /></button>
 
               {/* Roulette (casino-rum only) */}
               {activeRoomType === "casino" && (
                 <>
-                  <div className="w-px h-8 bg-white/[0.08] mx-0.5 self-center" />
+                  <div className="w-px h-10 bg-white/[0.08] mx-0.5 self-center" />
                   <button onClick={() => setRightPanel(p => p === "roulette" ? "hidden" : "roulette")}
-                    className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${rightPanel === "roulette" ? "text-amber-400 bg-amber-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
-                    <span className="text-[20px] leading-none">🎰</span>
-                    <span className="text-[9px] font-medium leading-none text-slate-500">Roulette</span>
+                    className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "roulette" ? "text-amber-400 bg-amber-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                    <span className="text-[22px] leading-none">🎰</span>
+                    <span className="text-[11px] font-medium leading-none text-slate-500">Roulette</span>
                   </button>
                 </>
               )}
@@ -5979,8 +6018,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 })()}
                 {/* Tabs */}
                 <div className="flex border-b border-white/[0.06] flex-shrink-0">
-                  {([["rum", "🌐 Rum"], ["lejligheder", "🚀 Lejligheder"]] as [string, string][]).map(([key, label]) => (
-                    <button key={key} onClick={() => setRoomTab(key as "rum" | "lejligheder")}
+                  {([["rum", "🌐 Rum"], ["rumskibe", "🚀 Rumskibe"]] as [string, string][]).map(([key, label]) => (
+                    <button key={key} onClick={() => setRoomTab(key as "rum" | "rumskibe")}
                       className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors border-b-2 -mb-px ${roomTab === key ? "text-violet-300 border-violet-500 bg-violet-500/[0.04]" : "text-slate-600 border-transparent hover:text-slate-400"}`}>
                       {label}
                     </button>
@@ -6048,16 +6087,21 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-[0_0_6px_currentColor]" style={{ backgroundColor: rtheme?.color ?? "#475569", color: rtheme?.color ?? "#475569" }} />
                           <span className={`flex-1 text-[15px] font-semibold truncate ${isActive ? "text-violet-300" : "text-slate-200"}`}>{r.name}</span>
                           {occ > 0 && <span className="text-[12px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
-                          {isAdmin && <button onClick={e => { e.stopPropagation(); setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-600 hover:text-violet-400 flex-shrink-0 transition-all" title="Rediger rum"><Pencil className="w-3 h-3" /></button>}
+                          {isAdmin && (
+                            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 flex-shrink-0 transition-all">
+                              <button onClick={e => { e.stopPropagation(); setCreateRoomForm(null); setEditRoomForm({ id: r.id, name: r.name, cols: r.cols, rows: r.rows, room_type: r.room_type, theme_key: r.theme_key ?? "blue", floor_pattern: r.floor_pattern ?? "standard" }); }} className="p-1 rounded text-slate-600 hover:text-violet-400 transition-colors" title="Rediger rum"><Pencil className="w-3 h-3" /></button>
+                              <button onClick={e => { e.stopPropagation(); if (confirm(`Slet rummet "${r.name}"? Dette kan ikke fortrydes.`)) deleteRoom(r.id); }} className="p-1 rounded text-slate-600 hover:text-rose-400 transition-colors" title="Slet rum"><Trash2 className="w-3 h-3" /></button>
+                            </div>
+                          )}
                         </div>
                       );
                     });
                   })()}
 
-                  {roomTab === "lejligheder" && (() => {
+                  {roomTab === "rumskibe" && (() => {
                     const spaceshipRooms = rooms.filter(r => r.room_type === "spaceship");
                     return spaceshipRooms.length === 0 ? (
-                      <p className="text-[13px] text-slate-600 text-center mt-8">Ingen lejligheder</p>
+                      <p className="text-[13px] text-slate-600 text-center mt-8">Ingen rumskibe</p>
                     ) : spaceshipRooms.map(r => {
                       const occ = roomOccupancy.get(r.id) ?? 0;
                       const isOwn = r.owner_id === currentProfile.id;
@@ -6093,6 +6137,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                           </div>
                           <span className="text-[13px] flex-shrink-0 leading-none" title={hasPasscode ? "Kodelåst" : "Åbent for anmodninger"}>{hasPasscode ? "🔒" : "🔓"}</span>
                           {occ > 0 && <span className="text-[12px] font-bold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/20 px-1.5 py-0.5 rounded-full flex-shrink-0">{occ}</span>}
+                          {isAdmin && <button onClick={e => { e.stopPropagation(); if (confirm(`Slet rumskibet "${r.name}"? Dette kan ikke fortrydes.`)) deleteRoom(r.id); }} className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-600 hover:text-rose-400 flex-shrink-0 transition-all" title="Slet rumskib"><Trash2 className="w-3 h-3" /></button>}
                         </div>
                       );
                     });
@@ -7981,7 +8026,10 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               const q = achievementSearch.toLowerCase();
               const filtered = allAchievements.filter(a => {
                 const matchSearch = !q || a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q);
-                const matchFilter = achievementFilter === "all" ? true : achievementFilter === "earned" ? myAchievements.has(a.id) : !myAchievements.has(a.id);
+                const matchFilter = achievementFilter === "all" ? true
+                  : achievementFilter === "earned" ? myAchievements.has(a.id)
+                  : achievementFilter === "pending" ? pendingAchievements.has(a.id)
+                  : !myAchievements.has(a.id) && !pendingAchievements.has(a.id);
                 return matchSearch && matchFilter;
               });
               const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
@@ -8003,13 +8051,23 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     placeholder="Søg i bedrifter..."
                     className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-[12px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500/40"
                   />
-                  <div className="flex gap-1">
-                    {(["all","earned","unearned"] as const).map(f => (
-                      <button key={f} onClick={() => { setAchievementFilter(f); setAchievementPage(0); }}
-                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${achievementFilter === f ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-white/[0.04] text-slate-500 border border-white/[0.06] hover:text-slate-300"}`}>
-                        {f === "all" ? "Alle" : f === "earned" ? `Opnået (${myAchievements.size})` : `Mangler (${allAchievements.length - myAchievements.size})`}
-                      </button>
-                    ))}
+                  <div className="flex gap-1 flex-wrap">
+                    {(["all","pending","earned","unearned"] as const).map(f => {
+                      const label = f === "all" ? "Alle"
+                        : f === "pending" ? `Klar (${pendingAchievements.size})`
+                        : f === "earned" ? `Opnået (${myAchievements.size})`
+                        : `Mangler (${allAchievements.length - myAchievements.size - pendingAchievements.size})`;
+                      const isPending = f === "pending";
+                      return (
+                        <button key={f} onClick={() => { setAchievementFilter(f); setAchievementPage(0); }}
+                          className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${achievementFilter === f
+                            ? isPending ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                            : "bg-white/[0.04] text-slate-500 border border-white/[0.06] hover:text-slate-300"
+                          }`}>
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -8022,30 +8080,39 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                   )}
                   {pageItems.map(a => {
                     const earned = myAchievements.has(a.id);
+                    const isPending = pendingAchievements.has(a.id);
                     const prog = progressMap[a.id] ?? null;
                     const pct = prog ? Math.round((prog.cur / prog.max) * 100) : 0;
                     return (
-                      <div key={a.id} className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${earned ? "border-white/[0.08] bg-white/[0.03]" : "border-white/[0.04] bg-white/[0.01]"}`}>
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl" style={{ background: earned ? a.badge_color + "22" : "rgba(255,255,255,0.03)", border: `1.5px solid ${earned ? a.badge_color + "44" : "rgba(255,255,255,0.06)"}` }}>
-                          {earned ? a.badge_emoji : "🔒"}
+                      <div key={a.id} className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${earned ? "border-white/[0.08] bg-white/[0.03]" : isPending ? "border-emerald-500/30 bg-emerald-500/[0.05]" : "border-white/[0.04] bg-white/[0.01]"}`}>
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl" style={{ background: (earned || isPending) ? a.badge_color + "22" : "rgba(255,255,255,0.03)", border: `1.5px solid ${(earned || isPending) ? a.badge_color + "44" : "rgba(255,255,255,0.06)"}` }}>
+                          {(earned || isPending) ? a.badge_emoji : "🔒"}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-[13px] font-bold truncate" style={{ color: earned ? a.badge_color : "#64748b" }}>{a.name}</p>
+                            <p className="text-[13px] font-bold truncate" style={{ color: (earned || isPending) ? a.badge_color : "#64748b" }}>{a.name}</p>
                             {earned
                               ? <span className="text-[10px] text-emerald-400 font-bold flex-shrink-0">✓ Opnået</span>
-                              : prog && <span className="text-[10px] text-slate-500 font-bold flex-shrink-0 tabular-nums">{prog.cur}/{prog.max}</span>
+                              : isPending
+                                ? <span className="text-[10px] text-amber-300 font-bold flex-shrink-0 animate-pulse">● Klar!</span>
+                                : prog && <span className="text-[10px] text-slate-500 font-bold flex-shrink-0 tabular-nums">{prog.cur}/{prog.max}</span>
                             }
                           </div>
                           <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">{a.description}</p>
-                          {prog && (
+                          {prog && !isPending && (
                             <div className="mt-1.5 w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden">
                               <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: earned ? a.badge_color : `${a.badge_color}88` }} />
                             </div>
                           )}
-                          <div className="flex items-center gap-2 mt-1.5">
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                             {a.reward_coins > 0 && <span className="text-[11px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">+{a.reward_coins} 🪙</span>}
                             {a.reward_xp > 0 && <span className="text-[11px] text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full border border-violet-500/20">+{a.reward_xp} XP</span>}
+                            {isPending && (
+                              <button onClick={() => claimAchievement(a.id)}
+                                className="ml-auto px-3 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition-all">
+                                Modtag belønning
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
