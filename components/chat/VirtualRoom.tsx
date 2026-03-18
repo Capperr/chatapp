@@ -889,6 +889,9 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   const [adminMoveTarget, setAdminMoveTarget] = useState<{ user_id: string; display_name: string } | null>(null);
   const [adminMoveTile, setAdminMoveTile] = useState<{ gx: string; gy: string }>({ gx: "", gy: "" });
   const [adminMoveRoom, setAdminMoveRoom] = useState<string>("");
+  const [adminBanTarget, setAdminBanTarget] = useState<{ userId: string; displayName: string } | null>(null);
+  const [adminBanReason, setAdminBanReason] = useState("");
+  const [adminBanDuration, setAdminBanDuration] = useState("24h");
   const [createBotForm, setCreateBotForm] = useState<{ name: string; color: string; message: string; moves_randomly: boolean; gives_clothing_id: string; bot_outfit: Record<string, string> } | null>(null);
   const [editBotId, setEditBotId] = useState<string | null>(null);
   const [movingBotId, setMovingBotId] = useState<string | null>(null);
@@ -3040,6 +3043,30 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
   };
   const giveItem   = async (item: RoomItem, uid: string) => { setCtxMenu(null); await supabase.from("virtual_room_items").update({ owner_id: uid, gx: null, gy: null }).eq("id", item.id); };
   const deleteItem = async (id: string) => { setCtxMenu(null); await supabase.from("virtual_room_items").delete().eq("id", id); };
+
+  const getBanExpiresAt = (duration: string): string | null => {
+    if (duration === "permanent") return null;
+    const hours: Record<string, number> = { "1h": 1, "6h": 6, "24h": 24, "7d": 168, "30d": 720 };
+    return new Date(Date.now() + (hours[duration] ?? 24) * 3600000).toISOString();
+  };
+  const executeBan = async () => {
+    if (!adminBanTarget) return;
+    const expiresAt = getBanExpiresAt(adminBanDuration);
+    const reason = adminBanReason.trim() || "Ingen årsag opgivet";
+    await supabase.rpc("admin_ban_user", { p_user_id: adminBanTarget.userId, p_reason: reason, p_expires_at: expiresAt });
+    // Kick if online
+    channelRef.current?.send({ type: "broadcast", event: "kick", payload: { user_id: adminBanTarget.userId, by_name: currentProfile.display_name } });
+    setAdminSearchResults(r => r.map(x => x.id === adminBanTarget.userId ? { ...x, is_banned: true } : x));
+    if (profileView?.id === adminBanTarget.userId) setProfileView(p => p ? { ...p, is_banned: true } : p);
+    setAdminBanTarget(null);
+    setAdminBanReason("");
+    setAdminBanDuration("24h");
+  };
+  const executeUnban = async (userId: string) => {
+    await supabase.rpc("admin_unban_user", { p_user_id: userId });
+    setAdminSearchResults(r => r.map(x => x.id === userId ? { ...x, is_banned: false } : x));
+    if (profileView?.id === userId) setProfileView(p => p ? { ...p, is_banned: false } : p);
+  };
   const deleteRoom = async (roomId: string) => {
     await supabase.from("chat_rooms").delete().eq("id", roomId);
     setRooms(prev => prev.filter(r => r.id !== roomId));
@@ -6382,8 +6409,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                               )}
                               {/* Ban/Unban */}
                               {user.is_banned
-                                ? <button onClick={async () => { await supabase.from("profiles").update({ is_banned: false }).eq("id", user.id); setAdminSearchResults(r => r.map(x => x.id === user.id ? { ...x, is_banned: false } : x)); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">Fjern ban</button>
-                                : <button onClick={async () => { if (!confirm(`Ban ${user.display_name}?`)) return; await supabase.from("profiles").update({ is_banned: true }).eq("id", user.id); setAdminSearchResults(r => r.map(x => x.id === user.id ? { ...x, is_banned: true } : x)); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors">Ban</button>
+                                ? <button onClick={() => executeUnban(user.id)} className="px-2 py-0.5 rounded-lg text-[11px] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors">Fjern ban</button>
+                                : <button onClick={() => { setAdminBanTarget({ userId: user.id, displayName: user.display_name }); setAdminBanReason(""); setAdminBanDuration("24h"); }} className="px-2 py-0.5 rounded-lg text-[11px] bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors">Ban</button>
                               }
                               {/* Mute */}
                               {isMutedNow
@@ -7458,8 +7485,8 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                                   : <div className="grid grid-cols-2 gap-1.5">{([["15 min", 15], ["1 time", 60], ["24 timer", 1440], ["Permanent", 5256000]] as [string, number][]).map(([l, m]) => (<button key={l} onClick={() => { const until = new Date(Date.now() + m * 60000).toISOString(); updatePV({ muted_until: until }); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors"><VolumeX className="w-3 h-3 flex-shrink-0" />{l}</button>))}</div>
                                 }
                                 {profileView.is_banned
-                                  ? <button onClick={() => updatePV({ is_banned: false })} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"><UserCheck className="w-3.5 h-3.5" /> Fjern udelukkelse</button>
-                                  : <button onClick={() => { if (confirm(`Udeluk ${profileView.display_name}?`)) updatePV({ is_banned: true }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors"><Ban className="w-3.5 h-3.5" /> Udeluk bruger</button>
+                                  ? <button onClick={() => executeUnban(profileView.id)} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"><UserCheck className="w-3.5 h-3.5" /> Fjern udelukkelse</button>
+                                  : <button onClick={() => { setAdminBanTarget({ userId: profileView.id, displayName: profileView.display_name }); setAdminBanReason(""); setAdminBanDuration("24h"); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors"><Ban className="w-3.5 h-3.5" /> Udeluk bruger</button>
                                 }
                                 {pvIsAdmin
                                   ? <button onClick={() => { if (confirm(`Fjern admin fra ${profileView.display_name}?`)) updatePV({ role: "user" }); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"><ShieldOff className="w-3.5 h-3.5" /> Fjern moderator</button>
@@ -9329,6 +9356,48 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
           </div>
         );
       })()}
+
+      {/* Admin ban modal */}
+      {adminBanTarget && (
+        <div className="fixed inset-0 z-[9500] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setAdminBanTarget(null)}>
+          <div className="bg-[#060e1c] rounded-2xl border border-rose-500/20 p-6 w-96 shadow-[0_24px_64px_rgba(0,0,0,0.95)]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-xl flex-shrink-0">🚫</div>
+              <div>
+                <p className="text-[14px] font-bold text-white">Udeluk bruger</p>
+                <p className="text-[12px] text-slate-400">{adminBanTarget.displayName}</p>
+              </div>
+            </div>
+            <div className="space-y-3 mb-5">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 block">Årsag</label>
+                <textarea
+                  value={adminBanReason}
+                  onChange={e => setAdminBanReason(e.target.value)}
+                  placeholder="Beskriv årsagen til udelukkelsen..."
+                  rows={3}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-[13px] text-slate-200 placeholder-slate-600 outline-none focus:border-rose-500/40 resize-none"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 block">Varighed</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {([["1h", "1 time"], ["6h", "6 timer"], ["24h", "24 timer"], ["7d", "7 dage"], ["30d", "30 dage"], ["permanent", "Permanent"]] as [string, string][]).map(([val, label]) => (
+                    <button key={val} onClick={() => setAdminBanDuration(val)}
+                      className={`py-1.5 rounded-lg text-[12px] font-semibold transition-colors border ${adminBanDuration === val ? "bg-rose-500/20 text-rose-300 border-rose-500/40" : "bg-white/[0.03] text-slate-500 border-white/[0.06] hover:text-slate-300"}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setAdminBanTarget(null)} className="flex-1 py-2.5 rounded-xl text-[13px] text-slate-400 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors">Annuller</button>
+              <button onClick={executeBan} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-white bg-rose-600 hover:bg-rose-500 transition-colors">Udeluk</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Passcode prompt modal */}
       {passcodePrompt && (
