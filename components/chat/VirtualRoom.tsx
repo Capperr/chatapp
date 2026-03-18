@@ -3425,23 +3425,25 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
         })}
       </div>
       <div className="flex items-stretch max-sm:w-screen max-sm:h-[100dvh]" onClick={e => e.stopPropagation()}>
-      <div className={`relative flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.8),0_0_120px_rgba(99,102,241,0.07)] border border-white/[0.1] bg-gradient-to-b from-[#060d1a] to-[#04090f] max-sm:!rounded-none max-sm:border-0 ${extensionOpen && !fullscreen ? "sm:rounded-l-2xl sm:rounded-r-none" : "sm:rounded-2xl"}`} style={windowStyle}>
+      <div className={`relative flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.9),0_0_120px_rgba(0,229,204,0.05)] border max-sm:!rounded-none max-sm:border-0 ${extensionOpen && !fullscreen ? "sm:rounded-l-2xl sm:rounded-r-none" : "sm:rounded-2xl"}`} style={{ ...windowStyle, background: "#000a14", borderColor: "rgba(0,229,204,0.12)" }}>
 
         {/* Header */}
-        <div className="flex-shrink-0 flex flex-col" style={{ background: "linear-gradient(180deg,#07101e 0%,#040c18 100%)", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+        <div className="flex-shrink-0 flex flex-col" style={{ background: "transparent" }}>
           <style>{`
             @keyframes xpShimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(200%)} }
             @keyframes coinPulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
           `}</style>
-          <div className="flex items-center px-3 sm:px-4 gap-3" style={{ height: "48px" }}>
+          <div className="flex items-center px-3 sm:px-4 gap-3" style={{ height: "48px", background: "linear-gradient(180deg,#000d1a 0%,#000a14 100%)", borderBottom: "1px solid rgba(0,229,204,0.06)" }}>
             {/* Left: app name + room name */}
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              {/* App icon */}
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-700 flex items-center justify-center flex-shrink-0 shadow-[0_0_8px_rgba(139,92,246,0.4)]">
-                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+              {/* App icon — matches ChatGateway */}
+              <div className="flex-shrink-0 flex items-center gap-2">
+                <div style={{ width: 24, height: 24, background: "#00e5cc", clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <span style={{ fontFamily: "var(--font-orbitron, monospace)", fontSize: 7, fontWeight: 900, color: "#000a14", lineHeight: 1 }}>ZP</span>
+                </div>
+                <span className="hidden sm:block flex-shrink-0" style={{ fontFamily: "var(--font-orbitron, monospace)", fontWeight: 900, fontSize: 12, color: "#00e5cc", letterSpacing: "0.15em" }}>ZPACE</span>
               </div>
-              <span className="hidden sm:block text-[13px] font-bold text-white/50 tracking-tight flex-shrink-0">Zpace</span>
-              <div className="hidden sm:block w-px h-3.5 bg-white/[0.1] flex-shrink-0" />
+              <div className="hidden sm:block w-px h-3.5 flex-shrink-0" style={{ background: "rgba(0,229,204,0.15)" }} />
               {/* Room */}
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 shadow-[0_0_6px_rgba(52,211,153,0.8)] animate-pulse" />
@@ -3456,34 +3458,36 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
               {/* Stats pill — only shown in fullscreen mode */}
               {fullscreen && (
                 <div
-                  className="flex items-stretch rounded-2xl overflow-hidden border border-white/[0.07]"
-                  style={{ background: "linear-gradient(135deg,rgba(10,15,28,0.98),rgba(6,10,20,0.98))", boxShadow: "0 2px 12px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.04)" }}
+                  className="flex items-stretch overflow-hidden"
+                  style={{ background: "rgba(0,8,18,0.97)", border: "1px solid rgba(0,229,204,0.12)", boxShadow: "0 2px 12px rgba(0,0,0,0.5), 0 0 20px rgba(0,229,204,0.03)" }}
                 >
                   {/* Level */}
                   <button
                     onClick={() => setShowLevelGuide(v => !v)}
-                    className={`flex items-center gap-1.5 px-3.5 transition-colors h-full hover:bg-violet-500/10`}
+                    className="flex items-center gap-1.5 px-3.5 transition-colors h-full"
+                    onMouseEnter={e => (e.currentTarget.style.background = "rgba(0,229,204,0.06)")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     title="Klik for at se niveau-oversigt"
                   >
-                    <span className="text-[9px] font-black tracking-[0.2em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
-                    <span className="text-[16px] font-black text-white tabular-nums leading-none">{level}</span>
+                    <span style={{ fontFamily: "var(--font-space-mono, monospace)", fontSize: 8, fontWeight: 700, color: "rgba(0,229,204,0.5)", letterSpacing: "0.2em" }}>LV</span>
+                    <span style={{ fontFamily: "var(--font-orbitron, monospace)", fontSize: 15, fontWeight: 900, color: "#fff", letterSpacing: "-0.02em" }}>{level}</span>
                   </button>
 
-                  <div className="w-px bg-white/[0.06] my-2.5" />
+                  <div className="w-px my-2" style={{ background: "rgba(0,229,204,0.1)" }} />
 
                   {/* XP */}
                   <div className="hidden sm:flex items-center px-3.5">
-                    <span className="text-[13px] font-semibold tabular-nums" style={{ color: "rgba(255,255,255,0.22)" }}>
-                      <span style={{ color: "#8b5cf6" }}>{xpInCurrentLevel(xp)}</span>/{xpForNextLevel(xp) || "MAX"} xp
+                    <span style={{ fontFamily: "var(--font-space-mono, monospace)", fontSize: 11, color: "rgba(0,229,204,0.35)" }}>
+                      <span style={{ color: "#00e5cc" }}>{xpInCurrentLevel(xp)}</span>/{xpForNextLevel(xp) || "MAX"} xp
                     </span>
                   </div>
 
-                  <div className="w-px bg-white/[0.06] my-2.5" />
+                  <div className="w-px my-2" style={{ background: "rgba(0,229,204,0.1)" }} />
 
                   {/* Coins */}
                   <div className="flex items-center gap-1.5 px-3.5">
                     <span className="text-sm leading-none">🪙</span>
-                    <span className="text-[14px] font-black tabular-nums leading-none" style={{ color: "#f59e0b" }}>{coins}</span>
+                    <span style={{ fontFamily: "var(--font-orbitron, monospace)", fontSize: 13, fontWeight: 900, color: "#f59e0b" }}>{coins}</span>
                   </div>
                 </div>
               )}
@@ -3494,7 +3498,6 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 <div className="relative">
                   <button onClick={() => {
                     setNotifOpen(o => !o);
-                    // Mark all as read when opening
                     if (!notifOpen) {
                       const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
                       if (unreadIds.length > 0) {
@@ -3502,18 +3505,20 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                         setNotifications(prev => prev.map(n => ({ ...n, read: true })));
                       }
                     }
-                  }} className="relative p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">
+                  }} className="relative p-1.5 rounded-lg transition-all" style={{ color: "rgba(0,229,204,0.4)" }}
+                    onMouseEnter={e => { e.currentTarget.style.color = "#00e5cc"; e.currentTarget.style.background = "rgba(0,229,204,0.06)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = "rgba(0,229,204,0.4)"; e.currentTarget.style.background = "transparent"; }}>
                     <Bell className="w-3.5 h-3.5" />
                     {notifications.filter(n => !n.read).length > 0 && (
-                      <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full bg-violet-500 text-[9px] font-bold text-white flex items-center justify-center px-0.5 leading-none">
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full text-[9px] font-bold flex items-center justify-center px-0.5 leading-none" style={{ background: "#00e5cc", color: "#000a14" }}>
                         {notifications.filter(n => !n.read).length > 9 ? "9+" : notifications.filter(n => !n.read).length}
                       </span>
                     )}
                   </button>
                   {notifOpen && (
-                    <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-xl border border-white/[0.08] bg-[#07101e] shadow-[0_16px_48px_rgba(0,0,0,0.7)] overflow-hidden" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06]">
-                        <span className="text-[12px] font-bold text-slate-300">Notifikationer</span>
+                    <div className="absolute right-0 top-full mt-1 z-50 w-72 overflow-hidden" style={{ background: "#000a14", border: "1px solid rgba(0,229,204,0.12)", boxShadow: "0 16px_48px rgba(0,0,0,0.8)" }} onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-between px-3 py-2.5" style={{ borderBottom: "1px solid rgba(0,229,204,0.08)" }}>
+                        <span style={{ fontFamily: "var(--font-space-mono, monospace)", fontSize: 10, color: "#00e5cc", letterSpacing: "0.15em" }}>// NOTIFIKATIONER</span>
                         {notifications.length > 0 && (
                           <button onClick={async () => {
                             await supabase.from("notifications").delete().eq("user_id", currentProfile.id);
@@ -3539,42 +3544,48 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                     </div>
                   )}
                 </div>
-                <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-200 hover:bg-white/[0.06] transition-all">{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
-                <button onClick={handleLogout} className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all" title="Log ud"><LogOut className="w-3.5 h-3.5" /></button>
-                <button onClick={onClose} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-white/[0.06] transition-all"><X className="w-3.5 h-3.5" /></button>
+                <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded-lg transition-all" style={{ color: "rgba(0,229,204,0.4)" }}
+                  onMouseEnter={e => { e.currentTarget.style.color = "#00e5cc"; e.currentTarget.style.background = "rgba(0,229,204,0.06)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = "rgba(0,229,204,0.4)"; e.currentTarget.style.background = "transparent"; }}>{fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}</button>
+                <button onClick={handleLogout} className="p-1.5 rounded-lg transition-all" style={{ color: "rgba(255,69,0,0.5)" }}
+                  onMouseEnter={e => { e.currentTarget.style.color = "#ff4500"; e.currentTarget.style.background = "rgba(255,69,0,0.08)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,69,0,0.5)"; e.currentTarget.style.background = "transparent"; }} title="Log ud"><LogOut className="w-3.5 h-3.5" /></button>
+                <button onClick={onClose} className="p-1.5 rounded-lg transition-all" style={{ color: "rgba(0,229,204,0.35)" }}
+                  onMouseEnter={e => { e.currentTarget.style.color = "#00e5cc"; e.currentTarget.style.background = "rgba(0,229,204,0.06)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = "rgba(0,229,204,0.35)"; e.currentTarget.style.background = "transparent"; }}><X className="w-3.5 h-3.5" /></button>
               </div>
             </div>
           </div>
 
           {/* XP glow bar */}
           <div className="flex items-center gap-1.5 px-1">
-            <span className="text-[9px] font-bold tabular-nums flex-shrink-0" style={{ color: "rgba(139,92,246,0.55)" }}>{xpInCurrentLevel(xp)}/{xpForNextLevel(xp) || "MAX"} XP</span>
-            <div className="flex-1 h-0.5 bg-white/[0.03] relative overflow-hidden">
+            <span className="text-[9px] font-bold tabular-nums flex-shrink-0" style={{ fontFamily: "var(--font-space-mono, monospace)", color: "rgba(0,229,204,0.4)", letterSpacing: "0.05em" }}>{xpInCurrentLevel(xp)}/{xpForNextLevel(xp) || "MAX"} XP</span>
+            <div className="flex-1 h-px relative overflow-hidden" style={{ background: "rgba(0,229,204,0.06)" }}>
               <div
                 className="h-full transition-[width] duration-700"
-                style={{ width: `${xpForNextLevel(xp) ? (xpInCurrentLevel(xp) / xpForNextLevel(xp) * 100) : 100}%`, background: "linear-gradient(90deg,#5b21b6,#8b5cf6,#a78bfa)", boxShadow: "0 0 6px rgba(139,92,246,0.8)" }}
+                style={{ width: `${xpForNextLevel(xp) ? (xpInCurrentLevel(xp) / xpForNextLevel(xp) * 100) : 100}%`, background: "linear-gradient(90deg,#007a70,#00e5cc,#7fffef)", boxShadow: "0 0 6px rgba(0,229,204,0.7)" }}
               />
             </div>
-            <span className="text-[9px] font-bold px-1 flex-shrink-0" style={{ color: "rgba(139,92,246,0.4)" }}>LV {level + 1}</span>
+            <span className="text-[9px] font-bold px-1 flex-shrink-0" style={{ fontFamily: "var(--font-space-mono, monospace)", color: "rgba(0,229,204,0.3)" }}>LV {level + 1}</span>
           </div>
           {/* LV + coins row (non-fullscreen only) */}
           {!fullscreen && (
             <div className="flex items-center justify-end gap-3 px-3 py-1">
               <button onClick={() => setShowLevelGuide(v => !v)} className="flex items-center gap-1.5 hover:opacity-80 transition-opacity" title="Se niveau-oversigt">
-                <span className="text-[9px] font-black tracking-[0.18em] uppercase" style={{ color: "#6d28d9" }}>LV</span>
-                <span className="text-[15px] font-black tabular-nums text-white leading-none">{level}</span>
+                <span style={{ fontFamily: "var(--font-space-mono, monospace)", fontSize: 8, fontWeight: 700, color: "rgba(0,229,204,0.5)", letterSpacing: "0.2em" }}>LV</span>
+                <span style={{ fontFamily: "var(--font-orbitron, monospace)", fontSize: 15, fontWeight: 900, color: "#fff", letterSpacing: "-0.02em" }}>{level}</span>
               </button>
-              <span className="w-px h-3 bg-white/[0.08]" />
+              <span className="w-px h-3" style={{ background: "rgba(0,229,204,0.1)" }} />
               <div className="flex items-center gap-1.5">
                 <span className="text-sm leading-none">🪙</span>
-                <span className="text-[15px] font-black tabular-nums leading-none" style={{ color: "#f59e0b" }}>{coins}</span>
+                <span style={{ fontFamily: "var(--font-orbitron, monospace)", fontSize: 14, fontWeight: 900, color: "#f59e0b" }}>{coins}</span>
               </div>
             </div>
           )}
           {/* Placing hint */}
           {(movingBotId || movingUserId || placingItem) && (
-            <div className="px-4 py-1 bg-violet-600/10 border-t border-violet-500/15 text-center">
-              <span className="text-[12px] text-violet-300 font-semibold animate-pulse">
+            <div className="px-4 py-1 text-center" style={{ background: "rgba(0,229,204,0.06)", borderTop: "1px solid rgba(0,229,204,0.1)" }}>
+              <span className="text-[12px] font-semibold animate-pulse" style={{ color: "#00e5cc", fontFamily: "var(--font-space-mono, monospace)", fontSize: 11 }}>
                 {movingBotId ? "Klik på et felt for at placere bot" : movingUserId ? "Klik på et felt for at flytte bruger" : isWallItemType(placingItem!.item.item_type) ? "Klik på væggen for at hænge op" : `Klik på et felt · R = roter (${placingItem!.rotation * 90}°)`}
               </span>
             </div>
@@ -5205,36 +5216,36 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
             <div className="absolute bottom-4 left-0 right-0 z-20 flex justify-center px-3 pointer-events-none">
             <div className="overflow-x-auto pointer-events-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style>{`.toolbar-no-scroll::-webkit-scrollbar{display:none}`}</style>
-            <div className="toolbar-no-scroll flex items-end gap-0.5 px-3 py-2.5 bg-[#040c19]/98 backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.07)]">
+            <div className="toolbar-no-scroll flex items-end gap-0.5 px-3 py-2.5 backdrop-blur-xl rounded-2xl" style={{ background: "rgba(0,8,18,0.97)", border: "1px solid rgba(0,229,204,0.12)", boxShadow: "0 12px_48px rgba(0,0,0,0.8), inset 0 1px 0 rgba(0,229,204,0.06), 0 0 40px rgba(0,229,204,0.04)" }}>
               {/* 1. Reload */}
               <button onClick={() => { disconnectedRef.current = false; setDisconnected(false); lastActivityRef.current = Date.now(); setReconnectKey(k => k + 1); reloadChat(); }}
-                className="flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all">
+                className="flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl text-slate-500 hover:text-[#00e5cc] hover:bg-[#00e5cc]/[0.06] transition-all">
                 <RefreshCw className="w-6 h-6" />
                 <span className="text-[11px] font-medium leading-none">Reload</span>
               </button>
 
-              <div className="w-px h-10 bg-white/[0.08] mx-0.5 self-center" />
+              <div className="w-px h-10 mx-0.5 self-center" style={{ background: "rgba(0,229,204,0.1)" }} />
 
               {/* 2. Rum */}
               <button onClick={() => setRightPanel(p => p === "rooms" ? "hidden" : "rooms")}
-                className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "rooms" ? "text-[#00e5cc] bg-[#00e5cc]/10" : "text-slate-500 hover:text-[#00e5cc] hover:bg-[#00e5cc]/[0.06]"}`}>
                 <Hash className="w-6 h-6" />
                 <span className="text-[11px] font-medium leading-none">Rum</span>
               </button>
 
               {/* 3. Garderobe */}
               <button onClick={() => { setRightPanel(p => p === "wardrobe" ? "hidden" : "wardrobe"); setWardrobeActiveSlot(null); setWardrobePreviewId(null); }}
-                className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "wardrobe" ? "text-[#00e5cc] bg-[#00e5cc]/10" : "text-slate-500 hover:text-[#00e5cc] hover:bg-[#00e5cc]/[0.06]"}`}>
                 <Shirt className="w-6 h-6" />
                 <span className="text-[11px] font-medium leading-none">Garderobe</span>
               </button>
 
               {/* 4. Rygsæk */}
               <button onClick={() => setRightPanel(p => p === "inventory" ? "hidden" : "inventory")}
-                className={`relative flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "inventory" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                className={`relative flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "inventory" ? "text-[#00e5cc] bg-[#00e5cc]/10" : "text-slate-500 hover:text-[#00e5cc] hover:bg-[#00e5cc]/[0.06]"}`}>
                 <Package className="w-6 h-6" />
                 <span className="text-[11px] font-medium leading-none">Rygsæk</span>
-                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold leading-none">{myInventory.length}</span>}
+                {myInventory.length > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full text-[9px] font-bold leading-none flex items-center justify-center" style={{ background: "#00e5cc", color: "#000a14" }}>{myInventory.length}</span>}
               </button>
 
               {/* 5. Bedrifter */}
@@ -5255,15 +5266,15 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
               {/* 7. Beskeder */}
               <button onClick={() => setRightPanel(p => p === "dms" || p === "dm_chat" ? "hidden" : "dms")}
-                className={`relative flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "dms" || rightPanel === "dm_chat" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                className={`relative flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "dms" || rightPanel === "dm_chat" ? "text-[#00e5cc] bg-[#00e5cc]/10" : "text-slate-500 hover:text-[#00e5cc] hover:bg-[#00e5cc]/[0.06]"}`}>
                 <Mail className="w-6 h-6" />
                 <span className="text-[11px] font-medium leading-none">Beskeder</span>
-                {dmUnread > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-violet-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold leading-none">{dmUnread}</span>}
+                {dmUnread > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full text-[9px] font-bold leading-none flex items-center justify-center" style={{ background: "#00e5cc", color: "#000a14" }}>{dmUnread}</span>}
               </button>
 
               {/* 8. Indstillinger */}
               <button onClick={() => setRightPanel(p => p === "settings" ? "hidden" : "settings")}
-                className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "settings" ? "text-violet-400 bg-violet-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "settings" ? "text-[#00e5cc] bg-[#00e5cc]/10" : "text-slate-500 hover:text-[#00e5cc] hover:bg-[#00e5cc]/[0.06]"}`}>
                 <Settings className="w-6 h-6" />
                 <span className="text-[11px] font-medium leading-none">Indstillinger</span>
               </button>
@@ -5277,19 +5288,19 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
                 </button>
               )}
 
-              <div className="w-px h-10 bg-white/[0.08] mx-0.5 self-center" />
+              <div className="w-px h-10 mx-0.5 self-center" style={{ background: "rgba(0,229,204,0.1)" }} />
 
               {/* Zoom */}
-              <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="flex items-center justify-center px-2.5 py-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all"><ZoomIn className="w-6 h-6" /></button>
+              <button onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.2).toFixed(1))))} className="flex items-center justify-center px-2.5 py-2 rounded-xl text-slate-500 hover:text-[#00e5cc] hover:bg-[#00e5cc]/[0.06] transition-all"><ZoomIn className="w-6 h-6" /></button>
               <span className="text-[12px] text-slate-600 w-10 text-center tabular-nums self-center">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="flex items-center justify-center px-2.5 py-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/[0.08] transition-all"><ZoomOut className="w-6 h-6" /></button>
+              <button onClick={() => setZoom(z => Math.max(0.4, parseFloat((z - 0.2).toFixed(1))))} className="flex items-center justify-center px-2.5 py-2 rounded-xl text-slate-500 hover:text-[#00e5cc] hover:bg-[#00e5cc]/[0.06] transition-all"><ZoomOut className="w-6 h-6" /></button>
 
               {/* Roulette (casino-rum only) */}
               {activeRoomType === "casino" && (
                 <>
-                  <div className="w-px h-10 bg-white/[0.08] mx-0.5 self-center" />
+                  <div className="w-px h-10 mx-0.5 self-center" style={{ background: "rgba(0,229,204,0.1)" }} />
                   <button onClick={() => setRightPanel(p => p === "roulette" ? "hidden" : "roulette")}
-                    className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "roulette" ? "text-amber-400 bg-amber-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.08]"}`}>
+                    className={`flex flex-col items-center gap-1 px-3.5 py-2 rounded-xl transition-all ${rightPanel === "roulette" ? "text-amber-400 bg-amber-500/15" : "text-slate-500 hover:text-amber-400 hover:bg-amber-500/[0.06]"}`}>
                     <span className="text-[22px] leading-none">🎰</span>
                     <span className="text-[11px] font-medium leading-none text-slate-500">Roulette</span>
                   </button>
@@ -5302,7 +5313,7 @@ export function VirtualRoom({ roomId, roomName, initialRoomType, initialRoomOwne
 
           {/* Extension panel - overlays room area */}
           {extensionOpen && (
-          <div className={`absolute right-2 top-2 bottom-2 z-30 rounded-2xl border border-white/[0.12] shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl w-[min(400px,calc(100%-16px))] flex flex-col bg-[#030912]/98 overflow-hidden`}>
+          <div className={`absolute right-2 top-2 bottom-2 z-30 rounded-2xl backdrop-blur-xl w-[min(400px,calc(100%-16px))] flex flex-col overflow-hidden`} style={{ background: "rgba(0,6,16,0.98)", border: "1px solid rgba(0,229,204,0.12)", boxShadow: "0 16px 48px rgba(0,0,0,0.8), 0 0 40px rgba(0,229,204,0.03)" }}>
             {/* Roulette panel */}
             {rightPanel === "roulette" && activeRoomType === "casino" && (() => {
               const betLabel = (type: string, value: string) =>
